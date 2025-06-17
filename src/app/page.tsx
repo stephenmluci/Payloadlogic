@@ -1,8 +1,9 @@
+
 'use client';
 import React, { useState, useEffect, useCallback } from 'react';
 import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, DocumentReference, DocumentData } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { PDFDocument, rgb } from 'pdf-lib'; // StandardFonts removed as not used
+import { PDFDocument, rgb } from 'pdf-lib';
 import { db, auth } from '@/lib/firebase';
 import type { User, Load, Expense, Client, Settings } from '@/types';
 import { useToast } from "@/hooks/use-toast";
@@ -22,6 +23,36 @@ import { AppFooter } from '@/components/layout/AppFooter';
 
 import { LayoutDashboard, Package, DollarSign, Users, Cog, Loader2 } from 'lucide-react';
 
+// Admin review mode flag
+const IS_ADMIN_REVIEW_MODE = true;
+
+const mockReviewUser = {
+  uid: 'admin-reviewer-uid',
+  email: 'reviewer@example.com',
+  displayName: "Admin Reviewer",
+  emailVerified: true,
+  isAnonymous: false,
+  photoURL: null,
+  providerId: 'firebase',
+  metadata: { creationTime: new Date().toISOString(), lastSignInTime: new Date().toISOString() },
+  providerData: [{ providerId: 'password', uid: 'admin-reviewer-uid', displayName: 'Admin Reviewer', email: 'reviewer@example.com', photoURL: null, phoneNumber: null }],
+  refreshToken: 'mockToken',
+  tenantId: null,
+  delete: async () => { console.log("Mock user delete called"); },
+  getIdToken: async (_forceRefresh?: boolean) => "mock-id-token",
+  getIdTokenResult: async (_forceRefresh?: boolean) => ({
+    token: "mock-id-token",
+    expirationTime: new Date(Date.now() + 3600 * 1000).toISOString(), 
+    authTime: new Date().toISOString(),
+    issuedAtTime: new Date().toISOString(),
+    signInProvider: null,
+    signInSecondFactor: null,
+    claims: {},
+  }),
+  reload: async () => { console.log("Mock user reload called"); },
+  toJSON: () => ({ uid: 'admin-reviewer-uid', email: 'reviewer@example.com', displayName: "Admin Reviewer" }),
+} as User;
+
 
 const initialSettings: Settings = {
   payrollPercentage: 25,
@@ -32,26 +63,23 @@ const initialSettings: Settings = {
   ]
 };
 
-const SETTINGS_DOC_ID = 'userSettings'; // Fixed ID for settings document
+const SETTINGS_DOC_ID = 'userSettings'; 
 
 export default function TruckinSmartApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(IS_ADMIN_REVIEW_MODE ? mockReviewUser : null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   
-  const [appLoading, setAppLoading] = useState(true); // For initial auth check and data load
-  const [isSubmitting, setIsSubmitting] = useState(false); // Generic submission state
+  const [appLoading, setAppLoading] = useState(IS_ADMIN_REVIEW_MODE ? false : true); 
 
   const { toast } = useToast();
   
-  // Data states
   const [loads, setLoads] = useState<Load[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [settings, setSettings] = useState<Settings>(initialSettings);
 
-  // Form states
   const [loadForm, setLoadForm] = useState<Omit<Load, 'id' | 'expenses'>>({
     clientId: '',
     origin: '',
@@ -75,9 +103,18 @@ export default function TruckinSmartApp() {
   
   const [settingsForm, setSettingsForm] = useState<Settings>(initialSettings);
 
-  // Fetch data from Firestore
   const fetchData = useCallback(async (currentUser: User) => {
     if (!currentUser) return;
+    
+    if (IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) {
+      setLoads([]);
+      setExpenses([]);
+      setClients([]);
+      setSettings(initialSettings);
+      setSettingsForm(initialSettings);
+      setAppLoading(false);
+      return;
+    }
     
     setAppLoading(true);
     try {
@@ -99,7 +136,6 @@ export default function TruckinSmartApp() {
         setSettings(settingsData);
         setSettingsForm(settingsData);
       } else {
-        // If settings don't exist, set initial ones
         await setDoc(settingsRef, initialSettings);
         setSettings(initialSettings);
         setSettingsForm(initialSettings);
@@ -112,15 +148,20 @@ export default function TruckinSmartApp() {
     }
   }, [toast]);
 
-  // Initialize Firebase and check auth state
   useEffect(() => {
+    if (IS_ADMIN_REVIEW_MODE) {
+      setUser(mockReviewUser);
+      fetchData(mockReviewUser);
+      setAppLoading(false);
+      return; 
+    }
+
     const unsubscribe = auth.onAuthStateChanged(authUser => {
       setUser(authUser);
       if (authUser) {
         fetchData(authUser);
       } else {
-        setAppLoading(false); // Not logged in, stop loading
-        // Clear data if user logs out
+        setAppLoading(false); 
         setLoads([]);
         setExpenses([]);
         setClients([]);
@@ -132,13 +173,14 @@ export default function TruckinSmartApp() {
   }, [fetchData]);
 
 
-  // Auth functions
   const handleSignUp = async () => {
+    if (IS_ADMIN_REVIEW_MODE) {
+      toast({ title: "Admin Review Mode", description: "Sign up is disabled." });
+      return;
+    }
     setIsSubmitting(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      // setUser is handled by onAuthStateChanged
-      // Create initial settings for the new user
       const settingsRef = doc(db, `users/${userCredential.user.uid}/settings`, SETTINGS_DOC_ID);
       await setDoc(settingsRef, initialSettings);
       setSettings(initialSettings);
@@ -153,10 +195,13 @@ export default function TruckinSmartApp() {
   };
 
   const handleSignIn = async () => {
+    if (IS_ADMIN_REVIEW_MODE) {
+      toast({ title: "Admin Review Mode", description: "Sign in is disabled." });
+      return;
+    }
     setIsSubmitting(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // setUser is handled by onAuthStateChanged
       toast({ title: "Signed In", description: "Welcome back!" });
     } catch (error: any) {
       console.error('Sign in error:', error);
@@ -167,10 +212,13 @@ export default function TruckinSmartApp() {
   };
 
   const handleSignOut = async () => {
+    if (IS_ADMIN_REVIEW_MODE) {
+      toast({ title: "Admin Review Mode", description: "Sign out is not applicable." });
+      return;
+    }
     setIsSubmitting(true);
     try {
       await signOut(auth);
-      // setUser(null) is handled by onAuthStateChanged
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
     } catch (error: any) {
       console.error('Sign out error:', error);
@@ -180,9 +228,12 @@ export default function TruckinSmartApp() {
     }
   };
 
-  // Data management functions
   const addLoad = async () => {
     if (!user) return;
+    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
+      toast({title: "Admin Review Mode", description: "Adding load is disabled."});
+      return;
+    }
     setIsSubmitting(true);
     const newLoadData: Load = {
       ...loadForm,
@@ -203,12 +254,20 @@ export default function TruckinSmartApp() {
 
   const updateLoad = async (id: string, updates: Partial<Load>) => {
     if (!user) return;
-    // Note: This function might be called from useEffect, so a separate loading state is good.
-    // For now, it will use the main isSubmitting or a dedicated one if complex.
+    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid && updates.status) {
+       // Allow status updates for visual review, but don't persist
+       setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...updates } : l));
+       toast({ title: "Review Mode", description: `Load status changed to ${updates.status} (not saved).` });
+       return;
+    }
+     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
+      toast({title: "Admin Review Mode", description: "Updating load is disabled."});
+      return;
+    }
     try {
       await updateDoc(doc(db, `users/${user.uid}/loads`, id), updates);
       setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...updates } : l));
-      if (updates.status) { // Only toast for manual status updates for now
+      if (updates.status) { 
         toast({ title: "Load Updated", description: `Load status changed to ${updates.status}.` });
       }
     } catch (error: any) {
@@ -218,7 +277,7 @@ export default function TruckinSmartApp() {
   };
   
   const updateLoadStatus = async (id: string, status: Load['status']) => {
-    setIsSubmitting(true); // Use a specific state like `isUpdatingLoadStatus` if needed
+    setIsSubmitting(true); 
     await updateLoad(id, { status });
     setIsSubmitting(false);
   };
@@ -226,6 +285,10 @@ export default function TruckinSmartApp() {
 
   const addExpense = async () => {
     if (!user) return;
+     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
+      toast({title: "Admin Review Mode", description: "Adding expense is disabled."});
+      return;
+    }
     setIsSubmitting(true);
     try {
       const docRef = await addDoc(collection(db, `users/${user.uid}/expenses`), expenseForm);
@@ -242,6 +305,10 @@ export default function TruckinSmartApp() {
 
   const addClient = async () => {
     if (!user) return;
+    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
+      toast({title: "Admin Review Mode", description: "Adding client is disabled."});
+      return;
+    }
     setIsSubmitting(true);
     try {
       const docRef = await addDoc(collection(db, `users/${user.uid}/clients`), clientForm);
@@ -258,6 +325,12 @@ export default function TruckinSmartApp() {
 
   const updateSettings = async () => {
     if (!user) return;
+    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
+      // In review mode, update local state for visual feedback but don't persist
+      setSettings(settingsForm);
+      toast({ title: "Review Mode", description: "Settings updated locally (not saved)." });
+      return;
+    }
     setIsSubmitting(true);
     try {
       const settingsRef = doc(db, `users/${user.uid}/settings`, SETTINGS_DOC_ID);
@@ -272,23 +345,21 @@ export default function TruckinSmartApp() {
     }
   };
 
-  // Calculate expenses when a load is delivered
   useEffect(() => {
+    if (IS_ADMIN_REVIEW_MODE && user?.uid === mockReviewUser.uid) {
+      // Skip expense calculation effect in review mode to avoid unintended updates
+      // or if you want to test it visually, ensure mock loads have necessary data
+      return;
+    }
     loads.forEach(load => {
       if (load.status === 'delivered' && !load.expenses.calculated && load.id) {
         const payroll = load.rate * (settings.payrollPercentage / 100);
-        // Prorate recurring expenses over days in a typical month (e.g. 30 days)
-        // This is a simplification; a more robust solution might consider actual days for the load or a fixed daily operational cost.
         const recurring = settings.recurringExpenses.reduce(
           (sum, expense) => sum + (expense.amount / 30), 0
         );
-        
-        // Find specific expenses for this load if any (Fuel, DEF)
         const loadSpecificExpenses = expenses.filter(exp => exp.loadId === load.id);
         const fuelCost = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'fuel')?.amount || 0;
-        // Simplified DEF cost, could be more complex
         const defCost = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def')?.amount || (load.distance / 250 * settings.defCostPerGallon);
-
 
         updateLoad(load.id, {
           expenses: {
@@ -301,9 +372,8 @@ export default function TruckinSmartApp() {
         });
       }
     });
-  }, [loads, settings, expenses]); // Added expenses to dependency array
+  }, [loads, settings, expenses, user]); // Added user dependency
 
-  // PDF Generation
   const generateAgreement = async (loadData: Load) => {
     const client = clients.find(c => c.id === loadData.clientId);
     setIsSubmitting(true);
@@ -335,7 +405,6 @@ export default function TruckinSmartApp() {
         drawText('Expenses not yet fully calculated.', 50, yPos); yPos -= 30;
       }
       
-      // Basic signature lines
       yPos -= 50;
       drawText('Client Signature:', 50, yPos);
       page.drawLine({ start: { x: 150, y: yPos - 5 }, end: { x: 350, y: yPos - 5 }, thickness: 1, color: rgb(0,0,0) });
@@ -343,13 +412,12 @@ export default function TruckinSmartApp() {
       drawText('Carrier Signature:', 50, yPos);
       page.drawLine({ start: { x: 150, y: yPos - 5 }, end: { x: 350, y: yPos - 5 }, thickness: 1, color: rgb(0,0,0) });
 
-
       const pdfBytes = await pdfDoc.save();
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = `agreement-${loadData.id || 'new'}.pdf`;
-      document.body.appendChild(link); // Required for Firefox
+      document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(link.href);
@@ -379,7 +447,8 @@ export default function TruckinSmartApp() {
     );
   }
 
-  if (!user) {
+  // Show AuthPage only if not in review mode and user is not logged in
+  if (!user && !IS_ADMIN_REVIEW_MODE) {
     return <AuthPage 
               email={email} 
               setEmail={setEmail} 
@@ -392,7 +461,7 @@ export default function TruckinSmartApp() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader userEmail={user.email} onSignOut={handleSignOut} />
+      <AppHeader userEmail={user ? user.email : ''} onSignOut={handleSignOut} />
       <AppNav activeTab={activeTab} setActiveTab={setActiveTab} tabs={navTabs} />
       
       <main className="flex-grow container mx-auto py-6 px-4 md:px-0">

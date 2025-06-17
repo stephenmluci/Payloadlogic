@@ -1,11 +1,11 @@
 
 'use client';
 import React, { useState, useEffect, useCallback } from 'react';
-import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, DocumentReference, DocumentData } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { PDFDocument, rgb } from 'pdf-lib';
 import { db, auth } from '@/lib/firebase';
-import type { User, Load, Expense, Client, Settings } from '@/types';
+import type { User, Load, Expense, Client, Settings, UserProfile, ClientLoadRequest } from '@/types';
 import { useToast } from "@/hooks/use-toast";
 
 // Page Components
@@ -15,6 +15,7 @@ import { LoadsPage } from '@/components/loads/LoadsPage';
 import { ExpensesPage } from '@/components/expenses/ExpensesPage';
 import { ClientsPage } from '@/components/clients/ClientsPage';
 import { SettingsPage } from '@/components/settings/SettingsPage';
+import ClientPortalPage from '@/app/client-portal/page'; // Import ClientPortalPage
 
 // Layout Components
 import { AppHeader } from '@/components/layout/AppHeader';
@@ -26,7 +27,7 @@ import { LayoutDashboard, Package, DollarSign, Users, Cog, Loader2 } from 'lucid
 // Admin review mode flag
 const IS_ADMIN_REVIEW_MODE = true;
 
-const mockReviewUser = {
+const mockReviewUser: User = {
   uid: 'admin-reviewer-uid',
   email: 'reviewer@example.com',
   displayName: "Admin Reviewer",
@@ -51,7 +52,8 @@ const mockReviewUser = {
   }),
   reload: async () => { console.log("Mock user reload called"); },
   toJSON: () => ({ uid: 'admin-reviewer-uid', email: 'reviewer@example.com', displayName: "Admin Reviewer" }),
-} as User;
+  role: 'admin', // Assign role for mock user
+};
 
 
 const initialSettings: Settings = {
@@ -68,10 +70,12 @@ const SETTINGS_DOC_ID = 'userSettings';
 export default function DashDispatchProApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [user, setUser] = useState<User | null>(IS_ADMIN_REVIEW_MODE ? mockReviewUser : null);
+  const [userRole, setUserRole] = useState<'admin' | 'client' | undefined>(IS_ADMIN_REVIEW_MODE ? mockReviewUser.role : undefined);
+  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   
-  const [appLoading, setAppLoading] = useState(IS_ADMIN_REVIEW_MODE ? false : true); 
+  const [appLoading, setAppLoading] = useState(true); 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { toast } = useToast();
@@ -80,6 +84,8 @@ export default function DashDispatchProApp() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [settings, setSettings] = useState<Settings>(initialSettings);
+  const [clientLoadRequests, setClientLoadRequests] = useState<ClientLoadRequest[]>([]);
+
 
   const [loadForm, setLoadForm] = useState<Omit<Load, 'id' | 'expenses'>>({
     clientId: '',
@@ -88,6 +94,8 @@ export default function DashDispatchProApp() {
     rate: 0,
     distance: 0,
     status: 'pending',
+    cargoDescription: '',
+    requestedPickupDate: '',
   });
   
   const [expenseForm, setExpenseForm] = useState<Omit<Expense, 'id'>>({
@@ -104,15 +112,56 @@ export default function DashDispatchProApp() {
   
   const [settingsForm, setSettingsForm] = useState<Settings>(initialSettings);
 
-  const fetchData = useCallback(async (currentUser: User) => {
-    if (!currentUser) return;
+  const fetchUserProfileAndData = useCallback(async (currentUser: FirebaseUser) => { // Use FirebaseUser here
+    if (!currentUser) {
+      setUserRole(undefined);
+      setAppLoading(false);
+      return;
+    }
+
+    let currentRole: 'admin' | 'client' = 'admin'; // Default to admin
+
+    if (IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) {
+      currentRole = mockReviewUser.role!;
+      setUser(mockReviewUser); // Ensure full mock user object is set
+    } else {
+      try {
+        const profileRef = doc(db, `users/${currentUser.uid}/profile`);
+        const profileSnap = await getDoc(profileRef);
+        if (profileSnap.exists()) {
+          const userProfile = profileSnap.data() as UserProfile;
+          currentRole = userProfile.role;
+        } else {
+          // If no profile, default to admin or handle as needed
+          // For now, let's create a default admin profile if one doesn't exist
+          await setDoc(profileRef, { role: 'admin' });
+          currentRole = 'admin';
+        }
+      } catch (error) {
+        console.error("Error fetching user profile:", error);
+        toast({ variant: "destructive", title: "Profile Error", description: "Could not fetch user profile." });
+        // Keep currentRole as admin or handle error appropriately
+      }
+    }
     
+    setUserRole(currentRole);
+    // Augment the FirebaseUser with the role for the app's User state
+    setUser({ ...currentUser, role: currentRole });
+
+
+    if (currentRole === 'client') {
+      setAppLoading(false); // Clients don't load admin data
+      return;
+    }
+
+    // Admin data fetching
     if (IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) {
       setLoads([]);
       setExpenses([]);
       setClients([]);
       setSettings(initialSettings);
       setSettingsForm(initialSettings);
+      setClientLoadRequests([]);
       setAppLoading(false);
       return;
     }
@@ -141,40 +190,43 @@ export default function DashDispatchProApp() {
         setSettings(initialSettings);
         setSettingsForm(initialSettings);
       }
+
+      // Fetch client load requests (assuming they are in a top-level collection accessible by admin)
+      const clientRequestsSnapshot = await getDocs(collection(db, 'clientLoadRequests'));
+      setClientLoadRequests(clientRequestsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as ClientLoadRequest)));
+
+
     } catch (error: any) {
-      console.error('Error fetching data:', error);
+      console.error('Error fetching admin data:', error);
       toast({ variant: "destructive", title: "Fetch Error", description: error.message });
     } finally {
       setAppLoading(false);
     }
   }, [toast]);
 
-  useEffect(() => {
-    if (IS_ADMIN_REVIEW_MODE) {
-      setUser(mockReviewUser);
-      fetchData(mockReviewUser);
-      setAppLoading(false);
-      return; 
-    }
 
+  useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(authUser => {
-      setUser(authUser);
       if (authUser) {
-        fetchData(authUser);
+        fetchUserProfileAndData(authUser);
       } else {
+        setUser(null);
+        setUserRole(undefined);
         setAppLoading(false); 
+        // Clear admin-specific data
         setLoads([]);
         setExpenses([]);
         setClients([]);
         setSettings(initialSettings);
         setSettingsForm(initialSettings);
+        setClientLoadRequests([]);
       }
     });
     return () => unsubscribe();
-  }, [fetchData]);
+  }, [fetchUserProfileAndData]);
+  
 
-
-  const handleSignUp = async () => {
+  const handleSignUp = async (role: 'admin' | 'client' = 'admin') => {
     if (IS_ADMIN_REVIEW_MODE) {
       toast({ title: "Admin Review Mode", description: "Sign up is disabled." });
       return;
@@ -182,11 +234,18 @@ export default function DashDispatchProApp() {
     setIsSubmitting(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const settingsRef = doc(db, `users/${userCredential.user.uid}/settings`, SETTINGS_DOC_ID);
-      await setDoc(settingsRef, initialSettings);
-      setSettings(initialSettings);
-      setSettingsForm(initialSettings);
-      toast({ title: "Account Created", description: "Welcome to Dash Dispatch Pro!" });
+      // Create user profile with role
+      const profileRef = doc(db, `users/${userCredential.user.uid}/profile`);
+      await setDoc(profileRef, { role });
+
+      if (role === 'admin') {
+        const settingsRef = doc(db, `users/${userCredential.user.uid}/settings`, SETTINGS_DOC_ID);
+        await setDoc(settingsRef, initialSettings);
+        setSettings(initialSettings); // Local state for immediate use if needed
+        setSettingsForm(initialSettings);
+      }
+      setUserRole(role); // Set role immediately
+      toast({ title: "Account Created", description: `Welcome! You are registered as ${role}.` });
     } catch (error: any) {
       console.error('Sign up error:', error);
       toast({ variant: "destructive", title: "Sign Up Error", description: error.message });
@@ -197,12 +256,16 @@ export default function DashDispatchProApp() {
 
   const handleSignIn = async () => {
     if (IS_ADMIN_REVIEW_MODE) {
-      toast({ title: "Admin Review Mode", description: "Sign in is disabled." });
+      // For review mode, user is already "signed in" as mock.
+      // fetchUserProfileAndData should handle setting role and data for mock user.
+      toast({ title: "Admin Review Mode", description: "Already in review session." });
+      fetchUserProfileAndData(mockReviewUser); // Re-trigger mock data load if needed
       return;
     }
     setIsSubmitting(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      // onAuthStateChanged will trigger fetchUserProfileAndData
       toast({ title: "Signed In", description: "Welcome back!" });
     } catch (error: any) {
       console.error('Sign in error:', error);
@@ -214,12 +277,19 @@ export default function DashDispatchProApp() {
 
   const handleSignOut = async () => {
     if (IS_ADMIN_REVIEW_MODE) {
-      toast({ title: "Admin Review Mode", description: "Sign out is not applicable." });
+      // In review mode, effectively "sign out" by clearing mock user state
+      setUser(null);
+      setUserRole(undefined);
+      setAppLoading(true); // Show loading briefly before auth page (if review mode was disabled)
+      toast({ title: "Admin Review Mode", description: "Exited review session." });
+      // To truly exit review mode, IS_ADMIN_REVIEW_MODE would need to be toggled and app reloaded.
+      // For now, this just clears the user locally.
       return;
     }
     setIsSubmitting(true);
     try {
       await signOut(auth);
+      // onAuthStateChanged will clear user and role
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
     } catch (error: any) {
       console.error('Sign out error:', error);
@@ -229,21 +299,24 @@ export default function DashDispatchProApp() {
     }
   };
 
-  const addLoad = async () => {
-    if (!user) return;
+  const addLoad = async (loadDataToAdd?: Omit<Load, 'id' | 'expenses'>) => {
+    if (!user || user.role !== 'admin') return;
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
       toast({title: "Admin Review Mode", description: "Adding load is disabled."});
       return;
     }
     setIsSubmitting(true);
     const newLoadData: Load = {
-      ...loadForm,
+      ...(loadDataToAdd || loadForm), // Use provided data or current form state
       expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
     };
     try {
       const docRef = await addDoc(collection(db, `users/${user.uid}/loads`), newLoadData);
       setLoads(prev => [...prev, { ...newLoadData, id: docRef.id }]);
-      setLoadForm({ clientId: '', origin: '', destination: '', rate: 0, distance: 0, status: 'pending' });
+      // Reset form only if not using provided data
+      if (!loadDataToAdd) {
+         setLoadForm({ clientId: '', origin: '', destination: '', rate: 0, distance: 0, status: 'pending', cargoDescription: '', requestedPickupDate: '' });
+      }
       toast({ title: "Load Added", description: "New load has been successfully created." });
     } catch (error: any) {
       console.error('Error adding load:', error);
@@ -254,9 +327,8 @@ export default function DashDispatchProApp() {
   };
 
   const updateLoad = async (id: string, updates: Partial<Load>) => {
-    if (!user) return;
+    if (!user || user.role !== 'admin') return;
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid && updates.status) {
-       // Allow status updates for visual review, but don't persist
        setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...updates } : l));
        toast({ title: "Review Mode", description: `Load status changed to ${updates.status} (not saved).` });
        return;
@@ -283,9 +355,42 @@ export default function DashDispatchProApp() {
     setIsSubmitting(false);
   };
 
+  const approveClientLoadRequest = async (request: ClientLoadRequest) => {
+    if (!user || user.role !== 'admin') return;
+    // Pre-fill load form with client request data
+    setLoadForm({
+      clientId: '', // Admin needs to select a client company
+      origin: request.origin,
+      destination: request.destination,
+      rate: 0, // Admin needs to set rate
+      distance: 0, // Admin might need to calculate/set distance
+      status: 'pending', // Initial status for an approved load
+      cargoDescription: request.cargoDescription,
+      requestedPickupDate: request.requestedPickupDate,
+    });
+    // Optionally pass request ID to link or use in addLoad
+    // For now, admin manually fills remaining and creates a new load.
+    // Then, update the client request status.
+    try {
+        // Create the load (this will use the state from setLoadForm above if admin confirms)
+        // This is a placeholder for the actual load creation from the form
+        // For now, let's just switch to the loads tab and prefill the form
+        setActiveTab('loads'); // Switch to loads tab where the form is
+        toast({ title: "Process Client Request", description: "Load form pre-filled. Please complete and save." });
+
+        // Update client request status to 'viewed' or 'processing'
+        const requestRef = doc(db, 'clientLoadRequests', request.id!);
+        await updateDoc(requestRef, { status: 'viewed' });
+        setClientLoadRequests(prev => prev.map(r => r.id === request.id ? {...r, status: 'viewed'} : r));
+    } catch (error: any) {
+        console.error("Error processing client request:", error);
+        toast({variant: "destructive", title: "Error", description: "Could not process client request."});
+    }
+  };
+
 
   const addExpense = async () => {
-    if (!user) return;
+    if (!user || user.role !== 'admin') return;
      if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
       toast({title: "Admin Review Mode", description: "Adding expense is disabled."});
       return;
@@ -304,8 +409,8 @@ export default function DashDispatchProApp() {
     }
   };
 
-  const addClient = async () => {
-    if (!user) return;
+  const addClient = async () => { // Client here means customer of the trucking company
+    if (!user || user.role !== 'admin') return;
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
       toast({title: "Admin Review Mode", description: "Adding client is disabled."});
       return;
@@ -325,9 +430,8 @@ export default function DashDispatchProApp() {
   };
 
   const updateSettings = async () => {
-    if (!user) return;
+    if (!user || user.role !== 'admin') return;
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      // In review mode, update local state for visual feedback but don't persist
       setSettings(settingsForm);
       toast({ title: "Review Mode", description: "Settings updated locally (not saved)." });
       return;
@@ -347,16 +451,14 @@ export default function DashDispatchProApp() {
   };
 
   useEffect(() => {
-    if (IS_ADMIN_REVIEW_MODE && user?.uid === mockReviewUser.uid) {
-      // Skip expense calculation effect in review mode to avoid unintended updates
-      // or if you want to test it visually, ensure mock loads have necessary data
+    if (user?.role !== 'admin' || (IS_ADMIN_REVIEW_MODE && user?.uid === mockReviewUser.uid)) {
       return;
     }
     loads.forEach(load => {
       if (load.status === 'delivered' && !load.expenses.calculated && load.id) {
         const payroll = load.rate * (settings.payrollPercentage / 100);
         const recurring = settings.recurringExpenses.reduce(
-          (sum, expense) => sum + (expense.amount / 30), 0
+          (sum, expense) => sum + (expense.amount / 30), 0 // Assuming monthly expenses, daily portion
         );
         const loadSpecificExpenses = expenses.filter(exp => exp.loadId === load.id);
         const fuelCost = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'fuel')?.amount || 0;
@@ -373,9 +475,10 @@ export default function DashDispatchProApp() {
         });
       }
     });
-  }, [loads, settings, expenses, user]); // Added user dependency
+  }, [loads, settings, expenses, user]);
 
   const generateAgreement = async (loadData: Load) => {
+    if (!user || user.role !== 'admin') return;
     const client = clients.find(c => c.id === loadData.clientId);
     setIsSubmitting(true);
     try {
@@ -391,11 +494,12 @@ export default function DashDispatchProApp() {
       drawText('DASH DISPATCH PRO SERVICE AGREEMENT', 50, height - 50, fontSize + 4);
       
       let yPos = height - 100;
-      drawText(`Client: ${client?.name || 'N/A'}`, 50, yPos); yPos -= 30;
+      drawText(`Client: ${client?.name || loadData.requestedByClientName || 'N/A'}`, 50, yPos); yPos -= 30;
       drawText(`Contact: ${client?.contact || 'N/A'}`, 50, yPos); yPos -= 30;
       drawText(`Route: ${loadData.origin} to ${loadData.destination}`, 50, yPos); yPos -= 30;
       drawText(`Distance: ${loadData.distance} miles`, 50, yPos); yPos -= 30;
       drawText(`Rate: $${loadData.rate.toFixed(2)}`, 50, yPos); yPos -= 30;
+      if (loadData.cargoDescription) { drawText(`Cargo: ${loadData.cargoDescription}`, 50, yPos); yPos -=30; }
       
       if (loadData.expenses.calculated) {
         drawText(`Est. Payroll: $${loadData.expenses.payroll.toFixed(2)}`, 50, yPos); yPos -= 30;
@@ -435,11 +539,15 @@ export default function DashDispatchProApp() {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'loads', label: 'Loads', icon: Package },
     { id: 'expenses', label: 'Expenses', icon: DollarSign },
-    { id: 'clients', label: 'Clients', icon: Users },
+    { id: 'clients', label: 'Clients', icon: Users }, // Client companies
     { id: 'settings', label: 'Settings', icon: Cog },
   ];
 
-  if (appLoading) {
+  // Determine effective loading state
+  const isLoading = appLoading || (auth.currentUser && userRole === undefined && !IS_ADMIN_REVIEW_MODE);
+
+
+  if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -448,62 +556,79 @@ export default function DashDispatchProApp() {
     );
   }
 
-  // Show AuthPage only if not in review mode and user is not logged in
-  if (!user && !IS_ADMIN_REVIEW_MODE) {
+  if (!user && !IS_ADMIN_REVIEW_MODE) { // Not in review mode and no user
     return <AuthPage 
               email={email} 
               setEmail={setEmail} 
               password={password} 
               setPassword={setPassword} 
               handleSignIn={handleSignIn} 
-              handleSignUp={handleSignUp} 
+              handleSignUp={handleSignUp} // Pass the modified handleSignUp
             />;
   }
+  
+  if (user && userRole === 'client') {
+    return <ClientPortalPage user={user} onSignOut={handleSignOut} />;
+  }
+  
+  // Render Admin App if user exists and role is admin
+  if (user && userRole === 'admin') {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <AppHeader userEmail={user.email} onSignOut={handleSignOut} />
+        <AppNav activeTab={activeTab} setActiveTab={setActiveTab} tabs={navTabs} />
+        
+        <main className="flex-grow container mx-auto py-6 px-4 md:px-0">
+          {activeTab === 'dashboard' && <DashboardPage loads={loads} expenses={expenses} />}
+          {activeTab === 'loads' && <LoadsPage 
+                                        loads={loads} 
+                                        clients={clients} // Client companies
+                                        clientLoadRequests={clientLoadRequests}
+                                        loadForm={loadForm}
+                                        setLoadForm={setLoadForm}
+                                        addLoad={addLoad}
+                                        updateLoadStatus={updateLoadStatus}
+                                        generateAgreement={generateAgreement}
+                                        approveClientLoadRequest={approveClientLoadRequest}
+                                        isSubmittingLoad={isSubmitting}
+                                        isUpdatingStatus={isSubmitting}
+                                      />}
+          {activeTab === 'expenses' && <ExpensesPage 
+                                          expenses={expenses} 
+                                          loads={loads}
+                                          expenseForm={expenseForm}
+                                          setExpenseForm={setExpenseForm}
+                                          addExpense={addExpense}
+                                          isSubmittingExpense={isSubmitting}
+                                        />}
+          {activeTab === 'clients' && <ClientsPage // Client companies
+                                        clients={clients}
+                                        clientForm={clientForm}
+                                        setClientForm={setClientForm}
+                                        addClient={addClient}
+                                        setActiveTab={setActiveTab}
+                                        setLoadFormClientId={(clientId) => setLoadForm(prev => ({ ...prev, clientId }))}
+                                        isSubmittingClient={isSubmitting}
+                                       />}
+          {activeTab === 'settings' && <SettingsPage 
+                                          settingsForm={settingsForm}
+                                          setSettingsForm={setSettingsForm}
+                                          updateSettings={updateSettings}
+                                          isSavingSettings={isSubmitting}
+                                        />}
+        </main>
+        
+        <AppFooter />
+      </div>
+    );
+  }
 
+  // Fallback if user exists but role is undefined (should be covered by isLoading) or other edge cases
+  // This could redirect to login or show an error
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader userEmail={user ? user.email : ''} onSignOut={handleSignOut} />
-      <AppNav activeTab={activeTab} setActiveTab={setActiveTab} tabs={navTabs} />
-      
-      <main className="flex-grow container mx-auto py-6 px-4 md:px-0">
-        {activeTab === 'dashboard' && <DashboardPage loads={loads} expenses={expenses} />}
-        {activeTab === 'loads' && <LoadsPage 
-                                      loads={loads} 
-                                      clients={clients} 
-                                      loadForm={loadForm}
-                                      setLoadForm={setLoadForm}
-                                      addLoad={addLoad}
-                                      updateLoadStatus={updateLoadStatus}
-                                      generateAgreement={generateAgreement}
-                                      isSubmittingLoad={isSubmitting}
-                                      isUpdatingStatus={isSubmitting}
-                                    />}
-        {activeTab === 'expenses' && <ExpensesPage 
-                                        expenses={expenses} 
-                                        loads={loads}
-                                        expenseForm={expenseForm}
-                                        setExpenseForm={setExpenseForm}
-                                        addExpense={addExpense}
-                                        isSubmittingExpense={isSubmitting}
-                                      />}
-        {activeTab === 'clients' && <ClientsPage 
-                                      clients={clients}
-                                      clientForm={clientForm}
-                                      setClientForm={setClientForm}
-                                      addClient={addClient}
-                                      setActiveTab={setActiveTab}
-                                      setLoadFormClientId={(clientId) => setLoadForm(prev => ({ ...prev, clientId }))}
-                                      isSubmittingClient={isSubmitting}
-                                     />}
-        {activeTab === 'settings' && <SettingsPage 
-                                        settingsForm={settingsForm}
-                                        setSettingsForm={setSettingsForm}
-                                        updateSettings={updateSettings}
-                                        isSavingSettings={isSubmitting}
-                                      />}
-      </main>
-      
-      <AppFooter />
-    </div>
-  );
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="mt-4 text-muted-foreground">Finalizing session...</p>
+      </div>
+    );
 }

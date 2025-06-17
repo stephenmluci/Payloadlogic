@@ -1,10 +1,12 @@
+
 'use client';
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Truck, KeyRound, Wand2 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Truck, KeyRound, Wand2, UserCheck2 } from 'lucide-react';
 import { generatePassword as genPasswordAI } from '@/ai/flows/generate-password';
 import { useToast } from '@/hooks/use-toast';
 
@@ -14,12 +16,13 @@ type AuthPageProps = {
   password: string;
   setPassword: (password: string) => void;
   handleSignIn: () => Promise<void>;
-  handleSignUp: () => Promise<void>;
+  handleSignUp: (role: 'admin' | 'client') => Promise<void>; // Updated to accept role
 };
 
 export function AuthPage({ email, setEmail, password, setPassword, handleSignIn, handleSignUp }: AuthPageProps) {
   const [isSigningUp, setIsSigningUp] = useState(false);
   const [isGeneratingPassword, setIsGeneratingPassword] = useState(false);
+  const [registerAsClient, setRegisterAsClient] = useState(false);
   const { toast } = useToast();
 
   const toggleFormMode = () => setIsSigningUp(!isSigningUp);
@@ -42,6 +45,9 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
     }
   };
 
+  const onSignUp = () => {
+    handleSignUp(registerAsClient ? 'client' : 'admin');
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
@@ -91,11 +97,23 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
               )}
             </div>
           </div>
+          {isSigningUp && (
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="registerAsClient" 
+                checked={registerAsClient} 
+                onCheckedChange={(checked) => setRegisterAsClient(checked as boolean)}
+              />
+              <Label htmlFor="registerAsClient" className="text-sm font-normal">
+                Register as a Client (for submitting load requests)
+              </Label>
+            </div>
+          )}
         </CardContent>
         <CardFooter className="flex flex-col space-y-4">
           {isSigningUp ? (
-            <Button onClick={handleSignUp} className="w-full" type="button">
-              <KeyRound className="mr-2 h-5 w-5" /> Sign Up
+            <Button onClick={onSignUp} className="w-full" type="button">
+              <UserCheck2 className="mr-2 h-5 w-5" /> Sign Up
             </Button>
           ) : (
             <Button onClick={handleSignIn} className="w-full" type="button">

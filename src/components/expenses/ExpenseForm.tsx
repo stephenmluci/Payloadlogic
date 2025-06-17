@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { Expense, Load } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -15,14 +16,19 @@ type ExpenseFormProps = {
   isSubmitting?: boolean;
 };
 
+const NO_LOAD_VALUE = "_NO_LOAD_SELECTED_"; // Unique value for "None" option
+
 export function ExpenseForm({ expenseForm, setExpenseForm, loads, onSubmit, isSubmitting }: ExpenseFormProps) {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type } = e.target;
     setExpenseForm(prev => ({ ...prev, [name]: type === 'number' ? Number(value) : value }));
   };
 
-  const handleSelectChange = (name: string, value: string) => {
-    setExpenseForm(prev => ({ ...prev, [name]: value }));
+  const handleLoadIdChange = (selectedValue: string) => {
+    setExpenseForm(prev => ({
+      ...prev,
+      loadId: selectedValue === NO_LOAD_VALUE ? '' : selectedValue
+    }));
   };
 
   return (
@@ -37,11 +43,11 @@ export function ExpenseForm({ expenseForm, setExpenseForm, loads, onSubmit, isSu
               <Label htmlFor="date">Date</Label>
               <div className="relative">
                 <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                <Input 
+                <Input
                   id="date"
                   name="date"
                   type="date"
-                  value={expenseForm.date} 
+                  value={expenseForm.date}
                   onChange={handleInputChange}
                   className="pl-10"
                 />
@@ -51,30 +57,30 @@ export function ExpenseForm({ expenseForm, setExpenseForm, loads, onSubmit, isSu
               <Label htmlFor="category">Category</Label>
               <div className="relative">
                 <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                <Input 
+                <Input
                   id="category"
                   name="category"
-                  value={expenseForm.category} 
-                  onChange={handleInputChange} 
+                  value={expenseForm.category}
+                  onChange={handleInputChange}
                   placeholder="e.g., Fuel, Maintenance"
                   className="pl-10"
                 />
               </div>
             </div>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <Label htmlFor="amount">Amount ($)</Label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                <Input 
+                <Input
                   id="amount"
                   name="amount"
                   type="number"
                   step="0.01"
-                  value={expenseForm.amount} 
-                  onChange={handleInputChange} 
+                  value={expenseForm.amount}
+                  onChange={handleInputChange}
                   placeholder="e.g., 150.75"
                   className="pl-10"
                 />
@@ -84,16 +90,15 @@ export function ExpenseForm({ expenseForm, setExpenseForm, loads, onSubmit, isSu
               <Label htmlFor="loadId">Associated Load (Optional)</Label>
                <div className="relative">
                 <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground z-10" />
-                <Select 
-                  value={expenseForm.loadId || ''}
-                  onValueChange={(value) => handleSelectChange('loadId', value)}
-                  name="loadId"
+                <Select
+                  value={expenseForm.loadId || ''} // Shows placeholder if loadId is empty
+                  onValueChange={handleLoadIdChange}
                 >
                   <SelectTrigger id="loadId" className="pl-10">
                     <SelectValue placeholder="Select a load" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value={NO_LOAD_VALUE}>None</SelectItem>
                     {loads.map(load => (
                       <SelectItem key={load.id} value={load.id!}>
                         {load.origin} → {load.destination}
@@ -104,7 +109,7 @@ export function ExpenseForm({ expenseForm, setExpenseForm, loads, onSubmit, isSu
               </div>
             </div>
           </div>
-          
+
           <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting}>
             {isSubmitting ? 'Adding Expense...' : 'Add Expense'}
           </Button>

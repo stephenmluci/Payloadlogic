@@ -2,6 +2,7 @@
 'use client';
 import React, { useState, useEffect, useCallback } from 'react';
 import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
+import type { User as FirebaseUser } from 'firebase/auth'; // Renamed to avoid conflict with local User type
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { PDFDocument, rgb } from 'pdf-lib';
 import { db, auth } from '@/lib/firebase';
@@ -112,7 +113,7 @@ export default function DashDispatchProApp() {
   
   const [settingsForm, setSettingsForm] = useState<Settings>(initialSettings);
 
-  const fetchUserProfileAndData = useCallback(async (currentUser: FirebaseUser) => { // Use FirebaseUser here
+  const fetchUserProfileAndData = useCallback(async (currentUser: FirebaseUser | User) => { 
     if (!currentUser) {
       setUserRole(undefined);
       setAppLoading(false);
@@ -123,7 +124,7 @@ export default function DashDispatchProApp() {
 
     if (IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) {
       currentRole = mockReviewUser.role!;
-      setUser(mockReviewUser); // Ensure full mock user object is set
+      setUser(mockReviewUser); 
     } else {
       try {
         const profileRef = doc(db, `users/${currentUser.uid}/profile`);
@@ -132,29 +133,27 @@ export default function DashDispatchProApp() {
           const userProfile = profileSnap.data() as UserProfile;
           currentRole = userProfile.role;
         } else {
-          // If no profile, default to admin or handle as needed
-          // For now, let's create a default admin profile if one doesn't exist
           await setDoc(profileRef, { role: 'admin' });
           currentRole = 'admin';
         }
       } catch (error) {
         console.error("Error fetching user profile:", error);
         toast({ variant: "destructive", title: "Profile Error", description: "Could not fetch user profile." });
-        // Keep currentRole as admin or handle error appropriately
       }
     }
     
     setUserRole(currentRole);
-    // Augment the FirebaseUser with the role for the app's User state
-    setUser({ ...currentUser, role: currentRole });
+    
+    if (!(IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid)) {
+        setUser({ ...(currentUser as FirebaseUser), role: currentRole });
+    }
 
 
     if (currentRole === 'client') {
-      setAppLoading(false); // Clients don't load admin data
+      setAppLoading(false); 
       return;
     }
 
-    // Admin data fetching
     if (IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) {
       setLoads([]);
       setExpenses([]);
@@ -191,7 +190,6 @@ export default function DashDispatchProApp() {
         setSettingsForm(initialSettings);
       }
 
-      // Fetch client load requests (assuming they are in a top-level collection accessible by admin)
       const clientRequestsSnapshot = await getDocs(collection(db, 'clientLoadRequests'));
       setClientLoadRequests(clientRequestsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as ClientLoadRequest)));
 
@@ -206,24 +204,34 @@ export default function DashDispatchProApp() {
 
 
   useEffect(() => {
+    if (IS_ADMIN_REVIEW_MODE) {
+      // In review mode, directly use the mock user.
+      // fetchUserProfileAndData will set appLoading to false.
+      fetchUserProfileAndData(mockReviewUser);
+      return; // Skip Firebase auth listener for review mode.
+    }
+
+    // Standard Firebase authentication listener
     const unsubscribe = auth.onAuthStateChanged(authUser => {
       if (authUser) {
         fetchUserProfileAndData(authUser);
       } else {
+        // No user is signed in
         setUser(null);
         setUserRole(undefined);
-        setAppLoading(false); 
-        // Clear admin-specific data
+        // Clear all app-specific data
         setLoads([]);
         setExpenses([]);
         setClients([]);
         setSettings(initialSettings);
         setSettingsForm(initialSettings);
         setClientLoadRequests([]);
+        setAppLoading(false); // Ensure loading is false to show AuthPage
       }
     });
-    return () => unsubscribe();
-  }, [fetchUserProfileAndData]);
+    return () => unsubscribe(); // Cleanup subscription
+  }, [fetchUserProfileAndData]); // fetchUserProfileAndData is stable due to useCallback
+
   
 
   const handleSignUp = async (role: 'admin' | 'client' = 'admin') => {
@@ -234,17 +242,16 @@ export default function DashDispatchProApp() {
     setIsSubmitting(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      // Create user profile with role
       const profileRef = doc(db, `users/${userCredential.user.uid}/profile`);
       await setDoc(profileRef, { role });
 
       if (role === 'admin') {
         const settingsRef = doc(db, `users/${userCredential.user.uid}/settings`, SETTINGS_DOC_ID);
         await setDoc(settingsRef, initialSettings);
-        setSettings(initialSettings); // Local state for immediate use if needed
+        setSettings(initialSettings); 
         setSettingsForm(initialSettings);
       }
-      setUserRole(role); // Set role immediately
+      setUserRole(role); 
       toast({ title: "Account Created", description: `Welcome! You are registered as ${role}.` });
     } catch (error: any) {
       console.error('Sign up error:', error);
@@ -256,16 +263,13 @@ export default function DashDispatchProApp() {
 
   const handleSignIn = async () => {
     if (IS_ADMIN_REVIEW_MODE) {
-      // For review mode, user is already "signed in" as mock.
-      // fetchUserProfileAndData should handle setting role and data for mock user.
       toast({ title: "Admin Review Mode", description: "Already in review session." });
-      fetchUserProfileAndData(mockReviewUser); // Re-trigger mock data load if needed
+      fetchUserProfileAndData(mockReviewUser); 
       return;
     }
     setIsSubmitting(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will trigger fetchUserProfileAndData
       toast({ title: "Signed In", description: "Welcome back!" });
     } catch (error: any) {
       console.error('Sign in error:', error);
@@ -277,19 +281,15 @@ export default function DashDispatchProApp() {
 
   const handleSignOut = async () => {
     if (IS_ADMIN_REVIEW_MODE) {
-      // In review mode, effectively "sign out" by clearing mock user state
       setUser(null);
       setUserRole(undefined);
-      setAppLoading(true); // Show loading briefly before auth page (if review mode was disabled)
+      setAppLoading(true); 
       toast({ title: "Admin Review Mode", description: "Exited review session." });
-      // To truly exit review mode, IS_ADMIN_REVIEW_MODE would need to be toggled and app reloaded.
-      // For now, this just clears the user locally.
       return;
     }
     setIsSubmitting(true);
     try {
       await signOut(auth);
-      // onAuthStateChanged will clear user and role
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
     } catch (error: any) {
       console.error('Sign out error:', error);
@@ -307,13 +307,12 @@ export default function DashDispatchProApp() {
     }
     setIsSubmitting(true);
     const newLoadData: Load = {
-      ...(loadDataToAdd || loadForm), // Use provided data or current form state
+      ...(loadDataToAdd || loadForm), 
       expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
     };
     try {
       const docRef = await addDoc(collection(db, `users/${user.uid}/loads`), newLoadData);
       setLoads(prev => [...prev, { ...newLoadData, id: docRef.id }]);
-      // Reset form only if not using provided data
       if (!loadDataToAdd) {
          setLoadForm({ clientId: '', origin: '', destination: '', rate: 0, distance: 0, status: 'pending', cargoDescription: '', requestedPickupDate: '' });
       }
@@ -357,28 +356,20 @@ export default function DashDispatchProApp() {
 
   const approveClientLoadRequest = async (request: ClientLoadRequest) => {
     if (!user || user.role !== 'admin') return;
-    // Pre-fill load form with client request data
     setLoadForm({
-      clientId: '', // Admin needs to select a client company
+      clientId: '', 
       origin: request.origin,
       destination: request.destination,
-      rate: 0, // Admin needs to set rate
-      distance: 0, // Admin might need to calculate/set distance
-      status: 'pending', // Initial status for an approved load
+      rate: 0, 
+      distance: 0, 
+      status: 'pending', 
       cargoDescription: request.cargoDescription,
       requestedPickupDate: request.requestedPickupDate,
     });
-    // Optionally pass request ID to link or use in addLoad
-    // For now, admin manually fills remaining and creates a new load.
-    // Then, update the client request status.
     try {
-        // Create the load (this will use the state from setLoadForm above if admin confirms)
-        // This is a placeholder for the actual load creation from the form
-        // For now, let's just switch to the loads tab and prefill the form
-        setActiveTab('loads'); // Switch to loads tab where the form is
+        setActiveTab('loads'); 
         toast({ title: "Process Client Request", description: "Load form pre-filled. Please complete and save." });
 
-        // Update client request status to 'viewed' or 'processing'
         const requestRef = doc(db, 'clientLoadRequests', request.id!);
         await updateDoc(requestRef, { status: 'viewed' });
         setClientLoadRequests(prev => prev.map(r => r.id === request.id ? {...r, status: 'viewed'} : r));
@@ -409,7 +400,7 @@ export default function DashDispatchProApp() {
     }
   };
 
-  const addClient = async () => { // Client here means customer of the trucking company
+  const addClient = async () => { 
     if (!user || user.role !== 'admin') return;
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
       toast({title: "Admin Review Mode", description: "Adding client is disabled."});
@@ -458,7 +449,7 @@ export default function DashDispatchProApp() {
       if (load.status === 'delivered' && !load.expenses.calculated && load.id) {
         const payroll = load.rate * (settings.payrollPercentage / 100);
         const recurring = settings.recurringExpenses.reduce(
-          (sum, expense) => sum + (expense.amount / 30), 0 // Assuming monthly expenses, daily portion
+          (sum, expense) => sum + (expense.amount / 30), 0 
         );
         const loadSpecificExpenses = expenses.filter(exp => exp.loadId === load.id);
         const fuelCost = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'fuel')?.amount || 0;
@@ -539,11 +530,10 @@ export default function DashDispatchProApp() {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'loads', label: 'Loads', icon: Package },
     { id: 'expenses', label: 'Expenses', icon: DollarSign },
-    { id: 'clients', label: 'Clients', icon: Users }, // Client companies
+    { id: 'clients', label: 'Clients', icon: Users }, 
     { id: 'settings', label: 'Settings', icon: Cog },
   ];
 
-  // Determine effective loading state
   const isLoading = appLoading || (auth.currentUser && userRole === undefined && !IS_ADMIN_REVIEW_MODE);
 
 
@@ -556,14 +546,14 @@ export default function DashDispatchProApp() {
     );
   }
 
-  if (!user && !IS_ADMIN_REVIEW_MODE) { // Not in review mode and no user
+  if (!user && !IS_ADMIN_REVIEW_MODE) { 
     return <AuthPage 
               email={email} 
               setEmail={setEmail} 
               password={password} 
               setPassword={setPassword} 
               handleSignIn={handleSignIn} 
-              handleSignUp={handleSignUp} // Pass the modified handleSignUp
+              handleSignUp={handleSignUp} 
             />;
   }
   
@@ -571,7 +561,6 @@ export default function DashDispatchProApp() {
     return <ClientPortalPage user={user} onSignOut={handleSignOut} />;
   }
   
-  // Render Admin App if user exists and role is admin
   if (user && userRole === 'admin') {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -582,7 +571,7 @@ export default function DashDispatchProApp() {
           {activeTab === 'dashboard' && <DashboardPage loads={loads} expenses={expenses} />}
           {activeTab === 'loads' && <LoadsPage 
                                         loads={loads} 
-                                        clients={clients} // Client companies
+                                        clients={clients} 
                                         clientLoadRequests={clientLoadRequests}
                                         loadForm={loadForm}
                                         setLoadForm={setLoadForm}
@@ -601,7 +590,7 @@ export default function DashDispatchProApp() {
                                           addExpense={addExpense}
                                           isSubmittingExpense={isSubmitting}
                                         />}
-          {activeTab === 'clients' && <ClientsPage // Client companies
+          {activeTab === 'clients' && <ClientsPage 
                                         clients={clients}
                                         clientForm={clientForm}
                                         setClientForm={setClientForm}
@@ -623,8 +612,6 @@ export default function DashDispatchProApp() {
     );
   }
 
-  // Fallback if user exists but role is undefined (should be covered by isLoading) or other edge cases
-  // This could redirect to login or show an error
   return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -632,3 +619,4 @@ export default function DashDispatchProApp() {
       </div>
     );
 }
+

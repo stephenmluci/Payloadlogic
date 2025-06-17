@@ -50,7 +50,7 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
           <div className="flex justify-center items-center mb-4">
             <Truck className="h-12 w-12 text-primary" />
           </div>
-          <CardTitle className="text-3xl font-headline">Truckin' Smart Assist</CardTitle>
+          <CardTitle className="text-3xl font-headline">Dash Dispatch Pro</CardTitle>
           <CardDescription>{isSigningUp ? "Create a new account" : "Sign in to your account"}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">

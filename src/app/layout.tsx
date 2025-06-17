@@ -3,7 +3,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: 'Truckin\' Smart Assist',
+  title: 'Dash Dispatch Pro',
   description: 'Hotshot Trucking Management App',
 };
 

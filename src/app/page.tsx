@@ -65,13 +65,14 @@ const initialSettings: Settings = {
 
 const SETTINGS_DOC_ID = 'userSettings'; 
 
-export default function TruckinSmartApp() {
+export default function DashDispatchProApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [user, setUser] = useState<User | null>(IS_ADMIN_REVIEW_MODE ? mockReviewUser : null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   
   const [appLoading, setAppLoading] = useState(IS_ADMIN_REVIEW_MODE ? false : true); 
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { toast } = useToast();
   
@@ -185,7 +186,7 @@ export default function TruckinSmartApp() {
       await setDoc(settingsRef, initialSettings);
       setSettings(initialSettings);
       setSettingsForm(initialSettings);
-      toast({ title: "Account Created", description: "Welcome to Truckin' Smart Assist!" });
+      toast({ title: "Account Created", description: "Welcome to Dash Dispatch Pro!" });
     } catch (error: any) {
       console.error('Sign up error:', error);
       toast({ variant: "destructive", title: "Sign Up Error", description: error.message });
@@ -387,7 +388,7 @@ export default function TruckinSmartApp() {
         page.drawText(text, { x, y, size, color });
       };
 
-      drawText('TRUCKIN\' SMART SERVICE AGREEMENT', 50, height - 50, fontSize + 4);
+      drawText('DASH DISPATCH PRO SERVICE AGREEMENT', 50, height - 50, fontSize + 4);
       
       let yPos = height - 100;
       drawText(`Client: ${client?.name || 'N/A'}`, 50, yPos); yPos -= 30;
@@ -442,7 +443,7 @@ export default function TruckinSmartApp() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="mt-4 text-muted-foreground">Loading Truckin' Smart Assist...</p>
+        <p className="mt-4 text-muted-foreground">Loading Dash Dispatch Pro...</p>
       </div>
     );
   }

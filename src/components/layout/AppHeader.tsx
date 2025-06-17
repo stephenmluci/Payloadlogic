@@ -13,7 +13,7 @@ export function AppHeader({ userEmail, onSignOut }: AppHeaderProps) {
       <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
         <div className="flex items-center gap-2">
           <Truck className="h-8 w-8" />
-          <h1 className="text-2xl font-bold font-headline">Truckin' Smart Assist</h1>
+          <h1 className="text-2xl font-bold font-headline">Dash Dispatch Pro</h1>
         </div>
         {userEmail && (
           <div className="flex items-center space-x-4">

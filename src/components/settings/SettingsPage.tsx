@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { Settings, RecurringExpenseItem } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -5,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Percent, Droplet, Repeat, Trash2, PlusCircle, Save } from 'lucide-react';
+import { Percent, Droplet, Repeat, Trash2, PlusCircle, Save, Building2, Hash, User, Phone, Mail } from 'lucide-react';
 
 type SettingsPageProps = {
   settingsForm: Settings;
@@ -15,10 +16,16 @@ type SettingsPageProps = {
 };
 
 export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, isSavingSettings }: SettingsPageProps) {
-  
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setSettingsForm(prev => ({ ...prev, [name]: Number(value) }));
+    // Specific numeric fields
+    if (name === 'payrollPercentage' || name === 'defCostPerGallon') {
+      setSettingsForm(prev => ({ ...prev, [name]: Number(value) }));
+    } else {
+      // All other fields (including new carrier fields which are strings)
+      setSettingsForm(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const addRecurringExpense = () => {
@@ -30,9 +37,9 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
 
   const updateRecurringExpense = (index: number, field: keyof RecurringExpenseItem, value: string | number) => {
     const updatedExpenses = [...settingsForm.recurringExpenses];
-    updatedExpenses[index] = { 
-      ...updatedExpenses[index], 
-      [field]: field === 'amount' ? Number(value) : value 
+    updatedExpenses[index] = {
+      ...updatedExpenses[index],
+      [field]: field === 'amount' ? Number(value) : value
     };
     setSettingsForm(prev => ({ ...prev, recurringExpenses: updatedExpenses }));
   };
@@ -54,46 +61,112 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
         <h1 className="text-3xl font-bold font-headline mb-2">System Settings</h1>
         <p className="text-muted-foreground">Configure default operational parameters for your business.</p>
       </div>
-      
+
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle className="text-2xl font-headline">Operational Defaults</CardTitle>
-          <CardDescription>Set percentages, costs, and recurring expenses.</CardDescription>
+          <CardTitle className="text-2xl font-headline">Business Configuration</CardTitle>
+          <CardDescription>Set operational defaults, carrier information, and recurring expenses.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Operational Defaults Section */}
           <div>
-            <Label htmlFor="payrollPercentage">Payroll Percentage (%)</Label>
-            <div className="relative">
-              <Percent className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-              <Input 
-                id="payrollPercentage"
-                name="payrollPercentage"
-                type="number"
-                value={settingsForm.payrollPercentage} 
-                onChange={handleInputChange}
-                className="pl-10"
-              />
+            <h3 className="text-lg font-semibold mb-3">Operational Defaults</h3>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="payrollPercentage">Payroll Percentage (%)</Label>
+                <div className="relative">
+                  <Percent className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Input
+                    id="payrollPercentage"
+                    name="payrollPercentage"
+                    type="number"
+                    value={settingsForm.payrollPercentage}
+                    onChange={handleInputChange}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="defCostPerGallon">DEF Cost per Gallon ($)</Label>
+                <div className="relative">
+                  <Droplet className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Input
+                    id="defCostPerGallon"
+                    name="defCostPerGallon"
+                    type="number"
+                    step="0.01"
+                    value={settingsForm.defCostPerGallon}
+                    onChange={handleInputChange}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
             </div>
           </div>
-          
-          <div>
-            <Label htmlFor="defCostPerGallon">DEF Cost per Gallon ($)</Label>
-            <div className="relative">
-              <Droplet className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-              <Input 
-                id="defCostPerGallon"
-                name="defCostPerGallon"
-                type="number"
-                step="0.01"
-                value={settingsForm.defCostPerGallon} 
-                onChange={handleInputChange}
-                className="pl-10"
-              />
-            </div>
-          </div>
-          
+
           <Separator />
 
+          {/* Carrier Information Section */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3 flex items-center">
+              <Building2 className="h-5 w-5 mr-2 text-primary" /> Carrier Information
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="carrierName">Carrier Name</Label>
+                <Input id="carrierName" name="carrierName" value={settingsForm.carrierName || ''} onChange={handleInputChange} placeholder="Your Company Name" />
+              </div>
+              <div>
+                <Label htmlFor="carrierAddress">Carrier Address</Label>
+                <Input id="carrierAddress" name="carrierAddress" value={settingsForm.carrierAddress || ''} onChange={handleInputChange} placeholder="123 Trucking Way, City, State ZIP" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="carrierDotNumber">DOT Number</Label>
+                  <div className="relative">
+                    <Hash className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <Input id="carrierDotNumber" name="carrierDotNumber" value={settingsForm.carrierDotNumber || ''} onChange={handleInputChange} className="pl-10" placeholder="e.g., 1234567" />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="carrierMcNumber">MC Number</Label>
+                  <div className="relative">
+                    <Hash className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <Input id="carrierMcNumber" name="carrierMcNumber" value={settingsForm.carrierMcNumber || ''} onChange={handleInputChange} className="pl-10" placeholder="e.g., 987654" />
+                  </div>
+                </div>
+              </div>
+              <h4 className="text-md font-medium pt-2">Carrier Contact</h4>
+              <div>
+                <Label htmlFor="carrierContactName">Contact Full Name</Label>
+                 <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Input id="carrierContactName" name="carrierContactName" value={settingsForm.carrierContactName || ''} onChange={handleInputChange} className="pl-10" placeholder="e.g., John Doe" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="carrierContactPhone">Contact Phone</Label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <Input id="carrierContactPhone" name="carrierContactPhone" type="tel" value={settingsForm.carrierContactPhone || ''} onChange={handleInputChange} className="pl-10" placeholder="e.g., (555) 123-4567" />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="carrierContactEmail">Contact Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <Input id="carrierContactEmail" name="carrierContactEmail" type="email" value={settingsForm.carrierContactEmail || ''} onChange={handleInputChange} className="pl-10" placeholder="e.g., contact@example.com" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Recurring Expenses Section */}
           <div>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold flex items-center">
@@ -103,26 +176,26 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
                 <PlusCircle className="h-4 w-4 mr-2" /> Add Expense
               </Button>
             </div>
-            
+
             <div className="space-y-3">
               {settingsForm.recurringExpenses.map((expense, index) => (
                 <div key={index} className="flex items-center space-x-2 p-3 bg-muted/30 rounded-md">
-                  <Input 
-                    value={expense.name} 
-                    onChange={(e) => updateRecurringExpense(index, 'name', e.target.value)} 
-                    placeholder="Expense name (e.g., Insurance)" 
+                  <Input
+                    value={expense.name}
+                    onChange={(e) => updateRecurringExpense(index, 'name', e.target.value)}
+                    placeholder="Expense name (e.g., Insurance)"
                     className="flex-grow"
                   />
-                  <Input 
+                  <Input
                     type="number"
-                    value={expense.amount} 
-                    onChange={(e) => updateRecurringExpense(index, 'amount', e.target.value)} 
-                    placeholder="Amount" 
+                    value={expense.amount}
+                    onChange={(e) => updateRecurringExpense(index, 'amount', e.target.value)}
+                    placeholder="Amount"
                     className="w-32"
                   />
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => removeRecurringExpense(index)}
                     aria-label="Remove expense"
                   >
@@ -139,7 +212,7 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
         <CardFooter className="border-t pt-6">
           <Button onClick={handleSaveSettings} className="w-full sm:w-auto" disabled={isSavingSettings}>
             <Save className="h-4 w-4 mr-2" />
-            {isSavingSettings ? 'Saving...' : 'Save Settings'}
+            {isSavingSettings ? 'Saving...' : 'Save All Settings'}
           </Button>
         </CardFooter>
       </Card>

@@ -20,7 +20,7 @@ export type Load = {
   cargoDescription?: string;
   requestedPickupDate?: string;
   // Fields related to original client request if this load was created from one
-  originalClientRequestId?: string; 
+  originalClientRequestId?: string;
   requestedByClientName?: string; // Name of the client user who submitted
   requestedByAuthUid?: string; // Auth UID of the client user
 };
@@ -38,7 +38,7 @@ export type Client = { // This is the trucking company's client (e.g., Acme Corp
   name: string;
   contact: string;
   // Potentially link to a Firebase Auth UID if this client company has a primary portal user
-  // authUid?: string; 
+  // authUid?: string;
 };
 
 export type RecurringExpenseItem = {
@@ -50,6 +50,13 @@ export type Settings = {
   payrollPercentage: number;
   defCostPerGallon: number;
   recurringExpenses: RecurringExpenseItem[];
+  carrierName: string;
+  carrierAddress: string;
+  carrierDotNumber: string;
+  carrierMcNumber: string;
+  carrierContactName: string;
+  carrierContactPhone: string;
+  carrierContactEmail: string;
 };
 
 // Represents the authenticated user, potentially with an app-specific role
@@ -74,6 +81,5 @@ export type ClientLoadRequest = {
   submissionTimestamp: Timestamp;
   status: 'new' | 'viewed' | 'accepted' | 'rejected';
   // Optional: link to the Load document created by admin
-  createdLoadId?: string; 
+  createdLoadId?: string;
 };
-

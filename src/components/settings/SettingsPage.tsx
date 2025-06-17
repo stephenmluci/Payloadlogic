@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Percent, Droplet, Repeat, Trash2, PlusCircle, Save, Building2, Hash, User, Phone, Mail } from 'lucide-react';
+import { Percent, Droplet, Repeat, Trash2, PlusCircle, Save, Building2, Hash, User, Phone, Mail, Fuel } from 'lucide-react';
 
 type SettingsPageProps = {
   settingsForm: Settings;
@@ -20,7 +20,7 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     // Specific numeric fields
-    if (name === 'payrollPercentage' || name === 'defCostPerGallon') {
+    if (name === 'payrollPercentage' || name === 'defaultFuelCostPerGallon' || name === 'defCostPerGallon') {
       setSettingsForm(prev => ({ ...prev, [name]: Number(value) }));
     } else {
       // All other fields (including new carrier fields which are strings)
@@ -81,6 +81,22 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
                     name="payrollPercentage"
                     type="number"
                     value={settingsForm.payrollPercentage}
+                    onChange={handleInputChange}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="defaultFuelCostPerGallon">Default Fuel Cost per Gallon ($)</Label>
+                <div className="relative">
+                  <Fuel className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Input
+                    id="defaultFuelCostPerGallon"
+                    name="defaultFuelCostPerGallon"
+                    type="number"
+                    step="0.01"
+                    value={settingsForm.defaultFuelCostPerGallon}
                     onChange={handleInputChange}
                     className="pl-10"
                   />

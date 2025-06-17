@@ -59,6 +59,7 @@ const mockReviewUser: User = {
 
 const initialSettings: Settings = {
   payrollPercentage: 25,
+  defaultFuelCostPerGallon: 3.80, // Added default value
   defCostPerGallon: 3.5,
   recurringExpenses: [
     { name: 'Insurance', amount: 1200 },

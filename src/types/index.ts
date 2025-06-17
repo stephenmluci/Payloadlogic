@@ -48,6 +48,7 @@ export type RecurringExpenseItem = {
 
 export type Settings = {
   payrollPercentage: number;
+  defaultFuelCostPerGallon: number; // Added this line
   defCostPerGallon: number;
   recurringExpenses: RecurringExpenseItem[];
   carrierName: string;
@@ -83,3 +84,4 @@ export type ClientLoadRequest = {
   // Optional: link to the Load document created by admin
   createdLoadId?: string;
 };
+

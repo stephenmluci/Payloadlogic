@@ -18,7 +18,8 @@ export type Load = {
     calculated: boolean;
   };
   cargoDescription?: string;
-  requestedPickupDate?: string;
+  requestedPickupDate?: string; // Should be ISO date string
+  specialTerms?: string; // Added for more detailed contracts
   // Fields related to original client request if this load was created from one
   originalClientRequestId?: string;
   requestedByClientName?: string; // Name of the client user who submitted
@@ -48,7 +49,7 @@ export type RecurringExpenseItem = {
 
 export type Settings = {
   payrollPercentage: number;
-  defaultFuelCostPerGallon: number; // Added this line
+  defaultFuelCostPerGallon: number;
   defCostPerGallon: number;
   recurringExpenses: RecurringExpenseItem[];
   carrierName: string;
@@ -58,6 +59,9 @@ export type Settings = {
   carrierContactName: string;
   carrierContactPhone: string;
   carrierContactEmail: string;
+  loadingFee?: number; // Optional: for contracts
+  detentionFeeRate?: number; // Optional: for contracts, per hour
+  defaultSpecialTerms?: string; // Optional: default terms for contracts
 };
 
 // Represents the authenticated user, potentially with an app-specific role
@@ -84,4 +88,3 @@ export type ClientLoadRequest = {
   // Optional: link to the Load document created by admin
   createdLoadId?: string;
 };
-

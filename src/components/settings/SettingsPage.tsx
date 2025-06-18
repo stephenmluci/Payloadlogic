@@ -4,24 +4,27 @@ import type { Settings, RecurringExpenseItem } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Percent, Droplet, Repeat, Trash2, PlusCircle, Save, Building2, Hash, User, Phone, Mail, Fuel } from 'lucide-react';
+import { Percent, Droplet, Repeat, Trash2, PlusCircle, Save, Building2, Hash, User, Phone, Mail, Fuel, Briefcase, FileText } from 'lucide-react';
 
 type SettingsPageProps = {
   settingsForm: Settings;
   setSettingsForm: React.Dispatch<React.SetStateAction<Settings>>;
   updateSettings: () => Promise<void>;
   isSavingSettings?: boolean;
+  initialSettings: Settings; // Added to handle reset or default display
 };
 
-export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, isSavingSettings }: SettingsPageProps) {
+export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, isSavingSettings, initialSettings }: SettingsPageProps) {
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     // Specific numeric fields
-    if (name === 'payrollPercentage' || name === 'defaultFuelCostPerGallon' || name === 'defCostPerGallon') {
-      setSettingsForm(prev => ({ ...prev, [name]: Number(value) }));
+    const numericFields = ['payrollPercentage', 'defaultFuelCostPerGallon', 'defCostPerGallon', 'loadingFee', 'detentionFeeRate'];
+    if (numericFields.includes(name)) {
+      setSettingsForm(prev => ({ ...prev, [name]: value === '' ? undefined : Number(value) })); // Allow unsetting optional numeric fields
     } else {
       // All other fields (including new carrier fields which are strings)
       setSettingsForm(prev => ({ ...prev, [name]: value }));
@@ -65,7 +68,7 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="text-2xl font-headline">Business Configuration</CardTitle>
-          <CardDescription>Set operational defaults, carrier information, and recurring expenses.</CardDescription>
+          <CardDescription>Set operational defaults, carrier information, contract terms, and recurring expenses.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Operational Defaults Section */}
@@ -179,6 +182,61 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
               </div>
             </div>
           </div>
+
+          <Separator />
+          
+          {/* Contract Defaults Section */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3 flex items-center">
+              <FileText className="h-5 w-5 mr-2 text-primary" /> Contract Defaults
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="loadingFee">Default Loading/Unloading Fee ($) (Optional)</Label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Input
+                    id="loadingFee"
+                    name="loadingFee"
+                    type="number"
+                    step="0.01"
+                    value={settingsForm.loadingFee === undefined ? '' : settingsForm.loadingFee}
+                    onChange={handleInputChange}
+                    placeholder="e.g., 50.00"
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="detentionFeeRate">Default Detention Fee Rate ($/hr) (Optional)</Label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Input
+                    id="detentionFeeRate"
+                    name="detentionFeeRate"
+                    type="number"
+                    step="0.01"
+                    value={settingsForm.detentionFeeRate === undefined ? '' : settingsForm.detentionFeeRate}
+                    onChange={handleInputChange}
+                    placeholder="e.g., 75.00"
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="defaultSpecialTerms">Default Special Terms for Contracts</Label>
+                <Textarea
+                  id="defaultSpecialTerms"
+                  name="defaultSpecialTerms"
+                  value={settingsForm.defaultSpecialTerms || ''}
+                  onChange={handleInputChange}
+                  placeholder="Enter standard terms and conditions that apply to most contracts..."
+                  rows={4}
+                />
+              </div>
+            </div>
+          </div>
+
 
           <Separator />
 

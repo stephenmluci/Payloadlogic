@@ -59,27 +59,27 @@ const mockReviewUser: User = {
 
 const initialSettings: Settings = {
   payrollPercentage: 25,
-  defaultFuelCostPerGallon: 3.80, // Added default value
+  defaultFuelCostPerGallon: 3.80,
   defCostPerGallon: 3.5,
   recurringExpenses: [
     { name: 'Insurance', amount: 1200 },
     { name: 'Truck Payment', amount: 2500 },
   ],
-  carrierName: '',
-  carrierAddress: '',
-  carrierDotNumber: '',
-  carrierMcNumber: '',
-  carrierContactName: '',
-  carrierContactPhone: '',
-  carrierContactEmail: '',
+  carrierName: 'Mock Carrier LLC',
+  carrierAddress: '123 Test Rd, Review City, ST 54321',
+  carrierDotNumber: 'DOT123456',
+  carrierMcNumber: 'MC654321',
+  carrierContactName: 'Review Contact',
+  carrierContactPhone: '(555) 000-1111',
+  carrierContactEmail: 'contact@mockcarrier.com',
 };
 
 const SETTINGS_DOC_ID = 'userSettings';
 
 export default function DashDispatchProApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [user, setUser] = useState<User | null>(IS_ADMIN_REVIEW_MODE ? mockReviewUser : null);
-  const [userRole, setUserRole] = useState<'admin' | 'client' | undefined>(IS_ADMIN_REVIEW_MODE ? mockReviewUser.role : undefined);
+  const [user, setUser] = useState<User | null>(null); // Initial state set by useEffect
+  const [userRole, setUserRole] = useState<'admin' | 'client' | undefined>(undefined);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -132,8 +132,8 @@ export default function DashDispatchProApp() {
 
     if (IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) {
       currentRole = mockReviewUser.role!;
-      setUser(mockReviewUser);
-    } else {
+      setUser(mockReviewUser); // Ensure mock user is fully set
+    } else if (!IS_ADMIN_REVIEW_MODE) { // Only fetch profile if not in review mode with mock user
       try {
         const profileRef = doc(db, `users/${currentUser.uid}/profile`);
         const profileSnap = await getDoc(profileRef);
@@ -141,6 +141,8 @@ export default function DashDispatchProApp() {
           const userProfile = profileSnap.data() as UserProfile;
           currentRole = userProfile.role;
         } else {
+          // For a real user, if profile doesn't exist, create it (e.g., defaulting to admin or based on signup)
+          // This part might need adjustment based on how non-review users get roles
           await setDoc(profileRef, { role: 'admin' });
           currentRole = 'admin';
         }
@@ -149,76 +151,78 @@ export default function DashDispatchProApp() {
         toast({ variant: "destructive", title: "Profile Error", description: "Could not fetch user profile." });
       }
     }
-
+    
     setUserRole(currentRole);
 
-    if (!(IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid)) {
-        setUser({ ...(currentUser as FirebaseUser), role: currentRole });
+    if (!(IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) && !IS_ADMIN_REVIEW_MODE) {
+         setUser({ ...(currentUser as FirebaseUser), role: currentRole });
     }
 
 
-    if (currentRole === 'client') {
+    if (currentRole === 'client' && !IS_ADMIN_REVIEW_MODE) { // Client specific data logic if any
       setAppLoading(false);
       return;
     }
-
+    
+    // Data fetching for Admin or Review Mode Admin
     if (IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) {
-      setLoads([]);
+      setLoads([]); // Start with empty data for review testing
       setExpenses([]);
       setClients([]);
-      // For review mode, initialize settings (including new carrier fields)
-      const reviewSettings = { ...initialSettings };
+      const reviewSettings = { ...initialSettings }; // Use a copy of initial settings
       setSettings(reviewSettings);
       setSettingsForm(reviewSettings);
       setClientLoadRequests([]);
       setAppLoading(false);
       return;
     }
+    
+    // Actual data fetching for logged-in admin (not in review mode)
+    if (!IS_ADMIN_REVIEW_MODE) {
+        setAppLoading(true);
+        try {
+          const collectionsToFetch = [
+            { name: 'loads', setter: setLoads },
+            { name: 'expenses', setter: setExpenses },
+            { name: 'clients', setter: setClients },
+          ];
 
-    setAppLoading(true);
-    try {
-      const collectionsToFetch = [
-        { name: 'loads', setter: setLoads },
-        { name: 'expenses', setter: setExpenses },
-        { name: 'clients', setter: setClients },
-      ];
+          for (const { name, setter } of collectionsToFetch) {
+            const snapshot = await getDocs(collection(db, `users/${currentUser.uid}/${name}`));
+            setter(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
+          }
 
-      for (const { name, setter } of collectionsToFetch) {
-        const snapshot = await getDocs(collection(db, `users/${currentUser.uid}/${name}`));
-        setter(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
-      }
+          const settingsRef = doc(db, `users/${currentUser.uid}/settings`, SETTINGS_DOC_ID);
+          const settingsSnap = await getDoc(settingsRef);
+          if (settingsSnap.exists()) {
+            const settingsData = settingsSnap.data() as Settings;
+            const completeSettings = { ...initialSettings, ...settingsData };
+            setSettings(completeSettings);
+            setSettingsForm(completeSettings);
+          } else {
+            await setDoc(settingsRef, initialSettings);
+            setSettings(initialSettings);
+            setSettingsForm(initialSettings);
+          }
 
-      const settingsRef = doc(db, `users/${currentUser.uid}/settings`, SETTINGS_DOC_ID);
-      const settingsSnap = await getDoc(settingsRef);
-      if (settingsSnap.exists()) {
-        const settingsData = settingsSnap.data() as Settings;
-        // Ensure all settings fields are present, merging with initialSettings for safety
-        const completeSettings = { ...initialSettings, ...settingsData };
-        setSettings(completeSettings);
-        setSettingsForm(completeSettings);
-      } else {
-        await setDoc(settingsRef, initialSettings);
-        setSettings(initialSettings);
-        setSettingsForm(initialSettings);
-      }
+          // Fetch client load requests (these are global, not user-specific)
+          const clientRequestsSnapshot = await getDocs(collection(db, 'clientLoadRequests'));
+          setClientLoadRequests(clientRequestsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as ClientLoadRequest)));
 
-      const clientRequestsSnapshot = await getDocs(collection(db, 'clientLoadRequests'));
-      setClientLoadRequests(clientRequestsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as ClientLoadRequest)));
-
-
-    } catch (error: any) {
-      console.error('Error fetching admin data:', error);
-      toast({ variant: "destructive", title: "Fetch Error", description: error.message });
-    } finally {
-      setAppLoading(false);
+        } catch (error: any) {
+          console.error('Error fetching admin data:', error);
+          toast({ variant: "destructive", title: "Fetch Error", description: error.message });
+        } finally {
+          setAppLoading(false);
+        }
     }
   }, [toast]);
 
 
   useEffect(() => {
     if (IS_ADMIN_REVIEW_MODE) {
-      fetchUserProfileAndData(mockReviewUser);
-      return;
+      fetchUserProfileAndData(mockReviewUser); // Directly use mock user
+      return; // Skip Firebase auth listener in review mode
     }
 
     const unsubscribe = auth.onAuthStateChanged(authUser => {
@@ -237,13 +241,12 @@ export default function DashDispatchProApp() {
       }
     });
     return () => unsubscribe();
-  }, [fetchUserProfileAndData]);
-
+  }, [fetchUserProfileAndData]); // fetchUserProfileAndData is memoized
 
 
   const handleSignUp = async (role: 'admin' | 'client' = 'admin') => {
     if (IS_ADMIN_REVIEW_MODE) {
-      toast({ title: "Admin Review Mode", description: "Sign up is disabled." });
+      toast({ title: "Admin Review Mode", description: "Sign up is disabled in review mode." });
       return;
     }
     setIsSubmitting(true);
@@ -254,11 +257,11 @@ export default function DashDispatchProApp() {
 
       if (role === 'admin') {
         const settingsRef = doc(db, `users/${userCredential.user.uid}/settings`, SETTINGS_DOC_ID);
-        await setDoc(settingsRef, initialSettings); // Save initial settings for new admin
-        setSettings(initialSettings);
+        await setDoc(settingsRef, initialSettings);
+        setSettings(initialSettings); // Set for current session
         setSettingsForm(initialSettings);
       }
-      setUserRole(role);
+      // User state will be updated by onAuthStateChanged
       toast({ title: "Account Created", description: `Welcome! You are registered as ${role}.` });
     } catch (error: any) {
       console.error('Sign up error:', error);
@@ -270,15 +273,17 @@ export default function DashDispatchProApp() {
 
   const handleSignIn = async () => {
     if (IS_ADMIN_REVIEW_MODE) {
-      toast({ title: "Admin Review Mode", description: "Already in review session." });
-      fetchUserProfileAndData(mockReviewUser);
+      fetchUserProfileAndData(mockReviewUser); // Re-initialize review session
+      toast({ title: "Admin Review Mode", description: "Review session refreshed." });
       return;
     }
     setIsSubmitting(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      // User state will be updated by onAuthStateChanged
       toast({ title: "Signed In", description: "Welcome back!" });
-    } catch (error: any) {
+    } catch (error: any)
+     {
       console.error('Sign in error:', error);
       toast({ variant: "destructive", title: "Sign In Error", description: error.message });
     } finally {
@@ -290,15 +295,16 @@ export default function DashDispatchProApp() {
     if (IS_ADMIN_REVIEW_MODE) {
       setUser(null);
       setUserRole(undefined);
-      setAppLoading(true);
-      toast({ title: "Admin Review Mode", description: "Exited review session." });
-      // To re-enter review mode immediately, you might need to manually trigger AuthPage or similar
-      // For now, it will show loading and then likely the AuthPage if loading finishes.
+      setAppLoading(true); // Trigger loading state
+      // This will cause useEffect to re-run fetchUserProfileAndData(mockReviewUser)
+      // effectively "refreshing" the review session.
+      toast({ title: "Admin Review Mode", description: "Review session refreshed." });
       return;
     }
     setIsSubmitting(true);
     try {
       await signOut(auth);
+      // User state will be cleared by onAuthStateChanged
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
     } catch (error: any) {
       console.error('Sign out error:', error);
@@ -310,12 +316,25 @@ export default function DashDispatchProApp() {
 
   const addLoad = async (loadDataToAdd?: Omit<Load, 'id' | 'expenses'>) => {
     if (!user || user.role !== 'admin') return;
+    setIsSubmitting(true);
+
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      toast({title: "Admin Review Mode", description: "Adding load is disabled."});
+      const newLoadData: Load = {
+        id: `mock-load-${Date.now()}`, // Mock ID
+        ...(loadDataToAdd || loadForm),
+        expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
+      };
+      setLoads(prev => [...prev, newLoadData]);
+      if (!loadDataToAdd) { // Reset form if not pre-filled (e.g. from client request)
+         setLoadForm({ clientId: '', origin: '', destination: '', rate: 0, distance: 0, status: 'pending', cargoDescription: '', requestedPickupDate: '' });
+      }
+      toast({ title: "Admin Review: Load Added", description: "Load added to local view (not saved)." });
+      setIsSubmitting(false);
       return;
     }
-    setIsSubmitting(true);
-    const newLoadData: Load = {
+
+    // Actual Firestore operation
+    const newLoadData: Omit<Load, 'id'> = { // For Firestore, don't include ID yet
       ...(loadDataToAdd || loadForm),
       expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
     };
@@ -333,72 +352,102 @@ export default function DashDispatchProApp() {
       setIsSubmitting(false);
     }
   };
-
-  const updateLoad = async (id: string, updates: Partial<Load>) => {
+  
+  const updateLoad = useCallback(async (id: string, updates: Partial<Load>) => {
     if (!user || user.role !== 'admin') return;
-    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid && updates.status) {
-       setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...updates } : l));
-       toast({ title: "Review Mode", description: `Load status changed to ${updates.status} (not saved).` });
-       return;
-    }
-     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      toast({title: "Admin Review Mode", description: "Updating load is disabled."});
+
+    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
+      setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...updates } : l));
+      let description = "Load details updated locally (not saved).";
+      if (updates.status) {
+        description = `Load status changed to ${updates.status} (not saved).`;
+      } else if (updates.expenses?.calculated) {
+        description = "Load expenses calculated and updated locally (not saved)."
+      }
+      toast({ title: "Admin Review: Load Updated", description });
       return;
     }
+
+    // Actual update logic for non-review mode
     try {
       await updateDoc(doc(db, `users/${user.uid}/loads`, id), updates);
       setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...updates } : l));
       if (updates.status) {
         toast({ title: "Load Updated", description: `Load status changed to ${updates.status}.` });
+      } else if (updates.expenses?.calculated) {
+        toast({ title: "Load Updated", description: "Load expenses calculated and saved." });
+      } else {
+         toast({ title: "Load Updated", description: "Load details saved." });
       }
     } catch (error: any) {
       console.error('Error updating load:', error);
       toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
     }
-  };
+  }, [user, toast, setLoads]);
+
 
   const updateLoadStatus = async (id: string, status: Load['status']) => {
-    setIsSubmitting(true);
+    setIsSubmitting(true); // Consider if this is needed if updateLoad handles its own submission state
     await updateLoad(id, { status });
     setIsSubmitting(false);
   };
 
   const approveClientLoadRequest = async (request: ClientLoadRequest) => {
     if (!user || user.role !== 'admin') return;
-    setLoadForm({
-      clientId: '', // Admin will need to select or create a client company from their list
+    
+    // Pre-fill form data for both review and actual mode
+    const loadDataFromRequest = {
+      clientId: '', // Admin will need to select or create a client company
       origin: request.origin,
       destination: request.destination,
       rate: 0, // Admin to set
       distance: 0, // Admin to set or calculate
-      status: 'pending', // Initial status
+      status: 'pending' as Load['status'],
       cargoDescription: request.cargoDescription,
       requestedPickupDate: request.requestedPickupDate,
       originalClientRequestId: request.id,
       requestedByClientName: request.requestedByClientName,
       requestedByAuthUid: request.requestedByClientUid,
-    });
-    try {
-        setActiveTab('loads');
-        toast({ title: "Process Client Request", description: "Load form pre-filled. Please complete and save." });
+    };
+    setLoadForm(loadDataFromRequest);
+    setActiveTab('loads'); // Switch to loads tab to complete the form
 
+    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
+      setClientLoadRequests(prev => prev.map(r => r.id === request.id ? {...r, status: 'viewed'} : r));
+      toast({ title: "Admin Review: Client Request Processed", description: "Load form pre-filled locally. Request status updated to 'viewed' (not saved)." });
+      return;
+    }
+    
+    // Actual mode: Update Firestore
+    try {
         const requestRef = doc(db, 'clientLoadRequests', request.id!);
         await updateDoc(requestRef, { status: 'viewed' }); // Mark as viewed
         setClientLoadRequests(prev => prev.map(r => r.id === request.id ? {...r, status: 'viewed'} : r));
+        toast({ title: "Process Client Request", description: "Load form pre-filled. Please complete and save. Request marked as viewed." });
     } catch (error: any) {
         console.error("Error processing client request:", error);
-        toast({variant: "destructive", title: "Error", description: "Could not process client request."});
+        toast({variant: "destructive", title: "Error", description: "Could not update client request status."});
     }
   };
 
 
   const addExpense = async () => {
     if (!user || user.role !== 'admin') return;
-     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      toast({title: "Admin Review Mode", description: "Adding expense is disabled."});
+    setIsSubmitting(true);
+
+    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
+      const newExpenseWithId: Expense = {
+        ...expenseForm,
+        id: `mock-expense-${Date.now()}` // Generate a mock ID
+      };
+      setExpenses(prev => [...prev, newExpenseWithId]);
+      setExpenseForm({ date: new Date().toISOString().split('T')[0], category: '', amount: 0, loadId: '' });
+      toast({ title: "Admin Review: Expense Added", description: "Expense added to local view (not saved)." });
+      setIsSubmitting(false);
       return;
     }
-    setIsSubmitting(true);
+
+    // Actual Firestore operation
     try {
       const docRef = await addDoc(collection(db, `users/${user.uid}/expenses`), expenseForm);
       setExpenses(prev => [...prev, { ...expenseForm, id: docRef.id }]);
@@ -414,11 +463,21 @@ export default function DashDispatchProApp() {
 
   const addClient = async () => {
     if (!user || user.role !== 'admin') return;
+    setIsSubmitting(true);
+
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      toast({title: "Admin Review Mode", description: "Adding client is disabled."});
+      const newClientWithId: Client = {
+        ...clientForm,
+        id: `mock-client-${Date.now()}` // Generate a mock ID
+      };
+      setClients(prev => [...prev, newClientWithId]);
+      setClientForm({ name: '', contact: '' });
+      toast({ title: "Admin Review: Client Added", description: "Client added to local view (not saved)." });
+      setIsSubmitting(false);
       return;
     }
-    setIsSubmitting(true);
+
+    // Actual Firestore operation
     try {
       const docRef = await addDoc(collection(db, `users/${user.uid}/clients`), clientForm);
       setClients(prev => [...prev, { ...clientForm, id: docRef.id }]);
@@ -434,12 +493,17 @@ export default function DashDispatchProApp() {
 
   const updateSettings = async () => {
     if (!user || user.role !== 'admin') return;
+    setIsSubmitting(true);
+
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
       setSettings(settingsForm); // Update local state for review
-      toast({ title: "Review Mode", description: "Settings updated locally (not saved)." });
+      setSettingsForm(settingsForm); // Ensure form reflects saved local state
+      toast({ title: "Admin Review: Settings Updated", description: "Settings updated locally (not saved)." });
+      setIsSubmitting(false);
       return;
     }
-    setIsSubmitting(true);
+
+    // Actual Firestore operation
     try {
       const settingsRef = doc(db, `users/${user.uid}/settings`, SETTINGS_DOC_ID);
       await updateDoc(settingsRef, settingsForm);
@@ -454,21 +518,22 @@ export default function DashDispatchProApp() {
   };
 
   useEffect(() => {
-    if (user?.role !== 'admin' || (IS_ADMIN_REVIEW_MODE && user?.uid === mockReviewUser.uid)) {
+    // Only run this effect if user is an admin
+    if (user?.role !== 'admin') {
       return;
     }
-    // Only run this effect if user is an admin and not in review mode (for actual calculations)
-    // Or, if you want calculations to show in review mode based on mock data, remove the review mode check from the condition
+  
     loads.forEach(load => {
       if (load.status === 'delivered' && !load.expenses.calculated && load.id) {
         const payroll = load.rate * (settings.payrollPercentage / 100);
         const recurring = settings.recurringExpenses.reduce(
-          (sum, expense) => sum + (expense.amount / 30), 0 // Assuming recurring expenses are monthly
+          (sum, expense) => sum + (expense.amount / 30), 0 // Assuming recurring expenses are monthly, pro-rated daily for load
         );
         const loadSpecificExpenses = expenses.filter(exp => exp.loadId === load.id);
         const fuelCost = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'fuel')?.amount || 0;
-        const defCost = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def')?.amount || (load.distance / 250 * settings.defCostPerGallon); // Example: 250 miles per gallon of DEF
+        const defCost = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def')?.amount || (load.distance / 250 * settings.defCostPerGallon); 
 
+        // The updateLoad call will be handled by its own IS_ADMIN_REVIEW_MODE check
         updateLoad(load.id, {
           expenses: {
             payroll,
@@ -480,15 +545,15 @@ export default function DashDispatchProApp() {
         });
       }
     });
-  }, [loads, settings, expenses, user]); // Removed `updateLoad` from deps as it's stable if wrapped in useCallback or defined outside
+  }, [loads, settings, expenses, user, updateLoad]); // updateLoad is now a dependency
 
   const generateAgreement = async (loadData: Load) => {
     if (!user || user.role !== 'admin') return;
     const client = clients.find(c => c.id === loadData.clientId);
-    setIsSubmitting(true);
+    setIsSubmitting(true); // Might want a specific submitting state for PDF generation
     try {
       const pdfDoc = await PDFDocument.create();
-      const page = pdfDoc.addPage([600, 800]); // Standard US Letter size roughly in points
+      const page = pdfDoc.addPage([600, 800]); 
       const { width, height } = page.getSize();
       const fontSize = 10;
       const titleFontSize = 14;
@@ -503,7 +568,7 @@ export default function DashDispatchProApp() {
       drawText('DASH DISPATCH PRO - SERVICE AGREEMENT', margin, height - margin, titleFontSize, rgb(0.1, 0.1, 0.1));
       let yPos = height - margin - 30;
 
-      // Carrier Information Section
+      // Carrier Information Section (from settings state)
       drawText('CARRIER INFORMATION:', margin, yPos, fontSize, rgb(0.3, 0.3, 0.3)); yPos -= 15;
       drawText(`Name: ${settings.carrierName || 'N/A'}`, margin, yPos); yPos -= 15;
       drawText(`Address: ${settings.carrierAddress || 'N/A'}`, margin, yPos); yPos -= 15;
@@ -576,7 +641,7 @@ export default function DashDispatchProApp() {
     { id: 'settings', label: 'Settings', icon: Cog },
   ];
 
-  const isLoading = appLoading || (auth.currentUser && userRole === undefined && !IS_ADMIN_REVIEW_MODE);
+  const isLoading = appLoading || (user === null && !IS_ADMIN_REVIEW_MODE) || (user !== null && userRole === undefined && !IS_ADMIN_REVIEW_MODE) || (IS_ADMIN_REVIEW_MODE && !user);
 
 
   if (isLoading) {
@@ -588,7 +653,7 @@ export default function DashDispatchProApp() {
     );
   }
 
-  if (!user && !IS_ADMIN_REVIEW_MODE) {
+  if (!user && !IS_ADMIN_REVIEW_MODE) { // Show AuthPage if no user and not in forced review mode
     return <AuthPage
               email={email}
               setEmail={setEmail}
@@ -598,11 +663,15 @@ export default function DashDispatchProApp() {
               handleSignUp={handleSignUp}
             />;
   }
+  
+  // At this point, user is either mockReviewUser (if IS_ADMIN_REVIEW_MODE) or an actual authenticated user.
+  // userRole should also be set.
 
   if (user && userRole === 'client') {
     return <ClientPortalPage user={user} onSignOut={handleSignOut} />;
   }
 
+  // User is admin (either mock or real)
   if (user && userRole === 'admin') {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -621,7 +690,7 @@ export default function DashDispatchProApp() {
                                         updateLoadStatus={updateLoadStatus}
                                         generateAgreement={generateAgreement}
                                         approveClientLoadRequest={approveClientLoadRequest}
-                                        isSubmittingLoad={isSubmitting}
+                                        isSubmittingLoad={isSubmitting} // Consider more granular submitting states
                                         isUpdatingStatus={isSubmitting}
                                       />}
           {activeTab === 'expenses' && <ExpensesPage
@@ -653,7 +722,9 @@ export default function DashDispatchProApp() {
       </div>
     );
   }
-
+  
+  // Fallback loading state if conditions above aren't met (e.g., role not yet defined)
+  // This can happen briefly during initial load or if logic has an edge case.
   return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -661,3 +732,4 @@ export default function DashDispatchProApp() {
       </div>
     );
 }
+

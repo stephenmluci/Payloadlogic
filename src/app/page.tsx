@@ -72,6 +72,9 @@ const initialSettings: Settings = {
   carrierContactName: 'Review Contact',
   carrierContactPhone: '(555) 000-1111',
   carrierContactEmail: 'contact@mockcarrier.com',
+  loadingFee: 50,
+  detentionFeeRate: 75,
+  defaultSpecialTerms: "Standard carrier terms apply. Full terms available upon request. Payment due upon delivery unless otherwise agreed in writing. Late payments may incur additional charges. Carrier's liability for cargo loss or damage is limited to $100,000 unless otherwise agreed in writing and specified in Special Terms."
 };
 
 const SETTINGS_DOC_ID = 'userSettings';
@@ -294,7 +297,11 @@ export default function DashDispatchProApp() {
     if (IS_ADMIN_REVIEW_MODE) {
       setUser(null); // Clear mock user
       setUserRole(undefined);
-      setAppLoading(true); // This will trigger the useEffect to call fetchUserProfileAndData(mockReviewUser) again
+      setAppLoading(true); 
+      // This timeout allows the loading state to be visible before re-initializing the review mode.
+      setTimeout(() => {
+         fetchUserProfileAndData(mockReviewUser);
+      }, 50);
       toast({ title: "Admin Review Mode", description: "Review session refreshed." });
       return;
     }
@@ -554,7 +561,7 @@ export default function DashDispatchProApp() {
     setIsSubmitting(true); 
     try {
       const pdfDoc = await PDFDocument.create();
-      const page = pdfDoc.addPage([600, 850]); // Adjusted page height for more content
+      let page = pdfDoc.addPage([600, 850]); // Adjusted page height for more content
       const { width, height } = page.getSize();
       
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -671,7 +678,7 @@ export default function DashDispatchProApp() {
 
       for (const line of termsLines) {
           if (yPos < margin + 100) { // Check if new page is needed for terms
-              page.addPage([600, 850]);
+              page = pdfDoc.addPage([600, 850]);
               yPos = height - margin;
               yPos = drawTextLine('SPECIAL TERMS & CONDITIONS (Continued)', boldFont, subTitleFontSize, margin, yPos);
               yPos -= lineSpacing * 0.75;
@@ -683,7 +690,7 @@ export default function DashDispatchProApp() {
 
       // Ensure enough space for signatures, otherwise add a new page
       if (yPos < margin + 150) { 
-        page.addPage([600, 850]);
+        page = pdfDoc.addPage([600, 850]);
         yPos = height - margin;
       }
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
@@ -716,7 +723,7 @@ export default function DashDispatchProApp() {
 
       // 8. Concluding Clause
       if (yPos < margin + 50) { 
-        page.addPage([600, 850]);
+        page = pdfDoc.addPage([600, 850]);
         yPos = height - margin;
       }
       const footerText1 = "This agreement constitutes the entire understanding between the parties named herein.";
@@ -842,3 +849,5 @@ export default function DashDispatchProApp() {
       </div>
     );
 }
+
+    

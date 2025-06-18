@@ -4,10 +4,12 @@ import type { Timestamp } from 'firebase/firestore';
 
 export type Load = {
   id?: string;
-  loadNumber?: string; // Added for unique load identifier
-  clientId: string; // Refers to Client.id (the company client)
+  loadNumber?: string;
+  clientId: string; 
   origin: string;
   destination: string;
+  pickupDateTime: string; // ISO string for date and time
+  deliveryDateTime: string; // ISO string for date and time
   rate: number;
   distance: number;
   status: 'pending' | 'in-transit' | 'delivered' | 'client-request-approved';
@@ -19,11 +21,10 @@ export type Load = {
     calculated: boolean;
   };
   cargoDescription?: string;
-  requestedPickupDate?: string; // Should be ISO date string
   specialTerms?: string;
-  originalClientRequestId?: string;
-  requestedByClientName?: string;
-  requestedByAuthUid?: string;
+  originalClientRequestId?: string; 
+  requestedByClientName?: string; // Name of the person who requested, if from client portal
+  requestedByAuthUid?: string; // Auth UID of the client user who requested
 };
 
 export type Expense = {
@@ -36,8 +37,11 @@ export type Expense = {
 
 export type Client = { // This is the trucking company's client (e.g., Acme Corp)
   id?: string;
-  name: string;
-  contact: string;
+  companyName: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  address?: string; // Optional: client's main address
 };
 
 export type RecurringExpenseItem = {
@@ -75,7 +79,7 @@ export type ClientLoadRequest = {
   origin: string;
   destination: string;
   cargoDescription: string;
-  requestedPickupDate: string; // ISO Date string
+  requestedPickupDate: string; // ISO Date string (YYYY-MM-DD from client input)
   requestedByClientUid: string;
   requestedByClientName: string | null;
   submissionTimestamp: Timestamp;

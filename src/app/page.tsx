@@ -8,6 +8,8 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { db, auth } from '@/lib/firebase';
 import type { User, Load, Expense, Client, Settings, UserProfile, ClientLoadRequest } from '@/types';
 import { useToast } from "@/hooks/use-toast";
+import { format as formatDate } from 'date-fns';
+
 
 // Page Components
 import { AuthPage } from '@/components/auth/AuthPage';
@@ -84,6 +86,26 @@ function formatLoadNumber(num: number): string {
   return `L-${String(num).padStart(4, '0')}`;
 }
 
+// Helper to format date-time string for input type="datetime-local"
+const toDateTimeLocal = (isoString?: string): string => {
+  if (!isoString) return new Date().toISOString().slice(0, 16);
+  try {
+    const date = new Date(isoString);
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      // If isoString is just a date (YYYY-MM-DD), append a default time
+      if (isoString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        return `${isoString}T09:00`;
+      }
+      return new Date().toISOString().slice(0, 16); // Fallback for invalid date string
+    }
+    return date.toISOString().slice(0, 16);
+  } catch (e) {
+    return new Date().toISOString().slice(0, 16); // Fallback for parsing errors
+  }
+};
+
+
 export default function DashDispatchProApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [user, setUser] = useState<User | null>(null);
@@ -108,11 +130,12 @@ export default function DashDispatchProApp() {
     clientId: '',
     origin: '',
     destination: '',
+    pickupDateTime: toDateTimeLocal(),
+    deliveryDateTime: toDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()), // Default to next day
     rate: 0,
     distance: 0,
     status: 'pending',
     cargoDescription: '',
-    requestedPickupDate: '',
   });
 
   const [expenseForm, setExpenseForm] = useState<Omit<Expense, 'id'>>({
@@ -123,8 +146,11 @@ export default function DashDispatchProApp() {
   });
 
   const [clientForm, setClientForm] = useState<Omit<Client, 'id'>>({
-    name: '',
-    contact: '',
+    companyName: '',
+    contactName: '',
+    contactEmail: '',
+    contactPhone: '',
+    address: '',
   });
 
   const [settingsForm, setSettingsForm] = useState<Settings>(initialSettings);
@@ -275,7 +301,7 @@ export default function DashDispatchProApp() {
 
   const handleSignIn = async () => {
     if (IS_ADMIN_REVIEW_MODE) {
-      fetchUserProfileAndData(mockReviewUser);
+      fetchUserProfileAndData(mockReviewUser); // Re-trigger mock user flow if in review mode
       toast({ title: "Admin Review Mode", description: "Review session refreshed." });
       return;
     }
@@ -294,12 +320,14 @@ export default function DashDispatchProApp() {
 
   const handleSignOut = async () => {
     if (IS_ADMIN_REVIEW_MODE) {
-      setUser(null);
+      setUser(null); // Clear the mock user
       setUserRole(undefined);
-      setAppLoading(true); 
+      setAppLoading(true); // Show loading state briefly
+      // To simulate re-login for review, re-trigger fetchUserProfileAndData
+      // This part ensures if a 'sign out' action is tested, it can be 'signed back in' easily in review.
       setTimeout(() => {
-         fetchUserProfileAndData(mockReviewUser);
-      }, 50);
+         fetchUserProfileAndData(mockReviewUser); // Re-establish mock user for continued review
+      }, 50); // Small delay to mimic async operation
       toast({ title: "Admin Review Mode", description: "Review session refreshed." });
       return;
     }
@@ -321,16 +349,11 @@ export default function DashDispatchProApp() {
 
     const dataToUse = loadDataToAdd || loadForm;
     
-    // Determine the next load number
-    // This is a simplified approach. For production, a more robust counter (e.g., Firestore transaction) is better.
     let nextLoadNumeric = 1;
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
         nextLoadNumeric = loads.length + 1;
     } else if (user) {
         const loadsCollectionRef = collection(db, `users/${user.uid}/loads`);
-        // Fetch the last load ordered by loadNumber to determine the next one.
-        // This assumes loadNumber is stored and sortable. If not, fallback to count or a dedicated counter.
-        // For simplicity, we'll use the current count for non-review mode too, with acknowledgement of its limits.
         const q = query(loadsCollectionRef, orderBy('loadNumber', 'desc'), limit(1));
         try {
             const querySnapshot = await getDocs(q);
@@ -341,7 +364,6 @@ export default function DashDispatchProApp() {
                     if (!isNaN(lastNumericPart)) {
                         nextLoadNumeric = lastNumericPart + 1;
                     } else {
-                         // Fallback if parsing fails, use total count + 1
                         const allLoadsSnapshot = await getDocs(loadsCollectionRef);
                         nextLoadNumeric = allLoadsSnapshot.size + 1;
                     }
@@ -351,7 +373,7 @@ export default function DashDispatchProApp() {
                 }
             } else {
                  const allLoadsSnapshot = await getDocs(loadsCollectionRef);
-                 nextLoadNumeric = allLoadsSnapshot.size + 1; // If no loads, start from 1
+                 nextLoadNumeric = allLoadsSnapshot.size + 1;
             }
         } catch (e) {
             console.error("Error fetching last load number, falling back to collection size:", e);
@@ -371,7 +393,8 @@ export default function DashDispatchProApp() {
       };
       setLoads(prev => [...prev, newLoadData]);
       if (!loadDataToAdd) {
-         setLoadForm({ clientId: '', origin: '', destination: '', rate: 0, distance: 0, status: 'pending', cargoDescription: '', requestedPickupDate: '' });
+        // Reset form for next entry only if not pre-filled by client request
+         setLoadForm({ clientId: '', origin: '', destination: '', pickupDateTime: toDateTimeLocal(), deliveryDateTime: toDateTimeLocal(new Date(Date.now() + 24*60*60*1000).toISOString()), rate: 0, distance: 0, status: 'pending', cargoDescription: '' });
       }
       toast({ title: "Admin Review: Load Added", description: `Load ${newLoadNumber} added to local view (not saved).` });
       setIsSubmitting(false);
@@ -387,7 +410,7 @@ export default function DashDispatchProApp() {
       const docRef = await addDoc(collection(db, `users/${user.uid}/loads`), newLoadDataForFirestore);
       setLoads(prev => [...prev, { ...newLoadDataForFirestore, id: docRef.id }]);
       if (!loadDataToAdd) {
-         setLoadForm({ clientId: '', origin: '', destination: '', rate: 0, distance: 0, status: 'pending', cargoDescription: '', requestedPickupDate: '' });
+        setLoadForm({ clientId: '', origin: '', destination: '', pickupDateTime: toDateTimeLocal(), deliveryDateTime: toDateTimeLocal(new Date(Date.now() + 24*60*60*1000).toISOString()), rate: 0, distance: 0, status: 'pending', cargoDescription: '' });
       }
       toast({ title: "Load Added", description: `New load ${newLoadNumber} has been successfully created.` });
     } catch (error: any) {
@@ -427,7 +450,7 @@ export default function DashDispatchProApp() {
       console.error('Error updating load:', error);
       toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
     }
-  }, [user, toast]);
+  }, [user, toast, loads]); // Added 'loads' to dependency array for review mode nextLoadNumeric calculation if it were to use it.
 
 
   const updateLoadStatus = async (id: string, status: Load['status']) => {
@@ -437,15 +460,24 @@ export default function DashDispatchProApp() {
   const approveClientLoadRequest = async (request: ClientLoadRequest) => {
     if (!user || user.role !== 'admin') return;
     
+    // Attempt to find a matching client by auth UID or name to pre-fill clientId
+    let prefilledClientId = '';
+    const matchingClientByAuthUid = clients.find(c => request.requestedByAuthUid && c.id === request.requestedByAuthUid); // This assumes client.id could be auth UID. Unlikely.
+    // A better match might be looking for a Client whose contact details match request.requestedByClientName or email if available
+    // For now, let's keep it simple: admin has to select the client from dropdown.
+
     const loadDataFromRequest: Omit<Load, 'id' | 'expenses' | 'loadNumber'> = {
-      clientId: '', 
+      clientId: prefilledClientId, 
       origin: request.origin,
       destination: request.destination,
+      // For pickupDateTime, use the client's requested date and default time, or current if not provided
+      pickupDateTime: toDateTimeLocal(request.requestedPickupDate),
+      // DeliveryDateTime will need to be set by admin
+      deliveryDateTime: toDateTimeLocal(new Date(new Date(request.requestedPickupDate || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString()), // Default to 24h after pickup
       rate: 0, 
       distance: 0, 
-      status: 'pending' as Load['status'],
+      status: 'client-request-approved' as Load['status'],
       cargoDescription: request.cargoDescription,
-      requestedPickupDate: request.requestedPickupDate,
       originalClientRequestId: request.id,
       requestedByClientName: request.requestedByClientName,
       requestedByAuthUid: request.requestedByClientUid,
@@ -461,8 +493,6 @@ export default function DashDispatchProApp() {
     
     try {
         const requestRef = doc(db, 'clientLoadRequests', request.id!);
-        // Mark as viewed, and potentially link to a pending load concept or the actual load ID once created.
-        // For now, just marking as viewed and admin will create the load manually using pre-filled form.
         await updateDoc(requestRef, { status: 'viewed' }); 
         setClientLoadRequests(prev => prev.map(r => r.id === request.id ? {...r, status: 'viewed'} : r));
         toast({ title: "Process Client Request", description: "Load form pre-filled. Please complete and save the load. Request marked as viewed." });
@@ -512,7 +542,7 @@ export default function DashDispatchProApp() {
         id: `mock-client-${Date.now()}`
       };
       setClients(prev => [...prev, newClientWithId]);
-      setClientForm({ name: '', contact: '' });
+      setClientForm({ companyName: '', contactName: '', contactEmail: '', contactPhone: '', address: '' });
       toast({ title: "Admin Review: Client Added", description: "Client added to local view (not saved)." });
       setIsSubmitting(false);
       return;
@@ -521,7 +551,7 @@ export default function DashDispatchProApp() {
     try {
       const docRef = await addDoc(collection(db, `users/${user.uid}/clients`), clientForm);
       setClients(prev => [...prev, { ...clientForm, id: docRef.id }]);
-      setClientForm({ name: '', contact: '' });
+      setClientForm({ companyName: '', contactName: '', contactEmail: '', contactPhone: '', address: '' });
       toast({ title: "Client Added", description: "New client has been successfully added." });
     } catch (error: any) {
       console.error('Error adding client:', error);
@@ -537,7 +567,7 @@ export default function DashDispatchProApp() {
 
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
       setSettings(settingsForm);
-      setSettingsForm(settingsForm);
+      // setSettingsForm is implicitly updated as it's the source
       toast({ title: "Admin Review: Settings Updated", description: "Settings updated locally (not saved)." });
       setIsSubmitting(false);
       return;
@@ -565,11 +595,11 @@ export default function DashDispatchProApp() {
       if (load.status === 'delivered' && !load.expenses.calculated && load.id) {
         const payroll = load.rate * (settings.payrollPercentage / 100);
         const recurring = settings.recurringExpenses.reduce(
-          (sum, expense) => sum + (expense.amount / 30), 0
+          (sum, expense) => sum + (expense.amount / 30), 0 // Simplified: assumes all recurring expenses are monthly
         );
         const loadSpecificExpenses = expenses.filter(exp => exp.loadId === load.id);
         const fuelCost = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'fuel')?.amount || 0;
-        const defCost = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def')?.amount || (load.distance / 250 * settings.defCostPerGallon); 
+        const defCost = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def')?.amount || (load.distance / 250 * settings.defCostPerGallon); // Simplified DEF calc
 
         updateLoad(load.id, {
           expenses: {
@@ -587,10 +617,14 @@ export default function DashDispatchProApp() {
   const generateAgreement = async (loadData: Load) => {
     if (!user || user.role !== 'admin') return;
     const client = clients.find(c => c.id === loadData.clientId);
+    if (!client) {
+        toast({ variant: "destructive", title: "Client Not Found", description: "Cannot generate agreement without client details." });
+        return;
+    }
     setIsSubmitting(true); 
     try {
       const pdfDoc = await PDFDocument.create();
-      let page = pdfDoc.addPage([600, 850]);
+      let page = pdfDoc.addPage([600, 850]); // Standard US Letter size roughly
       const { width, height } = page.getSize();
       
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -600,14 +634,14 @@ export default function DashDispatchProApp() {
       const titleFontSize = 16;
       const subTitleFontSize = 12;
       const smallFontSize = 8;
-      const lineSpacing = 15;
+      const lineSpacing = 15; // Adjusted line spacing
       const sectionSpacing = 25;
       const margin = 50;
       let yPos = height - margin;
 
       const drawTextLine = (text: string, fontToUse: any, size: number, x: number, y: number, color = rgb(0,0,0)) => {
         page.drawText(text, { x, y, font: fontToUse, size, color });
-        return y - size - (size > 10 ? 5 : 3);
+        return y - size - (size > 10 ? 5 : 3); // Adjust spacing based on font size
       };
       
       const drawBoldTextLine = (text: string, x: number, y: number) => {
@@ -622,6 +656,7 @@ export default function DashDispatchProApp() {
         page.drawLine({start: {x: x1, y: y1}, end: {x: x2, y: y2}, thickness, color: rgb(0.7,0.7,0.7) });
       }
 
+      // Title and Load ID
       yPos = drawTextLine('Hotshot Trucking Agreement', boldFont, titleFontSize, margin, yPos, rgb(0.1, 0.1, 0.1));
       if (loadData.loadNumber) {
         yPos = drawTextLine(`Load ID: ${loadData.loadNumber}`, boldFont, subTitleFontSize - 2, width - margin - 100, yPos + titleFontSize + 2); // Position to the right
@@ -632,41 +667,53 @@ export default function DashDispatchProApp() {
       yPos = drawRegularTextLine(`Date of Agreement: ${agreementDate}`, margin, yPos);
       yPos -= sectionSpacing;
 
+      // Parties Section
       yPos = drawTextLine('PARTIES', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       
+      // Carrier Info
       yPos = drawBoldTextLine('Carrier:', margin, yPos);
       yPos = drawRegularTextLine(settings.carrierName || 'N/A', margin + 10, yPos);
       yPos = drawRegularTextLine(settings.carrierAddress || 'N/A', margin + 10, yPos);
       yPos = drawRegularTextLine(`DOT#: ${settings.carrierDotNumber || 'N/A'} | MC#: ${settings.carrierMcNumber || 'N/A'}`, margin + 10, yPos);
       yPos = drawRegularTextLine(`Contact: ${settings.carrierContactName || 'N/A'} (${settings.carrierContactPhone || 'N/A'})`, margin + 10, yPos);
+      yPos = drawRegularTextLine(`Email: ${settings.carrierContactEmail || 'N/A'}`, margin + 10, yPos);
       yPos -= lineSpacing;
 
+      // Customer Info
       yPos = drawBoldTextLine('Customer:', margin, yPos);
-      const customerName = client?.name || loadData.requestedByClientName || 'N/A';
-      yPos = drawRegularTextLine(customerName, margin + 10, yPos);
-      if (client?.contact) {
-        yPos = drawRegularTextLine(`Contact: ${client.contact}`, margin + 10, yPos);
+      yPos = drawRegularTextLine(client.companyName || 'N/A', margin + 10, yPos);
+      if (client.address) {
+        yPos = drawRegularTextLine(client.address, margin + 10, yPos);
       }
+      yPos = drawRegularTextLine(`Contact: ${client.contactName || 'N/A'}`, margin + 10, yPos);
+      yPos = drawRegularTextLine(`Phone: ${client.contactPhone || 'N/A'}`, margin + 10, yPos);
+      yPos = drawRegularTextLine(`Email: ${client.contactEmail || 'N/A'}`, margin + 10, yPos);
       yPos -= sectionSpacing;
       
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
+      // Load Details Section
       yPos = drawTextLine('LOAD DETAILS', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       yPos = drawBoldTextLine('Description:', margin, yPos);
       yPos = drawRegularTextLine(loadData.cargoDescription || 'N/A', margin + 10, yPos);
+      
       yPos = drawBoldTextLine('Pickup Location:', margin, yPos);
       yPos = drawRegularTextLine(loadData.origin, margin + 10, yPos);
+      if (loadData.pickupDateTime) {
+        yPos = drawRegularTextLine(`Scheduled Pickup: ${formatDate(new Date(loadData.pickupDateTime), 'PPP p')}`, margin + 10, yPos);
+      }
+
       yPos = drawBoldTextLine('Delivery Location:', margin, yPos);
       yPos = drawRegularTextLine(loadData.destination, margin + 10, yPos);
-      if (loadData.requestedPickupDate) {
-        yPos = drawBoldTextLine('Requested Pickup Date:', margin, yPos);
-        yPos = drawRegularTextLine(new Date(loadData.requestedPickupDate).toLocaleDateString(), margin + 10, yPos);
+       if (loadData.deliveryDateTime) {
+        yPos = drawRegularTextLine(`Scheduled Delivery: ${formatDate(new Date(loadData.deliveryDateTime), 'PPP p')}`, margin + 10, yPos);
       }
       yPos -= sectionSpacing;
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
+      // Rates & Fees Section
       yPos = drawTextLine('RATES & FEES', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       yPos = drawBoldTextLine('Total Agreed Rate for Service:', margin, yPos);
@@ -681,11 +728,12 @@ export default function DashDispatchProApp() {
       yPos -= sectionSpacing;
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
+      // Special Terms Section
       yPos = drawTextLine('SPECIAL TERMS & CONDITIONS', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       const specialTermsText = loadData.specialTerms || settings.defaultSpecialTerms || "Standard carrier terms apply. Full terms available upon request. Payment due upon delivery unless otherwise agreed in writing. Late payments may incur additional charges.";
       const termsLines = [];
-      const maxCharsPerLine = 85;
+      const maxCharsPerLine = 85; // Approximate characters per line
       let currentLine = "";
       specialTermsText.split(' ').forEach(word => {
           if ((currentLine + word).length > maxCharsPerLine) {
@@ -698,7 +746,7 @@ export default function DashDispatchProApp() {
       termsLines.push(currentLine.trim());
 
       for (const line of termsLines) {
-          if (yPos < margin + 100) {
+          if (yPos < margin + 100) { // Check if space is running low for terms + signatures
               page = pdfDoc.addPage([600, 850]);
               yPos = height - margin;
               yPos = drawTextLine('SPECIAL TERMS & CONDITIONS (Continued)', boldFont, subTitleFontSize, margin, yPos);
@@ -709,34 +757,39 @@ export default function DashDispatchProApp() {
       yPos -= sectionSpacing;
       
 
-      if (yPos < margin + 150) { 
+      // Ensure space for signatures, otherwise add a new page
+      if (yPos < margin + 150) { // Increased space check for signatures
         page = pdfDoc.addPage([600, 850]);
         yPos = height - margin;
       }
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
+      // Signatures Section
       yPos = drawTextLine('SIGNATURES', boldFont, subTitleFontSize, margin, yPos);
-      yPos -= lineSpacing * 2;
+      yPos -= lineSpacing * 2; // More space before signature boxes
 
-      const signatureBoxWidth = (width - (margin * 3)) / 2;
+      const signatureBoxWidth = (width - (margin * 3)) / 2; // Space for two boxes
       const signatureBoxHeight = 60;
       const signatureYPos = yPos - signatureBoxHeight;
 
+      // Carrier Signature
       drawRegularTextLine('Carrier Representative:', margin, yPos);
       page.drawRectangle({ x: margin, y: signatureYPos, width: signatureBoxWidth, height: signatureBoxHeight, borderColor: rgb(0,0,0), borderWidth: 1 });
       drawRegularTextLine('Date:', margin, signatureYPos - lineSpacing);
       drawLine(margin + 40, signatureYPos - lineSpacing + 3, margin + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1);
 
 
+      // Customer Signature
       const customerSigX = margin + signatureBoxWidth + margin;
       drawRegularTextLine('Customer Representative:', customerSigX, yPos);
       page.drawRectangle({ x: customerSigX, y: signatureYPos, width: signatureBoxWidth, height: signatureBoxHeight, borderColor: rgb(0,0,0), borderWidth: 1 });
       drawRegularTextLine('Date:', customerSigX, signatureYPos - lineSpacing);
       drawLine(customerSigX + 40, signatureYPos - lineSpacing + 3, customerSigX + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1);
       
-      yPos = signatureYPos - lineSpacing * 2;
+      yPos = signatureYPos - lineSpacing * 2; // Space after signature lines
 
-      if (yPos < margin + 50) { 
+      // Footer text
+      if (yPos < margin + 50) { // Check if space for footer, if not, new page (less likely now)
         page = pdfDoc.addPage([600, 850]);
         yPos = height - margin;
       }
@@ -849,6 +902,7 @@ export default function DashDispatchProApp() {
     );
   }
   
+  // Fallback for any unhandled state, though ideally one of the above conditions should always match
   return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />

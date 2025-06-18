@@ -10,11 +10,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 type LoadsPageProps = {
   loads: Load[];
-  clients: Client[]; // These are client companies
+  clients: Client[]; 
   clientLoadRequests: ClientLoadRequest[];
-  loadForm: Omit<Load, 'id' | 'expenses'>;
-  setLoadForm: React.Dispatch<React.SetStateAction<Omit<Load, 'id' | 'expenses'>>>;
-  addLoad: (loadData?: Omit<Load, 'id' | 'expenses'>) => Promise<void>;
+  loadForm: Omit<Load, 'id' | 'expenses' | 'loadNumber'>;
+  setLoadForm: React.Dispatch<React.SetStateAction<Omit<Load, 'id' | 'expenses' | 'loadNumber'>>>;
+  addLoad: (loadData?: Omit<Load, 'id' | 'expenses' | 'loadNumber'>) => Promise<void>;
   updateLoadStatus: (id: string, status: Load['status']) => Promise<void>;
   generateAgreement: (load: Load) => Promise<void>;
   approveClientLoadRequest: (request: ClientLoadRequest) => Promise<void>;
@@ -46,6 +46,10 @@ export function LoadsPage({
   const newClientRequests = clientLoadRequests.filter(req => req.status === 'new');
   const processedClientRequests = clientLoadRequests.filter(req => req.status !== 'new');
 
+  // Helper to find client for a load
+  const getClientForLoad = (load: Load): Client | undefined => {
+    return clients.find(c => c.id === load.clientId);
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-8">
@@ -98,7 +102,7 @@ export function LoadsPage({
                         <ClientLoadRequestCard 
                         key={request.id}
                         request={request}
-                        onApprove={approveClientLoadRequest} // Or a different action for processed requests
+                        onApprove={approveClientLoadRequest} 
                         isProcessed={true}
                         />
                     ))}
@@ -118,7 +122,7 @@ export function LoadsPage({
               <LoadCard 
                 key={load.id}
                 load={load}
-                clientName={clients.find(c => c.id === load.clientId)?.name || load.requestedByClientName || 'Unknown Client'}
+                client={getClientForLoad(load)}
                 onStatusChange={updateLoadStatus}
                 onGenerateAgreement={generateAgreement}
                 isUpdatingStatus={isUpdatingStatus}
@@ -141,7 +145,7 @@ export function LoadsPage({
               <LoadCard 
                 key={load.id}
                 load={load}
-                clientName={clients.find(c => c.id === load.clientId)?.name || load.requestedByClientName || 'Unknown Client'}
+                client={getClientForLoad(load)}
                 onStatusChange={updateLoadStatus}
                 onGenerateAgreement={generateAgreement}
                 isUpdatingStatus={isUpdatingStatus}

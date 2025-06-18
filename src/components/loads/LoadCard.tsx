@@ -6,11 +6,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Milestone, DollarSign, Edit3, FileText, CheckCircle, Clock, Truck, Hash } from 'lucide-react';
+import { MapPin, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle } from 'lucide-react'; // Renamed Truck to TruckIcon
+import { format as formatDate } from 'date-fns';
 
 type LoadCardProps = {
   load: Load;
-  clientName: string;
+  client: Client | undefined; // Pass the full client object
   onStatusChange: (loadId: string, status: Load['status']) => void;
   onGenerateAgreement: (load: Load) => void;
   isUpdatingStatus?: boolean;
@@ -18,12 +19,22 @@ type LoadCardProps = {
 
 const statusConfig = {
   pending: { label: 'Pending', color: 'bg-yellow-500', icon: <Clock className="h-4 w-4 mr-1" /> },
-  'in-transit': { label: 'In Transit', color: 'bg-blue-500', icon: <Truck className="h-4 w-4 mr-1" /> },
+  'in-transit': { label: 'In Transit', color: 'bg-blue-500', icon: <TruckIcon className="h-4 w-4 mr-1" /> }, // Used TruckIcon
   delivered: { label: 'Delivered', color: 'bg-green-500', icon: <CheckCircle className="h-4 w-4 mr-1" /> },
   'client-request-approved': { label: 'Req. Approved', color: 'bg-teal-500', icon: <CheckCircle className="h-4 w-4 mr-1" /> },
 };
 
-export function LoadCard({ load, clientName, onStatusChange, onGenerateAgreement, isUpdatingStatus }: LoadCardProps) {
+const formatDateTimeDisplay = (isoString: string | undefined) => {
+  if (!isoString) return 'N/A';
+  try {
+    return formatDate(new Date(isoString), 'PPpp'); // e.g., Jun 20, 2023, 2:30 PM
+  } catch {
+    return 'Invalid Date';
+  }
+};
+
+
+export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, isUpdatingStatus }: LoadCardProps) {
   const currentStatus = statusConfig[load.status] || statusConfig.pending;
 
   const profit = load.rate - (
@@ -32,6 +43,10 @@ export function LoadCard({ load, clientName, onStatusChange, onGenerateAgreement
     load.expenses.fuel + 
     load.expenses.def
   );
+
+  const clientDisplayInfo = client 
+    ? `${client.companyName} (Contact: ${client.contactName})` 
+    : load.requestedByClientName || 'Unknown Client';
 
   return (
     <Card className="shadow-md hover:shadow-lg transition-shadow duration-300">
@@ -49,20 +64,32 @@ export function LoadCard({ load, clientName, onStatusChange, onGenerateAgreement
           )}
         </div>
         <div className="flex justify-between items-center">
-            <CardDescription>Client: {clientName}</CardDescription>
+            <CardDescription className="flex items-center text-sm">
+                <UserCircle className="h-4 w-4 mr-1 text-muted-foreground" /> {clientDisplayInfo}
+            </CardDescription>
             <Badge variant="outline" className={`${currentStatus.color} text-white border-none flex items-center`}>
                 {currentStatus.icon} {currentStatus.label}
             </Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-center text-sm text-muted-foreground">
-          <Milestone className="h-4 w-4 mr-2" />
-          Distance: {load.distance} miles
-        </div>
-        <div className="flex items-center text-sm text-muted-foreground">
-          <DollarSign className="h-4 w-4 mr-2" />
-          Rate: ${load.rate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      <CardContent className="space-y-3 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+            <div className="flex items-center text-muted-foreground">
+              <CalendarClock className="h-4 w-4 mr-2" />
+              Pickup: {formatDateTimeDisplay(load.pickupDateTime)}
+            </div>
+            <div className="flex items-center text-muted-foreground">
+              <CalendarClock className="h-4 w-4 mr-2" />
+              Delivery: {formatDateTimeDisplay(load.deliveryDateTime)}
+            </div>
+            <div className="flex items-center text-muted-foreground">
+              <Milestone className="h-4 w-4 mr-2" />
+              Distance: {load.distance} miles
+            </div>
+            <div className="flex items-center text-muted-foreground">
+              <DollarSign className="h-4 w-4 mr-2" />
+              Rate: ${load.rate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
         </div>
         
         {load.status === 'delivered' && load.expenses.calculated && (
@@ -86,6 +113,18 @@ export function LoadCard({ load, clientName, onStatusChange, onGenerateAgreement
             </div>
           </>
         )}
+         {load.cargoDescription && (
+            <div>
+                <h4 className="font-medium text-xs text-muted-foreground mt-1">Cargo:</h4>
+                <p className="text-xs">{load.cargoDescription}</p>
+            </div>
+        )}
+        {load.specialTerms && (
+            <div>
+                <h4 className="font-medium text-xs text-muted-foreground mt-1">Special Terms:</h4>
+                <p className="text-xs italic">{load.specialTerms}</p>
+            </div>
+        )}
       </CardContent>
       <CardFooter className="flex flex-col sm:flex-row justify-between items-center gap-2 pt-4 border-t">
          <Select 
@@ -98,9 +137,9 @@ export function LoadCard({ load, clientName, onStatusChange, onGenerateAgreement
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="client-request-approved">Request Approved</SelectItem>
               <SelectItem value="in-transit">In Transit</SelectItem>
               <SelectItem value="delivered">Delivered</SelectItem>
-              <SelectItem value="client-request-approved">Request Approved</SelectItem>
             </SelectContent>
           </Select>
         <Button 
@@ -108,6 +147,7 @@ export function LoadCard({ load, clientName, onStatusChange, onGenerateAgreement
           size="sm" 
           onClick={() => onGenerateAgreement(load)}
           className="w-full sm:w-auto"
+          disabled={!client} // Disable if client details are not available for some reason
         >
           <FileText className="h-4 w-4 mr-2" />
           Service Agreement

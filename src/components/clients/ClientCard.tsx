@@ -1,8 +1,9 @@
+
 import React from 'react';
 import type { Client } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { UserCircle, Mail, Phone, PackagePlus } from 'lucide-react';
+import { Building, UserCircle, Mail, Phone, PackagePlus, Home } from 'lucide-react';
 
 type ClientCardProps = {
   client: Client;
@@ -10,22 +11,32 @@ type ClientCardProps = {
 };
 
 export function ClientCard({ client, onCreateLoad }: ClientCardProps) {
-  const isEmail = client.contact.includes('@');
   return (
     <Card className="shadow-md hover:shadow-lg transition-shadow duration-300">
       <CardHeader>
         <div className="flex items-center gap-3">
-          <UserCircle className="h-10 w-10 text-primary" />
+          <Building className="h-10 w-10 text-primary" />
           <div>
-            <CardTitle className="text-xl font-headline">{client.name}</CardTitle>
+            <CardTitle className="text-xl font-headline">{client.companyName}</CardTitle>
+            <CardDescription>Primary Contact: {client.contactName}</CardDescription>
           </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="flex items-center text-sm text-muted-foreground">
-          {isEmail ? <Mail className="h-4 w-4 mr-2" /> : <Phone className="h-4 w-4 mr-2" />}
-          {client.contact}
+      <CardContent className="space-y-2 text-sm">
+        <div className="flex items-center text-muted-foreground">
+          <Mail className="h-4 w-4 mr-2 flex-shrink-0" />
+          <span className="truncate" title={client.contactEmail}>{client.contactEmail}</span>
         </div>
+        <div className="flex items-center text-muted-foreground">
+          <Phone className="h-4 w-4 mr-2 flex-shrink-0" />
+          <span>{client.contactPhone}</span>
+        </div>
+        {client.address && (
+           <div className="flex items-start text-muted-foreground">
+             <Home className="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" />
+             <span className="text-xs">{client.address}</span>
+           </div>
+        )}
       </CardContent>
       <CardFooter className="border-t pt-4">
         <Button 
@@ -35,7 +46,7 @@ export function ClientCard({ client, onCreateLoad }: ClientCardProps) {
           className="w-full"
         >
           <PackagePlus className="h-4 w-4 mr-2" />
-          Create Load for Client
+          Create Load for {client.companyName}
         </Button>
       </CardFooter>
     </Card>

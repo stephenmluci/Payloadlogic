@@ -1,8 +1,9 @@
+
 import React from 'react';
 import type { Load, Expense } from '@/types';
 import { MetricCard } from './MetricCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DollarSign, AlertTriangle, TrendingUp, TrendingDown, ListChecks, BarChart3 } from 'lucide-react';
+import { DollarSign, AlertTriangle, TrendingUp, TrendingDown, ListChecks, BarChart3, Info } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 
 type DashboardPageProps = {
@@ -82,13 +83,25 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
           valueClassName={netProfit >= 0 ? 'text-green-600' : 'text-red-600'}
         />
       </div>
+
+      <Card className="bg-card shadow">
+        <CardHeader>
+            <CardTitle className="text-lg flex items-center"><Info className="h-5 w-5 mr-2 text-primary" /> How to Read These Metrics</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground space-y-1">
+            <p><strong>Total Revenue:</strong> Gross income from all your completed loads (sum of all load rates).</p>
+            <p><strong>Total Calculated Expenses:</strong> Combines direct load costs (like payroll, fuel for delivered loads) and other general business expenses you've logged.</p>
+            <p><strong>Net Profit:</strong> The difference between Total Revenue and Total Calculated Expenses.</p>
+            <p className="mt-2 italic">The 'Expense Category Breakdown' chart below specifically details the categories of your expenses, not your income.</p>
+        </CardContent>
+      </Card>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ListChecks className="h-5 w-5" />
-              Expense Breakdown
+              Expense Category Breakdown
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -140,3 +153,4 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
     </div>
   );
 }
+

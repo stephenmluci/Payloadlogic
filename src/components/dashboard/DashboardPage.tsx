@@ -12,7 +12,7 @@ type DashboardPageProps = {
 };
 
 export function DashboardPage({ loads, expenses }: DashboardPageProps) {
-  const totalRevenue = loads.reduce((sum, load) => sum + load.rate, 0);
+  const totalIncome = loads.reduce((sum, load) => sum + load.rate, 0);
   const totalLoadRelatedExpenses = loads.reduce((sum, load) => {
     if (load.status === 'delivered' && load.expenses.calculated) {
       return sum + load.expenses.payroll + load.expenses.fuel + load.expenses.def + load.expenses.recurring;
@@ -22,7 +22,7 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
   const totalOtherExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const totalCalculatedExpenses = totalLoadRelatedExpenses + totalOtherExpenses;
   
-  const netProfit = totalRevenue - totalCalculatedExpenses;
+  const netProfit = totalIncome - totalCalculatedExpenses;
 
   const expenseByCategory = expenses.reduce((acc, expense) => {
     acc[expense.category] = (acc[expense.category] || 0) + expense.amount;
@@ -67,8 +67,8 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
         <MetricCard 
-          title="Total Revenue" 
-          value={`$${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          title="Total Income" 
+          value={`$${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           icon={<DollarSign className="h-5 w-5 text-muted-foreground" />}
         />
         <MetricCard 
@@ -89,9 +89,9 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
             <CardTitle className="text-lg flex items-center"><Info className="h-5 w-5 mr-2 text-primary" /> How to Read These Metrics</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-1">
-            <p><strong>Total Revenue:</strong> Gross income from all your completed loads (sum of all load rates).</p>
+            <p><strong>Total Income:</strong> Gross income from all your completed loads (sum of all load rates).</p>
             <p><strong>Total Calculated Expenses:</strong> Combines direct load costs (like payroll, fuel for delivered loads) and other general business expenses you've logged.</p>
-            <p><strong>Net Profit:</strong> The difference between Total Revenue and Total Calculated Expenses.</p>
+            <p><strong>Net Profit:</strong> The difference between Total Income and Total Calculated Expenses.</p>
             <p className="mt-2 italic">The 'Expense Category Breakdown' chart below specifically details the categories of your expenses, not your income.</p>
         </CardContent>
       </Card>

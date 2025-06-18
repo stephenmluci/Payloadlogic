@@ -10,8 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { MapPin, DollarSign, Milestone, CircleHelp, Package as CargoIcon, CalendarClock, Edit } from 'lucide-react';
 
 type LoadFormProps = {
-  loadForm: Omit<Load, 'id' | 'expenses' | 'loadNumber'>;
-  setLoadForm: React.Dispatch<React.SetStateAction<Omit<Load, 'id' | 'expenses' | 'loadNumber'>>>;
+  loadForm: Omit<Load, 'id' | 'expenses' | 'loadNumber' | 'totalAgreedRate'>;
+  setLoadForm: React.Dispatch<React.SetStateAction<Omit<Load, 'id' | 'expenses' | 'loadNumber' | 'totalAgreedRate'>>>;
   clients: Client[];
   onSubmit: (e: React.FormEvent) => void;
   isSubmitting?: boolean;
@@ -20,7 +20,7 @@ type LoadFormProps = {
 export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, isSubmitting }: LoadFormProps) {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
-    if (type === 'number') {
+    if (type === 'number' || name === 'distance' || name === 'ratePerMile') { // ratePerMile is now 'rate' in form
       setLoadForm(prev => ({ ...prev, [name]: value === '' ? 0 : Number(value) }));
     } else {
       setLoadForm(prev => ({ ...prev, [name]: value }));
@@ -165,17 +165,17 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, isSubmittin
               </div>
             </div>
             <div>
-              <Label htmlFor="rate">Rate ($)</Label>
+              <Label htmlFor="ratePerMile">Rate per Mile ($)</Label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input 
-                  id="rate"
-                  name="rate"
+                  id="ratePerMile"
+                  name="ratePerMile" // Name matches the field in loadForm state
                   type="number"
                   step="0.01"
-                  value={loadForm.rate} 
+                  value={loadForm.ratePerMile} 
                   onChange={handleInputChange} 
-                  placeholder="e.g., 1500.00"
+                  placeholder="e.g., 2.50"
                   className="pl-10"
                   required
                 />

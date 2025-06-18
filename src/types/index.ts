@@ -10,8 +10,9 @@ export type Load = {
   destination: string;
   pickupDateTime: string; // ISO string for date and time
   deliveryDateTime: string; // ISO string for date and time
-  rate: number;
+  ratePerMile: number; // Rate per mile
   distance: number;
+  totalAgreedRate: number; // Calculated: distance * ratePerMile
   status: 'pending' | 'in-transit' | 'delivered' | 'client-request-approved';
   expenses: {
     payroll: number;
@@ -86,3 +87,4 @@ export type ClientLoadRequest = {
   status: 'new' | 'viewed' | 'accepted' | 'rejected';
   createdLoadId?: string;
 };
+

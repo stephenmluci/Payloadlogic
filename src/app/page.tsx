@@ -126,13 +126,13 @@ export default function DashDispatchProApp() {
   const [clientLoadRequests, setClientLoadRequests] = useState<ClientLoadRequest[]>([]);
 
 
-  const [loadForm, setLoadForm] = useState<Omit<Load, 'id' | 'expenses' | 'loadNumber'>>({
+  const [loadForm, setLoadForm] = useState<Omit<Load, 'id' | 'expenses' | 'loadNumber' | 'totalAgreedRate'>>({
     clientId: '',
     origin: '',
     destination: '',
     pickupDateTime: toDateTimeLocal(),
     deliveryDateTime: toDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()), // Default to next day
-    rate: 0,
+    ratePerMile: 0,
     distance: 0,
     status: 'pending',
     cargoDescription: '',
@@ -248,10 +248,10 @@ export default function DashDispatchProApp() {
   }, [toast]);
 
 
-  useEffect(() => {
+ useEffect(() => {
     if (IS_ADMIN_REVIEW_MODE) {
-      fetchUserProfileAndData(mockReviewUser);
-      return; 
+      fetchUserProfileAndData(mockReviewUser); // Directly call with mock user
+      return; // Skip Firebase auth listener in review mode
     }
 
     const unsubscribe = auth.onAuthStateChanged(authUser => {
@@ -266,7 +266,7 @@ export default function DashDispatchProApp() {
         setSettings(initialSettings);
         setSettingsForm(initialSettings);
         setClientLoadRequests([]);
-        setAppLoading(false);
+        setAppLoading(false); // Ensure loading is false if no user
       }
     });
     return () => unsubscribe();
@@ -320,14 +320,12 @@ export default function DashDispatchProApp() {
 
   const handleSignOut = async () => {
     if (IS_ADMIN_REVIEW_MODE) {
-      setUser(null); // Clear the mock user
+      setUser(null); 
       setUserRole(undefined);
-      setAppLoading(true); // Show loading state briefly
-      // To simulate re-login for review, re-trigger fetchUserProfileAndData
-      // This part ensures if a 'sign out' action is tested, it can be 'signed back in' easily in review.
+      setAppLoading(true); 
       setTimeout(() => {
-         fetchUserProfileAndData(mockReviewUser); // Re-establish mock user for continued review
-      }, 50); // Small delay to mimic async operation
+         fetchUserProfileAndData(mockReviewUser);
+      }, 50); 
       toast({ title: "Admin Review Mode", description: "Review session refreshed." });
       return;
     }
@@ -343,11 +341,12 @@ export default function DashDispatchProApp() {
     }
   };
 
-  const addLoad = async (loadDataToAdd?: Omit<Load, 'id' | 'expenses' | 'loadNumber'>) => {
+  const addLoad = async (loadDataToAdd?: Omit<Load, 'id' | 'expenses' | 'loadNumber' | 'totalAgreedRate'>) => {
     if (!user || user.role !== 'admin') return;
     setIsSubmitting(true);
 
     const dataToUse = loadDataToAdd || loadForm;
+    const calculatedTotalRate = dataToUse.distance * dataToUse.ratePerMile;
     
     let nextLoadNumeric = 1;
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
@@ -389,12 +388,12 @@ export default function DashDispatchProApp() {
         id: `mock-load-${Date.now()}`,
         loadNumber: newLoadNumber,
         ...dataToUse,
+        totalAgreedRate: calculatedTotalRate,
         expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
       };
       setLoads(prev => [...prev, newLoadData]);
       if (!loadDataToAdd) {
-        // Reset form for next entry only if not pre-filled by client request
-         setLoadForm({ clientId: '', origin: '', destination: '', pickupDateTime: toDateTimeLocal(), deliveryDateTime: toDateTimeLocal(new Date(Date.now() + 24*60*60*1000).toISOString()), rate: 0, distance: 0, status: 'pending', cargoDescription: '' });
+         setLoadForm({ clientId: '', origin: '', destination: '', pickupDateTime: toDateTimeLocal(), deliveryDateTime: toDateTimeLocal(new Date(Date.now() + 24*60*60*1000).toISOString()), ratePerMile: 0, distance: 0, status: 'pending', cargoDescription: '' });
       }
       toast({ title: "Admin Review: Load Added", description: `Load ${newLoadNumber} added to local view (not saved).` });
       setIsSubmitting(false);
@@ -404,13 +403,14 @@ export default function DashDispatchProApp() {
     const newLoadDataForFirestore: Omit<Load, 'id'> = { 
       loadNumber: newLoadNumber,
       ...dataToUse,
+      totalAgreedRate: calculatedTotalRate,
       expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
     };
     try {
       const docRef = await addDoc(collection(db, `users/${user.uid}/loads`), newLoadDataForFirestore);
       setLoads(prev => [...prev, { ...newLoadDataForFirestore, id: docRef.id }]);
       if (!loadDataToAdd) {
-        setLoadForm({ clientId: '', origin: '', destination: '', pickupDateTime: toDateTimeLocal(), deliveryDateTime: toDateTimeLocal(new Date(Date.now() + 24*60*60*1000).toISOString()), rate: 0, distance: 0, status: 'pending', cargoDescription: '' });
+        setLoadForm({ clientId: '', origin: '', destination: '', pickupDateTime: toDateTimeLocal(), deliveryDateTime: toDateTimeLocal(new Date(Date.now() + 24*60*60*1000).toISOString()), ratePerMile: 0, distance: 0, status: 'pending', cargoDescription: '' });
       }
       toast({ title: "Load Added", description: `New load ${newLoadNumber} has been successfully created.` });
     } catch (error: any) {
@@ -450,7 +450,7 @@ export default function DashDispatchProApp() {
       console.error('Error updating load:', error);
       toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
     }
-  }, [user, toast, loads]); // Added 'loads' to dependency array for review mode nextLoadNumeric calculation if it were to use it.
+  }, [user, toast]); 
 
 
   const updateLoadStatus = async (id: string, status: Load['status']) => {
@@ -460,21 +460,15 @@ export default function DashDispatchProApp() {
   const approveClientLoadRequest = async (request: ClientLoadRequest) => {
     if (!user || user.role !== 'admin') return;
     
-    // Attempt to find a matching client by auth UID or name to pre-fill clientId
     let prefilledClientId = '';
-    const matchingClientByAuthUid = clients.find(c => request.requestedByAuthUid && c.id === request.requestedByAuthUid); // This assumes client.id could be auth UID. Unlikely.
-    // A better match might be looking for a Client whose contact details match request.requestedByClientName or email if available
-    // For now, let's keep it simple: admin has to select the client from dropdown.
-
-    const loadDataFromRequest: Omit<Load, 'id' | 'expenses' | 'loadNumber'> = {
+   
+    const loadDataFromRequest: Omit<Load, 'id' | 'expenses' | 'loadNumber' | 'totalAgreedRate'> = {
       clientId: prefilledClientId, 
       origin: request.origin,
       destination: request.destination,
-      // For pickupDateTime, use the client's requested date and default time, or current if not provided
       pickupDateTime: toDateTimeLocal(request.requestedPickupDate),
-      // DeliveryDateTime will need to be set by admin
-      deliveryDateTime: toDateTimeLocal(new Date(new Date(request.requestedPickupDate || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString()), // Default to 24h after pickup
-      rate: 0, 
+      deliveryDateTime: toDateTimeLocal(new Date(new Date(request.requestedPickupDate || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString()), 
+      ratePerMile: 0, 
       distance: 0, 
       status: 'client-request-approved' as Load['status'],
       cargoDescription: request.cargoDescription,
@@ -567,7 +561,6 @@ export default function DashDispatchProApp() {
 
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
       setSettings(settingsForm);
-      // setSettingsForm is implicitly updated as it's the source
       toast({ title: "Admin Review: Settings Updated", description: "Settings updated locally (not saved)." });
       setIsSubmitting(false);
       return;
@@ -593,7 +586,7 @@ export default function DashDispatchProApp() {
   
     loads.forEach(load => {
       if (load.status === 'delivered' && !load.expenses.calculated && load.id) {
-        const payroll = load.rate * (settings.payrollPercentage / 100);
+        const payroll = load.totalAgreedRate * (settings.payrollPercentage / 100);
         const recurring = settings.recurringExpenses.reduce(
           (sum, expense) => sum + (expense.amount / 30), 0 // Simplified: assumes all recurring expenses are monthly
         );
@@ -624,7 +617,7 @@ export default function DashDispatchProApp() {
     setIsSubmitting(true); 
     try {
       const pdfDoc = await PDFDocument.create();
-      let page = pdfDoc.addPage([600, 850]); // Standard US Letter size roughly
+      let page = pdfDoc.addPage([600, 850]); 
       const { width, height } = page.getSize();
       
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -634,14 +627,14 @@ export default function DashDispatchProApp() {
       const titleFontSize = 16;
       const subTitleFontSize = 12;
       const smallFontSize = 8;
-      const lineSpacing = 15; // Adjusted line spacing
+      const lineSpacing = 15; 
       const sectionSpacing = 25;
       const margin = 50;
       let yPos = height - margin;
 
       const drawTextLine = (text: string, fontToUse: any, size: number, x: number, y: number, color = rgb(0,0,0)) => {
         page.drawText(text, { x, y, font: fontToUse, size, color });
-        return y - size - (size > 10 ? 5 : 3); // Adjust spacing based on font size
+        return y - size - (size > 10 ? 5 : 3); 
       };
       
       const drawBoldTextLine = (text: string, x: number, y: number) => {
@@ -656,10 +649,9 @@ export default function DashDispatchProApp() {
         page.drawLine({start: {x: x1, y: y1}, end: {x: x2, y: y2}, thickness, color: rgb(0.7,0.7,0.7) });
       }
 
-      // Title and Load ID
       yPos = drawTextLine('Hotshot Trucking Agreement', boldFont, titleFontSize, margin, yPos, rgb(0.1, 0.1, 0.1));
       if (loadData.loadNumber) {
-        yPos = drawTextLine(`Load ID: ${loadData.loadNumber}`, boldFont, subTitleFontSize - 2, width - margin - 100, yPos + titleFontSize + 2); // Position to the right
+        yPos = drawTextLine(`Load ID: ${loadData.loadNumber}`, boldFont, subTitleFontSize - 2, width - margin - 100, yPos + titleFontSize + 2); 
       }
       yPos -= lineSpacing / 2;
 
@@ -667,11 +659,9 @@ export default function DashDispatchProApp() {
       yPos = drawRegularTextLine(`Date of Agreement: ${agreementDate}`, margin, yPos);
       yPos -= sectionSpacing;
 
-      // Parties Section
       yPos = drawTextLine('PARTIES', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       
-      // Carrier Info
       yPos = drawBoldTextLine('Carrier:', margin, yPos);
       yPos = drawRegularTextLine(settings.carrierName || 'N/A', margin + 10, yPos);
       yPos = drawRegularTextLine(settings.carrierAddress || 'N/A', margin + 10, yPos);
@@ -680,7 +670,6 @@ export default function DashDispatchProApp() {
       yPos = drawRegularTextLine(`Email: ${settings.carrierContactEmail || 'N/A'}`, margin + 10, yPos);
       yPos -= lineSpacing;
 
-      // Customer Info
       yPos = drawBoldTextLine('Customer:', margin, yPos);
       yPos = drawRegularTextLine(client.companyName || 'N/A', margin + 10, yPos);
       if (client.address) {
@@ -693,7 +682,6 @@ export default function DashDispatchProApp() {
       
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
-      // Load Details Section
       yPos = drawTextLine('LOAD DETAILS', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       yPos = drawBoldTextLine('Description:', margin, yPos);
@@ -713,14 +701,16 @@ export default function DashDispatchProApp() {
       yPos -= sectionSpacing;
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
-      // Rates & Fees Section
       yPos = drawTextLine('RATES & FEES', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
-      yPos = drawBoldTextLine('Total Agreed Rate for Service:', margin, yPos);
-      yPos = drawRegularTextLine(`$${loadData.rate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 10, yPos);
+      
+      yPos = drawBoldTextLine('Rate per Mile:', margin, yPos);
+      yPos = drawRegularTextLine(`$${loadData.ratePerMile.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 10, yPos);
       yPos = drawBoldTextLine('Estimated Distance:', margin, yPos);
       yPos = drawRegularTextLine(`${loadData.distance} miles`, margin + 10, yPos);
-      
+      yPos = drawBoldTextLine('Total Agreed Rate for Service:', margin, yPos);
+      yPos = drawRegularTextLine(`$${loadData.totalAgreedRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 10, yPos);
+
       yPos = drawBoldTextLine('Loading/Unloading Fee:', margin, yPos);
       yPos = drawRegularTextLine(settings.loadingFee !== undefined ? `$${settings.loadingFee.toFixed(2)}` : "[As agreed / See Special Terms]", margin + 10, yPos);
       yPos = drawBoldTextLine('Detention Fee:', margin, yPos);
@@ -728,12 +718,11 @@ export default function DashDispatchProApp() {
       yPos -= sectionSpacing;
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
-      // Special Terms Section
       yPos = drawTextLine('SPECIAL TERMS & CONDITIONS', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       const specialTermsText = loadData.specialTerms || settings.defaultSpecialTerms || "Standard carrier terms apply. Full terms available upon request. Payment due upon delivery unless otherwise agreed in writing. Late payments may incur additional charges.";
       const termsLines = [];
-      const maxCharsPerLine = 85; // Approximate characters per line
+      const maxCharsPerLine = 85; 
       let currentLine = "";
       specialTermsText.split(' ').forEach(word => {
           if ((currentLine + word).length > maxCharsPerLine) {
@@ -746,7 +735,7 @@ export default function DashDispatchProApp() {
       termsLines.push(currentLine.trim());
 
       for (const line of termsLines) {
-          if (yPos < margin + 100) { // Check if space is running low for terms + signatures
+          if (yPos < margin + 100) { 
               page = pdfDoc.addPage([600, 850]);
               yPos = height - margin;
               yPos = drawTextLine('SPECIAL TERMS & CONDITIONS (Continued)', boldFont, subTitleFontSize, margin, yPos);
@@ -757,39 +746,34 @@ export default function DashDispatchProApp() {
       yPos -= sectionSpacing;
       
 
-      // Ensure space for signatures, otherwise add a new page
-      if (yPos < margin + 150) { // Increased space check for signatures
+      if (yPos < margin + 150) { 
         page = pdfDoc.addPage([600, 850]);
         yPos = height - margin;
       }
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
-      // Signatures Section
       yPos = drawTextLine('SIGNATURES', boldFont, subTitleFontSize, margin, yPos);
-      yPos -= lineSpacing * 2; // More space before signature boxes
+      yPos -= lineSpacing * 2; 
 
-      const signatureBoxWidth = (width - (margin * 3)) / 2; // Space for two boxes
+      const signatureBoxWidth = (width - (margin * 3)) / 2; 
       const signatureBoxHeight = 60;
       const signatureYPos = yPos - signatureBoxHeight;
 
-      // Carrier Signature
       drawRegularTextLine('Carrier Representative:', margin, yPos);
       page.drawRectangle({ x: margin, y: signatureYPos, width: signatureBoxWidth, height: signatureBoxHeight, borderColor: rgb(0,0,0), borderWidth: 1 });
       drawRegularTextLine('Date:', margin, signatureYPos - lineSpacing);
       drawLine(margin + 40, signatureYPos - lineSpacing + 3, margin + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1);
 
 
-      // Customer Signature
       const customerSigX = margin + signatureBoxWidth + margin;
       drawRegularTextLine('Customer Representative:', customerSigX, yPos);
       page.drawRectangle({ x: customerSigX, y: signatureYPos, width: signatureBoxWidth, height: signatureBoxHeight, borderColor: rgb(0,0,0), borderWidth: 1 });
       drawRegularTextLine('Date:', customerSigX, signatureYPos - lineSpacing);
       drawLine(customerSigX + 40, signatureYPos - lineSpacing + 3, customerSigX + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1);
       
-      yPos = signatureYPos - lineSpacing * 2; // Space after signature lines
+      yPos = signatureYPos - lineSpacing * 2; 
 
-      // Footer text
-      if (yPos < margin + 50) { // Check if space for footer, if not, new page (less likely now)
+      if (yPos < margin + 50) { 
         page = pdfDoc.addPage([600, 850]);
         yPos = height - margin;
       }
@@ -902,7 +886,6 @@ export default function DashDispatchProApp() {
     );
   }
   
-  // Fallback for any unhandled state, though ideally one of the above conditions should always match
   return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -910,3 +893,4 @@ export default function DashDispatchProApp() {
       </div>
     );
 }
+

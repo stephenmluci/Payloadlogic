@@ -16,7 +16,7 @@ type ExpenseFormProps = {
   isSubmitting?: boolean;
 };
 
-const NO_LOAD_VALUE = "_NO_LOAD_SELECTED_"; // Unique value for "None" option
+const NO_LOAD_VALUE = "_NO_LOAD_SELECTED_";
 
 export function ExpenseForm({ expenseForm, setExpenseForm, loads, onSubmit, isSubmitting }: ExpenseFormProps) {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,7 +91,7 @@ export function ExpenseForm({ expenseForm, setExpenseForm, loads, onSubmit, isSu
                <div className="relative">
                 <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground z-10" />
                 <Select
-                  value={expenseForm.loadId || ''} // Shows placeholder if loadId is empty
+                  value={expenseForm.loadId || NO_LOAD_VALUE} 
                   onValueChange={handleLoadIdChange}
                 >
                   <SelectTrigger id="loadId" className="pl-10">
@@ -101,7 +101,7 @@ export function ExpenseForm({ expenseForm, setExpenseForm, loads, onSubmit, isSu
                     <SelectItem value={NO_LOAD_VALUE}>None</SelectItem>
                     {loads.map(load => (
                       <SelectItem key={load.id} value={load.id!}>
-                        {load.origin} → {load.destination}
+                        {load.loadNumber ? `${load.loadNumber}: ` : ''}{load.origin} → {load.destination}
                       </SelectItem>
                     ))}
                   </SelectContent>

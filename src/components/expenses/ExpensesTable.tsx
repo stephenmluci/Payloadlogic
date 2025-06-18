@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { Expense, Load } from '@/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableCaption } from '@/components/ui/table';
@@ -38,15 +39,19 @@ export function ExpensesTable({ expenses, loads }: ExpensesTableProps) {
             <TableBody>
               {expenses.map(expense => {
                 const associatedLoad = expense.loadId ? loads.find(l => l.id === expense.loadId) : null;
+                let loadIdentifier = 'N/A';
+                if (associatedLoad) {
+                  loadIdentifier = associatedLoad.loadNumber 
+                    ? `${associatedLoad.loadNumber}: ${associatedLoad.origin} → ${associatedLoad.destination}`
+                    : `${associatedLoad.origin} → ${associatedLoad.destination}`;
+                }
                 return (
                   <TableRow key={expense.id}>
                     <TableCell>{new Date(expense.date).toLocaleDateString()}</TableCell>
                     <TableCell className="font-medium">{expense.category}</TableCell>
                     <TableCell className="text-right">${expense.amount.toFixed(2)}</TableCell>
                     <TableCell>
-                      {associatedLoad 
-                        ? `${associatedLoad.origin} → ${associatedLoad.destination}`
-                        : 'N/A'}
+                      {loadIdentifier}
                     </TableCell>
                   </TableRow>
                 );

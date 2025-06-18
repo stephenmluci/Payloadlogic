@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { Load, Client } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -5,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Milestone, DollarSign, Edit3, FileText, CheckCircle, Clock, Truck } from 'lucide-react';
+import { MapPin, Milestone, DollarSign, Edit3, FileText, CheckCircle, Clock, Truck, Hash } from 'lucide-react';
 
 type LoadCardProps = {
   load: Load;
@@ -19,10 +20,11 @@ const statusConfig = {
   pending: { label: 'Pending', color: 'bg-yellow-500', icon: <Clock className="h-4 w-4 mr-1" /> },
   'in-transit': { label: 'In Transit', color: 'bg-blue-500', icon: <Truck className="h-4 w-4 mr-1" /> },
   delivered: { label: 'Delivered', color: 'bg-green-500', icon: <CheckCircle className="h-4 w-4 mr-1" /> },
+  'client-request-approved': { label: 'Req. Approved', color: 'bg-teal-500', icon: <CheckCircle className="h-4 w-4 mr-1" /> },
 };
 
 export function LoadCard({ load, clientName, onStatusChange, onGenerateAgreement, isUpdatingStatus }: LoadCardProps) {
-  const currentStatus = statusConfig[load.status];
+  const currentStatus = statusConfig[load.status] || statusConfig.pending;
 
   const profit = load.rate - (
     load.expenses.payroll + 
@@ -34,16 +36,24 @@ export function LoadCard({ load, clientName, onStatusChange, onGenerateAgreement
   return (
     <Card className="shadow-md hover:shadow-lg transition-shadow duration-300">
       <CardHeader>
-        <div className="flex justify-between items-start">
+        <div className="flex justify-between items-start mb-1">
           <CardTitle className="text-xl font-headline flex items-center">
             <MapPin className="h-5 w-5 mr-2 text-primary" />
             {load.origin} → {load.destination}
           </CardTitle>
-          <Badge variant="outline" className={`${currentStatus.color} text-white border-none flex items-center`}>
-            {currentStatus.icon} {currentStatus.label}
-          </Badge>
+          {load.loadNumber && (
+            <Badge variant="secondary" className="text-xs flex items-center">
+              <Hash className="h-3 w-3 mr-1" />
+              {load.loadNumber}
+            </Badge>
+          )}
         </div>
-        <CardDescription>Client: {clientName}</CardDescription>
+        <div className="flex justify-between items-center">
+            <CardDescription>Client: {clientName}</CardDescription>
+            <Badge variant="outline" className={`${currentStatus.color} text-white border-none flex items-center`}>
+                {currentStatus.icon} {currentStatus.label}
+            </Badge>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-center text-sm text-muted-foreground">
@@ -90,6 +100,7 @@ export function LoadCard({ load, clientName, onStatusChange, onGenerateAgreement
               <SelectItem value="pending">Pending</SelectItem>
               <SelectItem value="in-transit">In Transit</SelectItem>
               <SelectItem value="delivered">Delivered</SelectItem>
+              <SelectItem value="client-request-approved">Request Approved</SelectItem>
             </SelectContent>
           </Select>
         <Button 

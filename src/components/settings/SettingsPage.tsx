@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Percent, Droplet, Repeat, Trash2, PlusCircle, Save, Building2, Hash, User, Phone, Mail, Fuel, Briefcase, FileText, DollarSign, Gauge, GaugeCircle, Truck } from 'lucide-react';
+import { Percent, Droplet, Repeat, Trash2, PlusCircle, Save, Building2, Hash, User, Phone, Mail, Fuel, FileText, DollarSign, Gauge, GaugeCircle, Truck } from 'lucide-react';
 
 type SettingsPageProps = {
   settingsForm: Settings;
@@ -21,12 +21,20 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    // Specific numeric fields
-    const numericFields = ['payrollPercentage', 'defaultFuelCostPerGallon', 'defCostPerGallon', 'loadingFee', 'detentionFeeRate', 'truckMpg', 'truckAverageSpeed'];
-    if (numericFields.includes(name)) {
-      setSettingsForm(prev => ({ ...prev, [name]: value === '' ? undefined : Number(value) })); // Allow unsetting optional numeric fields
+
+    const requiredNumericFields = ['payrollPercentage', 'defaultFuelCostPerGallon', 'defCostPerGallon', 'truckMpg', 'truckAverageSpeed'];
+    const optionalNumericFields = ['loadingFee', 'detentionFeeRate'];
+
+    if (requiredNumericFields.includes(name)) {
+      // For required numeric fields, default to 0 if empty, otherwise parse as number.
+      // Number('') results in 0, Number('non-numeric-string') results in NaN.
+      // It's generally better to ensure it's always a number for controlled inputs.
+      setSettingsForm(prev => ({ ...prev, [name]: value === '' ? 0 : Number(value) }));
+    } else if (optionalNumericFields.includes(name)) {
+      // For optional numeric fields, set to undefined if empty, otherwise parse as number.
+      setSettingsForm(prev => ({ ...prev, [name]: value === '' ? undefined : Number(value) }));
     } else {
-      // All other fields (including new carrier fields which are strings)
+      // For string fields (carrier info, special terms)
       setSettingsForm(prev => ({ ...prev, [name]: value }));
     }
   };
@@ -42,7 +50,7 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
     const updatedExpenses = [...settingsForm.recurringExpenses];
     updatedExpenses[index] = {
       ...updatedExpenses[index],
-      [field]: field === 'amount' ? Number(value) : value
+      [field]: field === 'amount' ? (value === '' ? 0 : Number(value)) : value
     };
     setSettingsForm(prev => ({ ...prev, recurringExpenses: updatedExpenses }));
   };

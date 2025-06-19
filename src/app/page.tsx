@@ -750,29 +750,27 @@ export default function DashDispatchProApp() {
         const manualDefExpense = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def');
         const defCost = manualDefExpense
           ? manualDefExpense.amount
-          // Assuming DEF consumption is approx 2.5% of fuel consumption,
-          // or roughly 1 gallon of DEF for every 40 gallons of fuel.
-          // If truckMpg is fuel MPG, then DEF_MPG = truckMpg / 0.025 = truckMpg * 40 (approx).
-          // Or, more simply, DEF is often estimated at 1 gallon per 200-300 miles for Class 8 trucks.
-          // Let's use an estimate of 250 miles per gallon of DEF.
           : (load.distance > 0 && settings.defCostPerGallon > 0) 
             ? (load.distance / 250) * settings.defCostPerGallon 
             : 0;
 
         const payroll = load.totalAgreedRate * (settings.payrollPercentage / 100);
         
-        // This is a simplified daily factor. For more accuracy, one might calculate days per load.
-        const dailyRecurringFactor = 30; // Assuming recurring expenses are monthly, distribute over 30 days
-        const recurring = settings.recurringExpenses.reduce(
-          (sum, expense) => sum + (expense.amount / dailyRecurringFactor), 0 // Distribute monthly expense to daily
+        const dailyRecurringSum = settings.recurringExpenses.reduce(
+          (sum, expense) => sum + (expense.amount / 30), 0 // Sum of daily recurring amounts
         );
+        const estimatedDaysForLoad = load.estimatedDriveTimeHours 
+            ? Math.max(1, Math.ceil(load.estimatedDriveTimeHours / 24)) 
+            : 1; // Default to 1 day if drive time is not available
+        
+        const totalRecurringForLoad = dailyRecurringSum * estimatedDaysForLoad;
 
         updateLoad(load.id, {
           expenses: {
             payroll: parseFloat(payroll.toFixed(2)),
             fuel: parseFloat(fuelCost.toFixed(2)),
             def: parseFloat(defCost.toFixed(2)),
-            recurring: parseFloat(recurring.toFixed(2)), //This might need to be multiplied by load duration in days
+            recurring: parseFloat(totalRecurringForLoad.toFixed(2)),
             calculated: true 
           }
         });

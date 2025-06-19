@@ -38,12 +38,12 @@ const formatDateTimeDisplay = (isoString: string | undefined) => {
 };
 
 
-export function LoadCard({ load, client, settings, onStatusChange, onGenerateAgreement, onEdit, onDelete, isUpdatingStatus, isDeleting }: LoadCardProps) {
+export function LoadCard({ load, client, settings, onStatusChange, onGenerateAgreement, onEdit, onDelete, isUpdatingStatus }: LoadCardProps) {
   const currentStatus = statusConfig[load.status] || statusConfig.pending;
 
   const actualProfit = load.totalAgreedRate - (
     load.expenses.payroll +
-    load.expenses.recurring +
+    load.expenses.recurring + // This is now total recurring for the load duration
     load.expenses.fuel +
     load.expenses.def
   );
@@ -57,7 +57,7 @@ export function LoadCard({ load, client, settings, onStatusChange, onGenerateAgr
   let projectedPayroll = 0;
   let projectedFuelCost = 0;
   let projectedDefCost = 0;
-  let projectedRecurringDaily = 0;
+  let projectedTotalRecurring = 0;
 
   if (load.status !== 'delivered' || !load.expenses.calculated) {
     projectedPayroll = load.totalAgreedRate * (settings.payrollPercentage / 100);
@@ -70,11 +70,15 @@ export function LoadCard({ load, client, settings, onStatusChange, onGenerateAgr
       ? (load.distance / 250) * settings.defCostPerGallon 
       : 0;
     
-    projectedRecurringDaily = settings.recurringExpenses.reduce(
+    const dailyRecurringSum = settings.recurringExpenses.reduce(
       (sum, expense) => sum + (expense.amount / 30), 0
     );
+    const estimatedDays = load.estimatedDriveTimeHours 
+      ? Math.max(1, Math.ceil(load.estimatedDriveTimeHours / 24)) 
+      : 1; // Default to 1 day if drive time unknown
+    projectedTotalRecurring = dailyRecurringSum * estimatedDays;
     
-    const totalProjectedExpenses = projectedPayroll + projectedFuelCost + projectedDefCost + projectedRecurringDaily;
+    const totalProjectedExpenses = projectedPayroll + projectedFuelCost + projectedDefCost + projectedTotalRecurring;
     projectedProfit = load.totalAgreedRate - totalProjectedExpenses;
   }
 
@@ -187,7 +191,7 @@ export function LoadCard({ load, client, settings, onStatusChange, onGenerateAgr
                 <span>Est. Payroll:</span> <span className="text-right">${projectedPayroll.toFixed(2)}</span>
                 <span>Est. Fuel:</span> <span className="text-right">${projectedFuelCost.toFixed(2)}</span>
                 <span>Est. DEF:</span> <span className="text-right">${projectedDefCost.toFixed(2)}</span>
-                <span>Est. Recurring:</span> <span className="text-right">${projectedRecurringDaily.toFixed(2)}</span>
+                <span>Est. Recurring:</span> <span className="text-right">${projectedTotalRecurring.toFixed(2)}</span>
               </div>
               <Separator className="my-1" />
               <div className="flex justify-between items-center font-semibold text-sm">
@@ -197,7 +201,7 @@ export function LoadCard({ load, client, settings, onStatusChange, onGenerateAgr
                   ${projectedProfit.toFixed(2)}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground italic mt-1">Estimates based on current settings. Actuals calculated upon delivery.</p>
+              <p className="text-xs text-muted-foreground italic mt-1">Estimates based on current settings. Recurring costs estimated for load duration.</p>
             </div>
           </>
         )}
@@ -238,7 +242,7 @@ export function LoadCard({ load, client, settings, onStatusChange, onGenerateAgr
                 size="sm"
                 onClick={() => onEdit(load)}
                 className="flex-1 sm:flex-none"
-                disabled={isUpdatingStatus || isDeleting}
+                disabled={isUpdatingStatus}
             >
                 <Pencil className="h-4 w-4 mr-2" /> Edit
             </Button>
@@ -256,7 +260,7 @@ export function LoadCard({ load, client, settings, onStatusChange, onGenerateAgr
             <Select
                 value={load.status}
                 onValueChange={(value) => onStatusChange(load.id!, value as Load['status'])}
-                disabled={isUpdatingStatus || isDeleting}
+                disabled={isUpdatingStatus}
             >
                 <SelectTrigger className="w-full sm:w-[150px]">
                 <SelectValue placeholder="Change status" />
@@ -273,7 +277,7 @@ export function LoadCard({ load, client, settings, onStatusChange, onGenerateAgr
                 size="sm"
                 onClick={() => onGenerateAgreement(load)}
                 className="w-full sm:w-auto"
-                disabled={!client || isUpdatingStatus || isDeleting}
+                disabled={!client || isUpdatingStatus}
             >
                 <FileText className="h-4 w-4 mr-2" /> Agreement
             </Button>

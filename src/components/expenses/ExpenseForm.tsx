@@ -1,6 +1,6 @@
 
-import React, { useEffect } from 'react'; // Import useEffect
-import type { Expense, Load, Settings } from '@/types'; // Import Settings
+import React, { useEffect } from 'react';
+import type { Expense, Load, Settings } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +12,7 @@ type ExpenseFormProps = {
   expenseForm: Omit<Expense, 'id'>;
   setExpenseForm: React.Dispatch<React.SetStateAction<Omit<Expense, 'id'>>>;
   loads: Load[];
-  settings: Settings; // Add settings prop
+  settings: Settings;
   onSubmit: (e: React.FormEvent) => void;
   isSubmitting?: boolean;
 };
@@ -37,15 +37,15 @@ export function ExpenseForm({ expenseForm, setExpenseForm, loads, settings, onSu
       const selectedLoad = loads.find(load => load.id === expenseForm.loadId);
       if (selectedLoad && settings.payrollPercentage > 0) {
         const calculatedPayroll = (selectedLoad.totalAgreedRate * settings.payrollPercentage) / 100;
-        // Only update if the amount is not already set or differs significantly, to avoid feedback loops if user manually changes it.
-        // Or simply always set it if category is payroll & load is selected.
-        // For simplicity, we'll set it. The user can then override if they wish.
-        if (expenseForm.amount !== calculatedPayroll) {
-           setExpenseForm(prev => ({ ...prev, amount: parseFloat(calculatedPayroll.toFixed(2)) }));
-        }
+        setExpenseForm(prev => ({ ...prev, amount: parseFloat(calculatedPayroll.toFixed(2)) }));
+      } else if (selectedLoad && settings.payrollPercentage <= 0) {
+        // If payroll percentage is 0 or not set, default amount to 0 for payroll
+        setExpenseForm(prev => ({ ...prev, amount: 0 }));
       }
     }
-  }, [expenseForm.category, expenseForm.loadId, loads, settings, setExpenseForm, expenseForm.amount]);
+    // No 'else' block to clear amount if category changes, allowing manual entry for other categories
+    // or non-load-associated payroll.
+  }, [expenseForm.category, expenseForm.loadId, loads, settings, setExpenseForm]);
 
 
   return (
@@ -100,6 +100,7 @@ export function ExpenseForm({ expenseForm, setExpenseForm, loads, settings, onSu
                   onChange={handleInputChange}
                   placeholder="e.g., 150.75"
                   className="pl-10"
+                  required
                 />
               </div>
             </div>
@@ -108,7 +109,7 @@ export function ExpenseForm({ expenseForm, setExpenseForm, loads, settings, onSu
                <div className="relative">
                 <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground z-10" />
                 <Select
-                  value={expenseForm.loadId || NO_LOAD_VALUE} 
+                  value={expenseForm.loadId || NO_LOAD_VALUE}
                   onValueChange={handleLoadIdChange}
                 >
                   <SelectTrigger id="loadId" className="pl-10">

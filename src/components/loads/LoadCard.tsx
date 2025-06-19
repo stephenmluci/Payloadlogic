@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle } from 'lucide-react'; 
+import { MapPin, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2 } from 'lucide-react'; 
 import { format as formatDate } from 'date-fns';
 
 type LoadCardProps = {
@@ -14,7 +14,10 @@ type LoadCardProps = {
   client: Client | undefined; 
   onStatusChange: (loadId: string, status: Load['status']) => void;
   onGenerateAgreement: (load: Load) => void;
+  onEdit: (load: Load) => void;
+  onDelete: (loadId: string) => void;
   isUpdatingStatus?: boolean;
+  isDeleting?: boolean; // For disabling delete button during operation
 };
 
 const statusConfig = {
@@ -34,7 +37,7 @@ const formatDateTimeDisplay = (isoString: string | undefined) => {
 };
 
 
-export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, isUpdatingStatus }: LoadCardProps) {
+export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, onEdit, onDelete, isUpdatingStatus, isDeleting }: LoadCardProps) {
   const currentStatus = statusConfig[load.status] || statusConfig.pending;
 
   const profit = load.totalAgreedRate - (
@@ -49,7 +52,7 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, is
     : load.requestedByClientName || 'Unknown Client';
 
   return (
-    <Card className="shadow-md hover:shadow-lg transition-shadow duration-300">
+    <Card className="shadow-md hover:shadow-lg transition-shadow duration-300 flex flex-col">
       <CardHeader>
         <div className="flex justify-between items-start mb-1">
           <CardTitle className="text-xl font-headline flex items-center">
@@ -72,7 +75,7 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, is
             </Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3 text-sm">
+      <CardContent className="space-y-3 text-sm flex-grow">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
             <div className="flex items-center text-muted-foreground">
               <CalendarClock className="h-4 w-4 mr-2" />
@@ -130,32 +133,53 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, is
             </div>
         )}
       </CardContent>
-      <CardFooter className="flex flex-col sm:flex-row justify-between items-center gap-2 pt-4 border-t">
-         <Select 
-            value={load.status} 
-            onValueChange={(value) => onStatusChange(load.id!, value as Load['status'])}
-            disabled={isUpdatingStatus}
-          >
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue placeholder="Change status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="client-request-approved">Request Approved</SelectItem>
-              <SelectItem value="in-transit">In Transit</SelectItem>
-              <SelectItem value="delivered">Delivered</SelectItem>
-            </SelectContent>
-          </Select>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={() => onGenerateAgreement(load)}
-          className="w-full sm:w-auto"
-          disabled={!client} 
-        >
-          <FileText className="h-4 w-4 mr-2" />
-          Service Agreement
-        </Button>
+      <CardFooter className="flex flex-col sm:flex-row justify-between items-center gap-2 pt-4 border-t mt-auto">
+        <div className="flex gap-2 w-full sm:w-auto">
+            <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => onEdit(load)}
+                className="flex-1 sm:flex-none"
+                disabled={isUpdatingStatus || isDeleting}
+            >
+                <Pencil className="h-4 w-4 mr-2" /> Edit
+            </Button>
+            <Button 
+                variant="destructive" 
+                size="sm" 
+                onClick={() => onDelete(load.id!)}
+                className="flex-1 sm:flex-none"
+                disabled={isUpdatingStatus || isDeleting}
+            >
+                <Trash2 className="h-4 w-4 mr-2" /> Delete
+            </Button>
+        </div>
+        <div className="flex gap-2 w-full sm:w-auto flex-col sm:flex-row mt-2 sm:mt-0">
+            <Select 
+                value={load.status} 
+                onValueChange={(value) => onStatusChange(load.id!, value as Load['status'])}
+                disabled={isUpdatingStatus || isDeleting}
+            >
+                <SelectTrigger className="w-full sm:w-[150px]">
+                <SelectValue placeholder="Change status" />
+                </SelectTrigger>
+                <SelectContent>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="client-request-approved">Request Approved</SelectItem>
+                <SelectItem value="in-transit">In Transit</SelectItem>
+                <SelectItem value="delivered">Delivered</SelectItem>
+                </SelectContent>
+            </Select>
+            <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => onGenerateAgreement(load)}
+                className="w-full sm:w-auto"
+                disabled={!client || isUpdatingStatus || isDeleting} 
+            >
+                <FileText className="h-4 w-4 mr-2" /> Agreement
+            </Button>
+        </div>
       </CardFooter>
     </Card>
   );

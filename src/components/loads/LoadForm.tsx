@@ -7,21 +7,23 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { MapPin, DollarSign, Milestone, CircleHelp, Package as CargoIcon, CalendarClock, Edit } from 'lucide-react';
+import { MapPin, DollarSign, Milestone, Package as CargoIcon, CalendarClock, Edit, Save, XCircle } from 'lucide-react';
 
 type LoadFormProps = {
-  loadForm: Omit<Load, 'id' | 'expenses' | 'loadNumber' | 'totalAgreedRate'>;
-  setLoadForm: React.Dispatch<React.SetStateAction<Omit<Load, 'id' | 'expenses' | 'loadNumber' | 'totalAgreedRate'>>>;
+  loadForm: Partial<Load>; // Changed to Partial<Load> to accommodate id for editing
+  setLoadForm: React.Dispatch<React.SetStateAction<Partial<Load>>>;
   clients: Client[];
   onSubmit: (e: React.FormEvent) => void;
+  onCancelEdit?: () => void; // Optional: for canceling edit mode
   isSubmitting?: boolean;
+  editingLoadId: string | null;
 };
 
-export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, isSubmitting }: LoadFormProps) {
+export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, onCancelEdit, isSubmitting, editingLoadId }: LoadFormProps) {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
-    if (type === 'number' || name === 'distance' || name === 'ratePerMile') { // ratePerMile is now 'rate' in form
-      setLoadForm(prev => ({ ...prev, [name]: value === '' ? 0 : Number(value) }));
+    if (type === 'number' || name === 'distance' || name === 'ratePerMile') {
+      setLoadForm(prev => ({ ...prev, [name]: value === '' ? undefined : Number(value) })); // Use undefined for empty numbers if not required, or 0
     } else {
       setLoadForm(prev => ({ ...prev, [name]: value }));
     }
@@ -31,11 +33,14 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, isSubmittin
     setLoadForm(prev => ({ ...prev, [name]: value }));
   };
   
+  const isEditMode = !!editingLoadId;
+
   return (
     <Card className="shadow-lg">
       <CardHeader>
         <CardTitle className="text-2xl font-headline flex items-center gap-2">
-            <Edit /> Create or Update Load
+            <Edit /> {isEditMode ? 'Edit Load' : 'Create New Load'}
+            {isEditMode && loadForm.loadNumber && <span className="text-base font-normal text-muted-foreground">({loadForm.loadNumber})</span>}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -43,7 +48,7 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, isSubmittin
           <div>
             <Label htmlFor="clientId">Client Company</Label>
             <Select 
-              value={loadForm.clientId} 
+              value={loadForm.clientId || ''} 
               onValueChange={(value) => handleSelectChange('clientId', value)}
               name="clientId"
             >
@@ -73,7 +78,7 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, isSubmittin
                 <Input 
                   id="origin"
                   name="origin"
-                  value={loadForm.origin} 
+                  value={loadForm.origin || ''} 
                   onChange={handleInputChange} 
                   placeholder="e.g., 123 Loading Dock St, Anytown"
                   className="pl-10" 
@@ -88,7 +93,7 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, isSubmittin
                 <Input 
                   id="destination"
                   name="destination"
-                  value={loadForm.destination} 
+                  value={loadForm.destination || ''} 
                   onChange={handleInputChange} 
                   placeholder="e.g., 789 Recipient Ave, Otherville"
                   className="pl-10"
@@ -107,7 +112,7 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, isSubmittin
                         id="pickupDateTime"
                         name="pickupDateTime"
                         type="datetime-local"
-                        value={loadForm.pickupDateTime}
+                        value={loadForm.pickupDateTime || ''}
                         onChange={handleInputChange}
                         className="pl-10"
                         required
@@ -122,7 +127,7 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, isSubmittin
                         id="deliveryDateTime"
                         name="deliveryDateTime"
                         type="datetime-local"
-                        value={loadForm.deliveryDateTime}
+                        value={loadForm.deliveryDateTime || ''}
                         onChange={handleInputChange}
                         className="pl-10"
                         required
@@ -156,7 +161,7 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, isSubmittin
                   id="distance"
                   name="distance"
                   type="number"
-                  value={loadForm.distance} 
+                  value={loadForm.distance || ''} 
                   onChange={handleInputChange} 
                   placeholder="e.g., 500"
                   className="pl-10" 
@@ -170,10 +175,10 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, isSubmittin
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input 
                   id="ratePerMile"
-                  name="ratePerMile" // Name matches the field in loadForm state
+                  name="ratePerMile"
                   type="number"
                   step="0.01"
-                  value={loadForm.ratePerMile} 
+                  value={loadForm.ratePerMile || ''} 
                   onChange={handleInputChange} 
                   placeholder="e.g., 2.50"
                   className="pl-10"
@@ -186,7 +191,7 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, isSubmittin
           <div>
             <Label htmlFor="status">Status</Label>
             <Select 
-              value={loadForm.status}
+              value={loadForm.status || 'pending'}
               onValueChange={(value) => handleSelectChange('status', value as Load['status'])}
               name="status"
             >
@@ -214,9 +219,18 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, isSubmittin
             />
           </div>
           
-          <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting}>
-            {isSubmitting ? 'Saving Load...' : 'Save Load Details'}
-          </Button>
+          <div className="flex space-x-2">
+            <Button type="submit" className="flex-grow" disabled={isSubmitting}>
+              <Save className="mr-2 h-4 w-4" />
+              {isEditMode ? 'Update Load' : 'Add Load'}
+            </Button>
+            {isEditMode && onCancelEdit && (
+              <Button type="button" variant="outline" onClick={onCancelEdit} disabled={isSubmitting}>
+                <XCircle className="mr-2 h-4 w-4" />
+                Cancel Edit
+              </Button>
+            )}
+          </div>
         </form>
       </CardContent>
     </Card>

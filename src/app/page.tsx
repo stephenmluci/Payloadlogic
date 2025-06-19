@@ -63,8 +63,8 @@ const initialSettings: Settings = {
   payrollPercentage: 25,
   defaultFuelCostPerGallon: 3.80,
   defCostPerGallon: 3.5,
-  truckMpg: 6, // Added
-  truckAverageSpeed: 60, // Added
+  truckMpg: 6,
+  truckAverageSpeed: 60,
   recurringExpenses: [
     { name: 'Insurance', amount: 1200 },
     { name: 'Truck Payment', amount: 2500 },
@@ -93,18 +93,29 @@ const toDateTimeLocal = (isoString?: string): string => {
   if (!isoString) return new Date().toISOString().slice(0, 16);
   try {
     const date = new Date(isoString);
-    // Check if date is valid
     if (isNaN(date.getTime())) {
-      // If isoString is just a date (YYYY-MM-DD), append a default time
       if (isoString.match(/^\d{4}-\d{2}-\d{2}$/)) {
         return `${isoString}T09:00`;
       }
-      return new Date().toISOString().slice(0, 16); // Fallback for invalid date string
+      return new Date().toISOString().slice(0, 16);
     }
     return date.toISOString().slice(0, 16);
   } catch (e) {
-    return new Date().toISOString().slice(0, 16); // Fallback for parsing errors
+    return new Date().toISOString().slice(0, 16);
   }
+};
+
+const initialLoadFormData: Partial<Load> = {
+  clientId: '',
+  origin: '',
+  destination: '',
+  pickupDateTime: toDateTimeLocal(),
+  deliveryDateTime: toDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()),
+  ratePerMile: 0,
+  distance: 0,
+  status: 'pending',
+  cargoDescription: '',
+  specialTerms: '',
 };
 
 
@@ -127,18 +138,9 @@ export default function DashDispatchProApp() {
   const [settings, setSettings] = useState<Settings>(initialSettings);
   const [clientLoadRequests, setClientLoadRequests] = useState<ClientLoadRequest[]>([]);
 
+  const [loadForm, setLoadForm] = useState<Partial<Load>>(initialLoadFormData);
+  const [editingLoadId, setEditingLoadId] = useState<string | null>(null);
 
-  const [loadForm, setLoadForm] = useState<Omit<Load, 'id' | 'expenses' | 'loadNumber' | 'totalAgreedRate'>>({
-    clientId: '',
-    origin: '',
-    destination: '',
-    pickupDateTime: toDateTimeLocal(),
-    deliveryDateTime: toDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()), // Default to next day
-    ratePerMile: 0,
-    distance: 0,
-    status: 'pending',
-    cargoDescription: '',
-  });
 
   const [expenseForm, setExpenseForm] = useState<Omit<Expense, 'id'>>({
     date: new Date().toISOString().split('T')[0],
@@ -252,8 +254,8 @@ export default function DashDispatchProApp() {
 
   useEffect(() => {
     if (IS_ADMIN_REVIEW_MODE) {
-      fetchUserProfileAndData(mockReviewUser); // Directly call with mock user for review mode
-      return; // Skip Firebase auth listener in review mode
+      fetchUserProfileAndData(mockReviewUser);
+      return;
     }
 
     const unsubscribe = auth.onAuthStateChanged(authUser => {
@@ -268,7 +270,7 @@ export default function DashDispatchProApp() {
         setSettings(initialSettings);
         setSettingsForm(initialSettings);
         setClientLoadRequests([]);
-        setAppLoading(false); // Ensure loading is false if no user
+        setAppLoading(false);
       }
     });
     return () => unsubscribe();
@@ -303,7 +305,7 @@ export default function DashDispatchProApp() {
 
   const handleSignIn = async () => {
     if (IS_ADMIN_REVIEW_MODE) {
-      fetchUserProfileAndData(mockReviewUser); // Re-trigger mock user flow if in review mode
+      fetchUserProfileAndData(mockReviewUser);
       toast({ title: "Admin Review Mode", description: "Review session refreshed." });
       return;
     }
@@ -343,91 +345,133 @@ export default function DashDispatchProApp() {
     }
   };
 
-  const addLoad = async (loadDataToAdd?: Omit<Load, 'id' | 'expenses' | 'loadNumber' | 'totalAgreedRate'>) => {
+  const handleStartEditLoad = (loadToEdit: Load) => {
+    if (!user || user.role !== 'admin') return;
+    setLoadForm(loadToEdit);
+    setEditingLoadId(loadToEdit.id!);
+    setActiveTab('loads'); // Switch to loads tab if not already there
+    // Optionally, scroll to the form or ensure the createLoad tab is active within LoadsPage
+  };
+
+  const handleCancelEditLoad = () => {
+    setLoadForm(initialLoadFormData);
+    setEditingLoadId(null);
+  };
+
+  const handleSaveLoad = async (loadDataToSave?: Partial<Load>) => {
     if (!user || user.role !== 'admin') return;
     setIsSubmitting(true);
-
-    const dataToUse = loadDataToAdd || loadForm;
-    const calculatedTotalRate = dataToUse.distance * dataToUse.ratePerMile;
-    
-    let nextLoadNumeric = 1;
-    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-        nextLoadNumeric = loads.length + 1;
-    } else if (user) {
-        const loadsCollectionRef = collection(db, `users/${user.uid}/loads`);
-        const q = query(loadsCollectionRef, orderBy('loadNumber', 'desc'), limit(1));
+  
+    const dataToUse = loadDataToSave || loadForm;
+    const calculatedTotalRate = (dataToUse.distance || 0) * (dataToUse.ratePerMile || 0);
+  
+    if (editingLoadId) { // This is an UPDATE
+      if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
+        setLoads(prevLoads => prevLoads.map(l => 
+          l.id === editingLoadId 
+            ? { ...l, ...dataToUse, id: editingLoadId, totalAgreedRate: calculatedTotalRate } as Load 
+            : l
+        ));
+        toast({ title: "Admin Review: Load Updated", description: `Load ${dataToUse.loadNumber || editingLoadId} updated locally (not saved).` });
+      } else {
         try {
-            const querySnapshot = await getDocs(q);
-            if (!querySnapshot.empty) {
-                const lastLoad = querySnapshot.docs[0].data() as Load;
-                if (lastLoad.loadNumber) {
-                    const lastNumericPart = parseInt(lastLoad.loadNumber.split('-')[1]);
-                    if (!isNaN(lastNumericPart)) {
-                        nextLoadNumeric = lastNumericPart + 1;
-                    } else {
-                        const allLoadsSnapshot = await getDocs(loadsCollectionRef);
-                        nextLoadNumeric = allLoadsSnapshot.size + 1;
-                    }
-                } else {
-                    const allLoadsSnapshot = await getDocs(loadsCollectionRef);
-                    nextLoadNumeric = allLoadsSnapshot.size + 1;
-                }
-            } else {
-                 const allLoadsSnapshot = await getDocs(loadsCollectionRef);
-                 nextLoadNumeric = allLoadsSnapshot.size + 1;
-            }
-        } catch (e) {
-            console.error("Error fetching last load number, falling back to collection size:", e);
-            const allLoadsSnapshot = await getDocs(loadsCollectionRef);
-            nextLoadNumeric = allLoadsSnapshot.size + 1;
+          const loadRef = doc(db, `users/${user.uid}/loads`, editingLoadId);
+          await updateDoc(loadRef, { ...dataToUse, totalAgreedRate: calculatedTotalRate });
+          setLoads(prevLoads => prevLoads.map(l => 
+            l.id === editingLoadId 
+              ? { ...l, ...dataToUse, id: editingLoadId, totalAgreedRate: calculatedTotalRate } as Load 
+              : l
+          ));
+          toast({ title: "Load Updated", description: `Load ${dataToUse.loadNumber || editingLoadId} has been successfully updated.` });
+        } catch (error: any) {
+          console.error('Error updating load:', error);
+          toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
         }
-    }
-    const newLoadNumber = formatLoadNumber(nextLoadNumeric);
-
-
-    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      const newLoadData: Load = {
-        id: `mock-load-${Date.now()}`,
+      }
+    } else { // This is an ADD
+      let nextLoadNumeric = 1;
+      if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
+          nextLoadNumeric = loads.length + 1;
+      } else if (user) {
+          const loadsCollectionRef = collection(db, `users/${user.uid}/loads`);
+          const q = query(loadsCollectionRef, orderBy('loadNumber', 'desc'), limit(1));
+          try {
+              const querySnapshot = await getDocs(q);
+              if (!querySnapshot.empty) {
+                  const lastLoad = querySnapshot.docs[0].data() as Load;
+                  if (lastLoad.loadNumber) {
+                      const lastNumericPart = parseInt(lastLoad.loadNumber.split('-')[1]);
+                      nextLoadNumeric = isNaN(lastNumericPart) ? (allLoadsSnapshot => allLoadsSnapshot.size + 1)(await getDocs(loadsCollectionRef)) : lastNumericPart + 1;
+                  } else {
+                      const allLoadsSnapshot = await getDocs(loadsCollectionRef);
+                      nextLoadNumeric = allLoadsSnapshot.size + 1;
+                  }
+              } else {
+                   const allLoadsSnapshot = await getDocs(loadsCollectionRef);
+                   nextLoadNumeric = allLoadsSnapshot.size + 1;
+              }
+          } catch (e) {
+              console.error("Error fetching last load number, falling back to collection size:", e);
+              const allLoadsSnapshot = await getDocs(loadsCollectionRef);
+              nextLoadNumeric = allLoadsSnapshot.size + 1;
+          }
+      }
+      const newLoadNumber = formatLoadNumber(nextLoadNumeric);
+  
+      const newLoadData: Omit<Load, 'id'> = {
         loadNumber: newLoadNumber,
-        ...dataToUse,
+        clientId: dataToUse.clientId!,
+        origin: dataToUse.origin!,
+        destination: dataToUse.destination!,
+        pickupDateTime: dataToUse.pickupDateTime!,
+        deliveryDateTime: dataToUse.deliveryDateTime!,
+        ratePerMile: dataToUse.ratePerMile || 0,
+        distance: dataToUse.distance || 0,
         totalAgreedRate: calculatedTotalRate,
+        status: dataToUse.status || 'pending',
+        cargoDescription: dataToUse.cargoDescription,
+        specialTerms: dataToUse.specialTerms,
+        originalClientRequestId: dataToUse.originalClientRequestId,
+        requestedByClientName: dataToUse.requestedByClientName,
+        requestedByAuthUid: dataToUse.requestedByAuthUid,
         expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
       };
-      setLoads(prev => [...prev, newLoadData]);
-      if (!loadDataToAdd) {
-         setLoadForm({ clientId: '', origin: '', destination: '', pickupDateTime: toDateTimeLocal(), deliveryDateTime: toDateTimeLocal(new Date(Date.now() + 24*60*60*1000).toISOString()), ratePerMile: 0, distance: 0, status: 'pending', cargoDescription: '' });
+  
+      if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
+        const mockNewLoad = { ...newLoadData, id: `mock-load-${Date.now()}` } as Load;
+        setLoads(prev => [...prev, mockNewLoad]);
+        toast({ title: "Admin Review: Load Added", description: `Load ${newLoadNumber} added to local view (not saved).` });
+      } else {
+        try {
+          const docRef = await addDoc(collection(db, `users/${user.uid}/loads`), newLoadData);
+          setLoads(prev => [...prev, { ...newLoadData, id: docRef.id } as Load]);
+          toast({ title: "Load Added", description: `New load ${newLoadNumber} has been successfully created.` });
+        } catch (error: any) {
+          console.error('Error adding load:', error);
+          toast({ variant: "destructive", title: "Error Adding Load", description: error.message });
+        }
       }
-      toast({ title: "Admin Review: Load Added", description: `Load ${newLoadNumber} added to local view (not saved).` });
-      setIsSubmitting(false);
-      return;
     }
-
-    const newLoadDataForFirestore: Omit<Load, 'id'> = { 
-      loadNumber: newLoadNumber,
-      ...dataToUse,
-      totalAgreedRate: calculatedTotalRate,
-      expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
-    };
-    try {
-      const docRef = await addDoc(collection(db, `users/${user.uid}/loads`), newLoadDataForFirestore);
-      setLoads(prev => [...prev, { ...newLoadDataForFirestore, id: docRef.id }]);
-      if (!loadDataToAdd) {
-        setLoadForm({ clientId: '', origin: '', destination: '', pickupDateTime: toDateTimeLocal(), deliveryDateTime: toDateTimeLocal(new Date(Date.now() + 24*60*60*1000).toISOString()), ratePerMile: 0, distance: 0, status: 'pending', cargoDescription: '' });
-      }
-      toast({ title: "Load Added", description: `New load ${newLoadNumber} has been successfully created.` });
-    } catch (error: any) {
-      console.error('Error adding load:', error);
-      toast({ variant: "destructive", title: "Error Adding Load", description: error.message });
-    } finally {
-      setIsSubmitting(false);
-    }
+  
+    handleCancelEditLoad(); // Reset form and editing state
+    setIsSubmitting(false);
   };
   
   const updateLoad = useCallback(async (id: string, updates: Partial<Load>) => {
     if (!user || user.role !== 'admin') return;
+    
+    // Recalculate totalAgreedRate if distance or ratePerMile is being updated
+    let finalUpdates = { ...updates };
+    const currentLoad = loads.find(l => l.id === id);
+    if (currentLoad && (updates.distance !== undefined || updates.ratePerMile !== undefined)) {
+        const newDistance = updates.distance !== undefined ? updates.distance : currentLoad.distance;
+        const newRatePerMile = updates.ratePerMile !== undefined ? updates.ratePerMile : currentLoad.ratePerMile;
+        finalUpdates.totalAgreedRate = newDistance * newRatePerMile;
+    }
+
 
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...updates } : l));
+      setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...finalUpdates } as Load : l));
       let description = "Load details updated locally (not saved).";
       if (updates.status) {
         description = `Load status changed to ${updates.status} (not saved).`;
@@ -439,8 +483,8 @@ export default function DashDispatchProApp() {
     }
 
     try {
-      await updateDoc(doc(db, `users/${user.uid}/loads`, id), updates);
-      setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...updates } : l));
+      await updateDoc(doc(db, `users/${user.uid}/loads`, id), finalUpdates);
+      setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...finalUpdates } as Load : l));
       if (updates.status) {
         toast({ title: "Load Updated", description: `Load status changed to ${updates.status}.` });
       } else if (updates.expenses?.calculated) {
@@ -452,7 +496,35 @@ export default function DashDispatchProApp() {
       console.error('Error updating load:', error);
       toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
     }
-  }, [user, toast]); 
+  }, [user, toast, loads]); // Added loads to dependency array for currentLoad access
+
+  const handleDeleteLoad = async (loadId: string) => {
+    if (!user || user.role !== 'admin') return;
+  
+    // Simple confirmation for now
+    if (!window.confirm("Are you sure you want to delete this load? This action cannot be undone.")) {
+      return;
+    }
+  
+    setIsSubmitting(true);
+    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
+      setLoads(prevLoads => prevLoads.filter(l => l.id !== loadId));
+      toast({ title: "Admin Review: Load Deleted", description: `Load ${loadId} removed from local view (not saved).` });
+      setIsSubmitting(false);
+      return;
+    }
+  
+    try {
+      await deleteDoc(doc(db, `users/${user.uid}/loads`, loadId));
+      setLoads(prevLoads => prevLoads.filter(l => l.id !== loadId));
+      toast({ title: "Load Deleted", description: "Load has been successfully deleted." });
+    } catch (error: any) {
+      console.error('Error deleting load:', error);
+      toast({ variant: "destructive", title: "Error Deleting Load", description: error.message });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
 
   const updateLoadStatus = async (id: string, status: Load['status']) => {
@@ -462,24 +534,31 @@ export default function DashDispatchProApp() {
   const approveClientLoadRequest = async (request: ClientLoadRequest) => {
     if (!user || user.role !== 'admin') return;
     
-    let prefilledClientId = '';
-   
-    const loadDataFromRequest: Omit<Load, 'id' | 'expenses' | 'loadNumber' | 'totalAgreedRate'> = {
-      clientId: prefilledClientId, 
+    // Find client by name if possible, or leave blank for admin to fill
+    const existingClient = clients.find(c => 
+        c.companyName.toLowerCase() === (request.requestedByClientName || "").toLowerCase() ||
+        c.contactName.toLowerCase() === (request.requestedByClientName || "").toLowerCase()
+    );
+
+    const loadDataFromRequest: Partial<Load> = {
+      clientId: existingClient?.id || '', 
       origin: request.origin,
       destination: request.destination,
       pickupDateTime: toDateTimeLocal(request.requestedPickupDate),
       deliveryDateTime: toDateTimeLocal(new Date(new Date(request.requestedPickupDate || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString()), 
       ratePerMile: 0, 
       distance: 0, 
-      status: 'client-request-approved' as Load['status'],
+      status: 'client-request-approved',
       cargoDescription: request.cargoDescription,
       originalClientRequestId: request.id,
       requestedByClientName: request.requestedByClientName,
       requestedByAuthUid: request.requestedByClientUid,
     };
     setLoadForm(loadDataFromRequest); 
-    setActiveTab('loads');
+    setEditingLoadId(null); // Ensure it's treated as a new load from request
+    setActiveTab('loads'); // Switch to loads tab
+    // Consider also switching the inner tab in LoadsPage to 'createLoad'
+    // This might need a new state or prop for LoadsPage itself.
 
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
       setClientLoadRequests(prev => prev.map(r => r.id === request.id ? {...r, status: 'viewed'} : r));
@@ -590,11 +669,11 @@ export default function DashDispatchProApp() {
       if (load.status === 'delivered' && !load.expenses.calculated && load.id) {
         const payroll = load.totalAgreedRate * (settings.payrollPercentage / 100);
         const recurring = settings.recurringExpenses.reduce(
-          (sum, expense) => sum + (expense.amount / 30), 0 // Simplified: assumes all recurring expenses are monthly
+          (sum, expense) => sum + (expense.amount / 30), 0 
         );
         const loadSpecificExpenses = expenses.filter(exp => exp.loadId === load.id);
         const fuelCost = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'fuel')?.amount || 0;
-        const defCost = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def')?.amount || (load.distance / 250 * settings.defCostPerGallon); // Simplified DEF calc
+        const defCost = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def')?.amount || (load.distance / 250 * settings.defCostPerGallon); 
 
         updateLoad(load.id, {
           expenses: {
@@ -850,17 +929,21 @@ export default function DashDispatchProApp() {
                                         clientLoadRequests={clientLoadRequests}
                                         loadForm={loadForm}
                                         setLoadForm={setLoadForm}
-                                        addLoad={addLoad}
+                                        editingLoadId={editingLoadId}
+                                        onSaveLoad={handleSaveLoad}
+                                        onEditLoad={handleStartEditLoad}
+                                        onDeleteLoad={handleDeleteLoad}
+                                        onCancelEditLoad={handleCancelEditLoad}
                                         updateLoadStatus={updateLoadStatus}
                                         generateAgreement={generateAgreement}
                                         approveClientLoadRequest={approveClientLoadRequest}
                                         isSubmittingLoad={isSubmitting}
-                                        isUpdatingStatus={isSubmitting}
+                                        isUpdatingStatus={isSubmitting} // Can be more granular if needed
                                       />}
           {activeTab === 'expenses' && <ExpensesPage
                                           expenses={expenses}
                                           loads={loads}
-                                          settings={settings} // Pass settings here
+                                          settings={settings} 
                                           expenseForm={expenseForm}
                                           setExpenseForm={setExpenseForm}
                                           addExpense={addExpense}
@@ -872,7 +955,10 @@ export default function DashDispatchProApp() {
                                         setClientForm={setClientForm}
                                         addClient={addClient}
                                         setActiveTab={setActiveTab}
-                                        setLoadFormClientId={(clientId) => setLoadForm(prev => ({ ...prev, clientId }))}
+                                        setLoadFormClientId={(clientId) => {
+                                          setLoadForm(prev => ({ ...initialLoadFormData, clientId }));
+                                          setEditingLoadId(null);
+                                        }}
                                         isSubmittingClient={isSubmitting}
                                        />}
           {activeTab === 'settings' && <SettingsPage
@@ -896,4 +982,3 @@ export default function DashDispatchProApp() {
       </div>
     );
 }
-

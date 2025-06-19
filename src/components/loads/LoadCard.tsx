@@ -15,7 +15,7 @@ type LoadCardProps = {
   onStatusChange: (loadId: string, status: Load['status']) => void;
   onGenerateAgreement: (load: Load) => void;
   onEdit: (load: Load) => void;
-  onDelete: (loadId: string) => void;
+  onDelete: (loadId: string) => Promise<void>; // Changed void to Promise<void>
   isUpdatingStatus?: boolean;
   isDeleting?: boolean; // For disabling delete button during operation
 };

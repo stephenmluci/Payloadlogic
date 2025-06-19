@@ -8,7 +8,7 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { db, auth } from '@/lib/firebase';
 import type { User, Load, Expense, Client, Settings, UserProfile, ClientLoadRequest } from '@/types';
 import { useToast } from "@/hooks/use-toast";
-import { format as formatDate } from 'date-fns';
+import { format as formatDate, differenceInCalendarDays } from 'date-fns';
 
 
 // Page Components
@@ -564,7 +564,7 @@ export default function DashDispatchProApp() {
       console.error('Error updating load:', error);
       toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
     }
-  }, [user, toast, loads, settings.truckAverageSpeed, settings.truckMpg, settings.defaultFuelCostPerGallon, settings.defCostPerGallon, settings.payrollPercentage]); // Added all settings dependencies for expense calculation
+  }, [user, toast, loads, settings]); 
 
   const handleDeleteLoad = async (loadId: string) => {
     if (!user || user.role !== 'admin') {
@@ -759,11 +759,20 @@ export default function DashDispatchProApp() {
         const dailyRecurringSum = settings.recurringExpenses.reduce(
           (sum, expense) => sum + (expense.amount / 30), 0 // Sum of daily recurring amounts
         );
-        const estimatedDaysForLoad = load.estimatedDriveTimeHours 
-            ? Math.max(1, Math.ceil(load.estimatedDriveTimeHours / 24)) 
-            : 1; // Default to 1 day if drive time is not available
         
-        const totalRecurringForLoad = dailyRecurringSum * estimatedDaysForLoad;
+        let durationInDays = 1;
+        try {
+            const pickupDate = new Date(load.pickupDateTime);
+            const deliveryDate = new Date(load.deliveryDateTime);
+            if (!isNaN(pickupDate.getTime()) && !isNaN(deliveryDate.getTime()) && deliveryDate >= pickupDate) {
+                durationInDays = differenceInCalendarDays(deliveryDate, pickupDate) + 1;
+            }
+        } catch (e) {
+            console.warn("Error calculating duration for load, defaulting to 1 day:", load.id, e);
+        }
+        durationInDays = Math.max(1, durationInDays); // Ensure at least 1 day
+        
+        const totalRecurringForLoad = dailyRecurringSum * durationInDays;
 
         updateLoad(load.id, {
           expenses: {

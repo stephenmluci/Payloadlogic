@@ -7,18 +7,17 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { MapPin, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2, Ruler, Weight, Box, ShieldCheck, ShieldX, Timer, Phone, TrendingUp, TrendingDown, Info } from 'lucide-react';
-import { format as formatDate } from 'date-fns';
+import { format as formatDate, differenceInCalendarDays } from 'date-fns';
 
 type LoadCardProps = {
   load: Load;
   client: Client | undefined;
-  settings: Settings; // Added settings
+  settings: Settings; 
   onStatusChange: (loadId: string, status: Load['status']) => void;
   onGenerateAgreement: (load: Load) => void;
   onEdit: (load: Load) => void;
   onDelete: (loadId: string) => Promise<void>;
   isUpdatingStatus?: boolean;
-  isDeleting?: boolean;
 };
 
 const statusConfig = {
@@ -43,7 +42,7 @@ export function LoadCard({ load, client, settings, onStatusChange, onGenerateAgr
 
   const actualProfit = load.totalAgreedRate - (
     load.expenses.payroll +
-    load.expenses.recurring + // This is now total recurring for the load duration
+    load.expenses.recurring +
     load.expenses.fuel +
     load.expenses.def
   );
@@ -73,10 +72,21 @@ export function LoadCard({ load, client, settings, onStatusChange, onGenerateAgr
     const dailyRecurringSum = settings.recurringExpenses.reduce(
       (sum, expense) => sum + (expense.amount / 30), 0
     );
-    const estimatedDays = load.estimatedDriveTimeHours 
-      ? Math.max(1, Math.ceil(load.estimatedDriveTimeHours / 24)) 
-      : 1; // Default to 1 day if drive time unknown
-    projectedTotalRecurring = dailyRecurringSum * estimatedDays;
+
+    let durationInDays = 1;
+    try {
+        const pickupDate = new Date(load.pickupDateTime);
+        const deliveryDate = new Date(load.deliveryDateTime);
+        if (!isNaN(pickupDate.getTime()) && !isNaN(deliveryDate.getTime()) && deliveryDate >= pickupDate) {
+            durationInDays = differenceInCalendarDays(deliveryDate, pickupDate) + 1;
+        }
+    } catch (e) {
+      // Keep default durationInDays = 1 if dates are invalid
+      console.warn("Error calculating duration for projected profit, defaulting to 1 day:", load.id, e);
+    }
+    durationInDays = Math.max(1, durationInDays); // Ensure at least 1 day
+    
+    projectedTotalRecurring = dailyRecurringSum * durationInDays;
     
     const totalProjectedExpenses = projectedPayroll + projectedFuelCost + projectedDefCost + projectedTotalRecurring;
     projectedProfit = load.totalAgreedRate - totalProjectedExpenses;
@@ -201,7 +211,7 @@ export function LoadCard({ load, client, settings, onStatusChange, onGenerateAgr
                   ${projectedProfit.toFixed(2)}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground italic mt-1">Estimates based on current settings. Recurring costs estimated for load duration.</p>
+              <p className="text-xs text-muted-foreground italic mt-1">Estimates based on current settings. Recurring costs estimated based on scheduled pickup and delivery dates.</p>
             </div>
           </>
         )}

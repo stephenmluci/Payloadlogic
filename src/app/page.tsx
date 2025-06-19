@@ -116,6 +116,8 @@ const initialLoadFormData: Partial<Load> = {
   distance: 0,
   status: 'pending',
   cargoDescription: '',
+  cargoDimensions: '',
+  cargoWeight: '',
   specialTerms: '',
 };
 
@@ -470,6 +472,8 @@ export default function DashDispatchProApp() {
         totalAgreedRate: calculatedTotalRate,
         status: dataToUse.status || 'pending',
         cargoDescription: dataToUse.cargoDescription,
+        cargoDimensions: dataToUse.cargoDimensions,
+        cargoWeight: dataToUse.cargoWeight,
         specialTerms: dataToUse.specialTerms,
         originalClientRequestId: dataToUse.originalClientRequestId, // if from client request
         requestedByClientName: dataToUse.requestedByClientName, // if from client request
@@ -744,8 +748,8 @@ export default function DashDispatchProApp() {
         const manualDefExpense = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def');
         const defCost = manualDefExpense
           ? manualDefExpense.amount
-          : (load.distance > 0 && settings.defCostPerGallon > 0)
-            ? (load.distance / 250) * settings.defCostPerGallon // Assuming 250 miles per gallon of DEF
+          : (load.distance > 0 && settings.defCostPerGallon > 0 && settings.truckMpg > 0) // Assuming DEF usage relates to fuel usage, indirectly to MPG
+            ? (load.distance / settings.truckMpg / 50) * settings.defCostPerGallon // Example: DEF used is 1/50th of fuel, or 2% of fuel consumption.
             : 0;
 
         // Calculate Payroll
@@ -798,6 +802,10 @@ export default function DashDispatchProApp() {
 
       // Helper to draw text and update yPos
       const drawTextLine = (text: string, fontToUse: any, size: number, x: number, y: number, color = rgb(0,0,0)) => {
+        if (y < margin + size) { // Check if new page is needed
+            page = pdfDoc.addPage([600, 850]);
+            y = height - margin;
+        }
         page.drawText(text, { x, y, font: fontToUse, size, color });
         return y - size - (size > 10 ? 5 : 3); // Adjust spacing based on font size
       };
@@ -811,13 +819,21 @@ export default function DashDispatchProApp() {
       };
       
       const drawLine = (x1: number, y1: number, x2: number, y2: number, thickness = 0.5) => {
+        if (y1 < margin) { // Check if new page is needed before drawing line
+            page = pdfDoc.addPage([600, 850]);
+            y1 = height - margin; // Adjust y1 for new page, or manage yPos carefully
+            // This might need more sophisticated y-position management if lines span critical content breaks
+        }
         page.drawLine({start: {x: x1, y: y1}, end: {x: x2, y: y2}, thickness, color: rgb(0.7,0.7,0.7) });
       }
 
       // 1. Document Title
       yPos = drawTextLine('Hotshot Trucking Agreement', boldFont, titleFontSize, margin, yPos, rgb(0.1, 0.1, 0.1));
       if (loadData.loadNumber) {
-        yPos = drawTextLine(`Load ID: ${loadData.loadNumber}`, boldFont, subTitleFontSize - 2, width - margin - 100, yPos + titleFontSize + 2); // Position to the right
+        // Temporarily store yPos before drawing right-aligned text
+        const tempYPos = yPos;
+        yPos = drawTextLine(`Load ID: ${loadData.loadNumber}`, boldFont, subTitleFontSize - 2, width - margin - 100, tempYPos + titleFontSize + 2); // Position to the right
+        yPos = tempYPos; // Restore yPos
       }
       yPos -= lineSpacing / 2;
 
@@ -857,6 +873,14 @@ export default function DashDispatchProApp() {
       yPos -= lineSpacing * 0.75;
       yPos = drawBoldTextLine('Description:', margin, yPos);
       yPos = drawRegularTextLine(loadData.cargoDescription || 'N/A', margin + 10, yPos);
+      if(loadData.cargoDimensions){
+        yPos = drawBoldTextLine('Dimensions:', margin, yPos);
+        yPos = drawRegularTextLine(loadData.cargoDimensions, margin + 10, yPos);
+      }
+      if(loadData.cargoWeight){
+        yPos = drawBoldTextLine('Weight:', margin, yPos);
+        yPos = drawRegularTextLine(loadData.cargoWeight, margin + 10, yPos);
+      }
       
       yPos = drawBoldTextLine('Pickup Location:', margin, yPos);
       yPos = drawRegularTextLine(loadData.origin, margin + 10, yPos);

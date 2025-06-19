@@ -7,14 +7,14 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { MapPin, DollarSign, Milestone, Package as CargoIcon, CalendarClock, Edit, Save, XCircle } from 'lucide-react';
+import { MapPin, DollarSign, Milestone, Package as CargoIcon, CalendarClock, Edit, Save, XCircle, Ruler, Weight } from 'lucide-react';
 
 type LoadFormProps = {
-  loadForm: Partial<Load>; // Changed to Partial<Load> to accommodate id for editing
+  loadForm: Partial<Load>; 
   setLoadForm: React.Dispatch<React.SetStateAction<Partial<Load>>>;
   clients: Client[];
   onSubmit: (e: React.FormEvent) => void;
-  onCancelEdit?: () => void; // Optional: for canceling edit mode
+  onCancelEdit?: () => void; 
   isSubmitting?: boolean;
   editingLoadId: string | null;
 };
@@ -23,7 +23,7 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, onCancelEdi
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
     if (type === 'number' || name === 'distance' || name === 'ratePerMile') {
-      setLoadForm(prev => ({ ...prev, [name]: value === '' ? undefined : Number(value) })); // Use undefined for empty numbers if not required, or 0
+      setLoadForm(prev => ({ ...prev, [name]: value === '' ? undefined : Number(value) })); 
     } else {
       setLoadForm(prev => ({ ...prev, [name]: value }));
     }
@@ -149,6 +149,37 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, onCancelEdi
                     className="pl-10"
                     rows={3}
                 />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <Label htmlFor="cargoDimensions">Cargo Dimensions (e.g., LxWxH)</Label>
+              <div className="relative">
+                <Ruler className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <Input 
+                  id="cargoDimensions"
+                  name="cargoDimensions"
+                  value={loadForm.cargoDimensions || ''} 
+                  onChange={handleInputChange} 
+                  placeholder="e.g., 10ft L x 8ft W x 6ft H"
+                  className="pl-10" 
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="cargoWeight">Cargo Weight (e.g., lbs or kg)</Label>
+              <div className="relative">
+                <Weight className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <Input 
+                  id="cargoWeight"
+                  name="cargoWeight"
+                  value={loadForm.cargoWeight || ''} 
+                  onChange={handleInputChange} 
+                  placeholder="e.g., 5000 lbs"
+                  className="pl-10"
+                />
+              </div>
             </div>
           </div>
           

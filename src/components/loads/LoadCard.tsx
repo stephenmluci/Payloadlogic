@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2 } from 'lucide-react'; 
+import { MapPin, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2, Ruler, Weight, Box } from 'lucide-react'; 
 import { format as formatDate } from 'date-fns';
 
 type LoadCardProps = {
@@ -99,6 +99,28 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
             </div>
         </div>
         
+         { (load.cargoDescription || load.cargoDimensions || load.cargoWeight) && <Separator className="my-2" /> }
+
+        {load.cargoDescription && (
+            <div>
+                <h4 className="font-medium text-xs text-muted-foreground flex items-center"><Box className="h-3 w-3 mr-1.5"/>Cargo Description:</h4>
+                <p className="text-xs ml-4">{load.cargoDescription}</p>
+            </div>
+        )}
+        {load.cargoDimensions && (
+            <div>
+                <h4 className="font-medium text-xs text-muted-foreground flex items-center"><Ruler className="h-3 w-3 mr-1.5"/>Cargo Dimensions:</h4>
+                <p className="text-xs ml-4">{load.cargoDimensions}</p>
+            </div>
+        )}
+        {load.cargoWeight && (
+            <div>
+                <h4 className="font-medium text-xs text-muted-foreground flex items-center"><Weight className="h-3 w-3 mr-1.5"/>Cargo Weight:</h4>
+                <p className="text-xs ml-4">{load.cargoWeight}</p>
+            </div>
+        )}
+
+
         {load.status === 'delivered' && load.expenses.calculated && (
           <>
             <Separator className="my-3" />
@@ -120,15 +142,9 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
             </div>
           </>
         )}
-         {load.cargoDescription && (
-            <div>
-                <h4 className="font-medium text-xs text-muted-foreground mt-1">Cargo:</h4>
-                <p className="text-xs">{load.cargoDescription}</p>
-            </div>
-        )}
         {load.specialTerms && (
             <div>
-                <h4 className="font-medium text-xs text-muted-foreground mt-1">Special Terms:</h4>
+                <h4 className="font-medium text-xs text-muted-foreground mt-2">Special Terms:</h4>
                 <p className="text-xs italic">{load.specialTerms}</p>
             </div>
         )}

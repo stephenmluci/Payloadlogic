@@ -22,6 +22,8 @@ export type Load = {
     calculated: boolean;
   };
   cargoDescription?: string;
+  cargoDimensions?: string; // e.g., "10ft L x 8ft W x 6ft H"
+  cargoWeight?: string; // e.g., "5000 lbs"
   specialTerms?: string;
   originalClientRequestId?: string;
   requestedByClientName?: string; // Name of the person who requested, if from client portal
@@ -54,8 +56,8 @@ export type Settings = {
   payrollPercentage: number;
   defaultFuelCostPerGallon: number;
   defCostPerGallon: number;
-  truckMpg: number; // Added
-  truckAverageSpeed: number; // Added
+  truckMpg: number; 
+  truckAverageSpeed: number; 
   recurringExpenses: RecurringExpenseItem[];
   carrierName: string;
   carrierAddress: string;

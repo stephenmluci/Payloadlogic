@@ -564,7 +564,7 @@ export default function DashDispatchProApp() {
       console.error('Error updating load:', error);
       toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
     }
-  }, [user, toast, loads, settings.truckAverageSpeed]);
+  }, [user, toast, loads, settings.truckAverageSpeed, settings.truckMpg, settings.defaultFuelCostPerGallon, settings.defCostPerGallon, settings.payrollPercentage]); // Added all settings dependencies for expense calculation
 
   const handleDeleteLoad = async (loadId: string) => {
     if (!user || user.role !== 'admin') {
@@ -750,8 +750,13 @@ export default function DashDispatchProApp() {
         const manualDefExpense = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def');
         const defCost = manualDefExpense
           ? manualDefExpense.amount
-          : (load.distance > 0 && settings.defCostPerGallon > 0 && settings.truckMpg > 0) // Assuming DEF consumption is 1 gallon per 50 gallons of fuel, or truckMpg / 50 for DEF MPG.
-            ? (load.distance / settings.truckMpg / 50) * settings.defCostPerGallon 
+          // Assuming DEF consumption is approx 2.5% of fuel consumption,
+          // or roughly 1 gallon of DEF for every 40 gallons of fuel.
+          // If truckMpg is fuel MPG, then DEF_MPG = truckMpg / 0.025 = truckMpg * 40 (approx).
+          // Or, more simply, DEF is often estimated at 1 gallon per 200-300 miles for Class 8 trucks.
+          // Let's use an estimate of 250 miles per gallon of DEF.
+          : (load.distance > 0 && settings.defCostPerGallon > 0) 
+            ? (load.distance / 250) * settings.defCostPerGallon 
             : 0;
 
         const payroll = load.totalAgreedRate * (settings.payrollPercentage / 100);
@@ -906,10 +911,14 @@ export default function DashDispatchProApp() {
       yPos = drawBoldTextLine('Estimated Distance:', margin, yPos);
       yPos = drawRegularTextLine(`${loadData.distance} miles`, margin + 10, yPos);
 
-      if (loadData.tarpingFee && loadData.tarpingFee > 0) {
+      if (loadData.requiresTarping && loadData.tarpingFee && loadData.tarpingFee > 0) {
         yPos = drawBoldTextLine('Tarping Fee:', margin, yPos);
-        yPos = drawRegularTextLine(`$${loadData.tarpingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 10, yPos);
+        yPos = drawRegularTextLine(`$${loadData.tarpingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Tarping Required)`, margin + 10, yPos);
+      } else if (loadData.requiresTarping) {
+        yPos = drawBoldTextLine('Tarping:', margin, yPos);
+        yPos = drawRegularTextLine('Required (Fee included or N/A)', margin + 10, yPos);
       }
+
 
       yPos = drawBoldTextLine('Total Agreed Rate for Service:', margin, yPos);
       yPos = drawRegularTextLine(`$${loadData.totalAgreedRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 10, yPos);

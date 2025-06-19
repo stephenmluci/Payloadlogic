@@ -26,15 +26,10 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
     const optionalNumericFields = ['loadingFee', 'detentionFeeRate'];
 
     if (requiredNumericFields.includes(name)) {
-      // For required numeric fields, default to 0 if empty, otherwise parse as number.
-      // Number('') results in 0, Number('non-numeric-string') results in NaN.
-      // It's generally better to ensure it's always a number for controlled inputs.
       setSettingsForm(prev => ({ ...prev, [name]: value === '' ? 0 : Number(value) }));
     } else if (optionalNumericFields.includes(name)) {
-      // For optional numeric fields, set to undefined if empty, otherwise parse as number.
       setSettingsForm(prev => ({ ...prev, [name]: value === '' ? undefined : Number(value) }));
     } else {
-      // For string fields (carrier info, special terms)
       setSettingsForm(prev => ({ ...prev, [name]: value }));
     }
   };

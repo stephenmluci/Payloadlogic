@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { MapPin, DollarSign, Milestone, Package as CargoIcon, CalendarClock, Edit, Save, XCircle, Ruler, Weight } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { MapPin, DollarSign, Milestone, Package as CargoIcon, CalendarClock, Edit, Save, XCircle, Ruler, Weight, ShieldCheck } from 'lucide-react';
 
 type LoadFormProps = {
   loadForm: Partial<Load>; 
@@ -22,7 +23,7 @@ type LoadFormProps = {
 export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, onCancelEdit, isSubmitting, editingLoadId }: LoadFormProps) {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
-    if (type === 'number' || name === 'distance' || name === 'ratePerMile') {
+    if (type === 'number' || name === 'distance' || name === 'ratePerMile' || name === 'tarpingFee') {
       setLoadForm(prev => ({ ...prev, [name]: value === '' ? undefined : Number(value) })); 
     } else {
       setLoadForm(prev => ({ ...prev, [name]: value }));
@@ -31,6 +32,10 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, onCancelEdi
 
   const handleSelectChange = (name: string, value: string) => {
     setLoadForm(prev => ({ ...prev, [name]: value }));
+  };
+  
+  const handleCheckboxChange = (name: string, checked: boolean | 'indeterminate') => {
+    setLoadForm(prev => ({ ...prev, [name]: Boolean(checked) }));
   };
   
   const isEditMode = !!editingLoadId;
@@ -214,6 +219,37 @@ export function LoadForm({ loadForm, setLoadForm, clients, onSubmit, onCancelEdi
                   placeholder="e.g., 2.50"
                   className="pl-10"
                   required
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+            <div className="flex items-center space-x-2 pt-5">
+              <Checkbox
+                id="requiresTarping"
+                name="requiresTarping"
+                checked={loadForm.requiresTarping || false}
+                onCheckedChange={(checked) => handleCheckboxChange('requiresTarping', checked)}
+              />
+              <Label htmlFor="requiresTarping" className="flex items-center gap-1">
+                <ShieldCheck className="h-5 w-5 text-muted-foreground" />
+                Requires Tarping?
+              </Label>
+            </div>
+            <div>
+              <Label htmlFor="tarpingFee">Tarping Fee ($) (if applicable)</Label>
+              <div className="relative">
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <Input
+                  id="tarpingFee"
+                  name="tarpingFee"
+                  type="number"
+                  step="0.01"
+                  value={loadForm.tarpingFee || ''}
+                  onChange={handleInputChange}
+                  placeholder="e.g., 100.00"
+                  className="pl-10"
                 />
               </div>
             </div>

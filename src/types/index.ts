@@ -12,7 +12,7 @@ export type Load = {
   deliveryDateTime: string; // ISO string for date and time
   ratePerMile: number;
   distance: number;
-  totalAgreedRate: number; // Calculated: distance * ratePerMile
+  totalAgreedRate: number; // Calculated: (distance * ratePerMile) + tarpingFee
   status: 'pending' | 'in-transit' | 'delivered' | 'client-request-approved';
   expenses: {
     payroll: number;
@@ -25,6 +25,8 @@ export type Load = {
   cargoDimensions?: string; // e.g., "10ft L x 8ft W x 6ft H"
   cargoWeight?: string; // e.g., "5000 lbs"
   specialTerms?: string;
+  requiresTarping?: boolean;
+  tarpingFee?: number;
   originalClientRequestId?: string;
   requestedByClientName?: string; // Name of the person who requested, if from client portal
   requestedByAuthUid?: string; // Auth UID of the client user who requested

@@ -119,6 +119,8 @@ const initialLoadFormData: Partial<Load> = {
   cargoDimensions: '',
   cargoWeight: '',
   specialTerms: '',
+  requiresTarping: false,
+  tarpingFee: 0,
 };
 
 
@@ -393,7 +395,7 @@ export default function DashDispatchProApp() {
     setIsSubmitting(true);
   
     const dataToUse = loadDataToSave || loadForm; // Use passed data if available, else form state
-    const calculatedTotalRate = (dataToUse.distance || 0) * (dataToUse.ratePerMile || 0);
+    const calculatedTotalRate = (dataToUse.distance || 0) * (dataToUse.ratePerMile || 0) + (dataToUse.tarpingFee || 0);
   
     if (editingLoadId) { // This is an UPDATE
       if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
@@ -428,10 +430,6 @@ export default function DashDispatchProApp() {
           nextLoadNumeric = loads.length + 1;
       } else if (user) { // Real mode, query Firestore for the last load number
           const loadsCollectionRef = collection(db, `users/${user.uid}/loads`);
-          // Query for the load with the highest loadNumber. Store loadNumber as a string 'L-XXXX'
-          // This requires loadNumber to be consistently formatted.
-          // A more robust way might be to store the numeric part separately or parse it carefully.
-          // For simplicity, we'll try to parse or rely on collection size.
           const q = query(loadsCollectionRef, orderBy('loadNumber', 'desc'), limit(1));
           try {
               const querySnapshot = await getDocs(q);
@@ -439,20 +437,17 @@ export default function DashDispatchProApp() {
                   const lastLoad = querySnapshot.docs[0].data() as Load;
                   if (lastLoad.loadNumber) {
                       const lastNumericPart = parseInt(lastLoad.loadNumber.split('-')[1]);
-                      nextLoadNumeric = isNaN(lastNumericPart) ? (allLoadsSnapshot => allLoadsSnapshot.size + 1)(await getDocs(loadsCollectionRef)) : lastNumericPart + 1;
+                      nextLoadNumeric = isNaN(lastNumericPart) ? (await getDocs(loadsCollectionRef)).size + 1 : lastNumericPart + 1;
                   } else {
-                      // Fallback if loadNumber field is missing on last load
                       const allLoadsSnapshot = await getDocs(loadsCollectionRef);
                       nextLoadNumeric = allLoadsSnapshot.size + 1;
                   }
               } else {
-                   // No loads yet, start from 1
-                   const allLoadsSnapshot = await getDocs(loadsCollectionRef); // Ensure this is not empty due to timing
-                   nextLoadNumeric = allLoadsSnapshot.size + 1; // If truly empty, this will be 1
+                   const allLoadsSnapshot = await getDocs(loadsCollectionRef); 
+                   nextLoadNumeric = allLoadsSnapshot.size + 1; 
               }
           } catch (e) {
               console.error("Error fetching last load number, falling back to collection size:", e);
-              // Fallback if query fails
               const allLoadsSnapshot = await getDocs(loadsCollectionRef);
               nextLoadNumeric = allLoadsSnapshot.size + 1;
           }
@@ -475,10 +470,11 @@ export default function DashDispatchProApp() {
         cargoDimensions: dataToUse.cargoDimensions,
         cargoWeight: dataToUse.cargoWeight,
         specialTerms: dataToUse.specialTerms,
-        originalClientRequestId: dataToUse.originalClientRequestId, // if from client request
-        requestedByClientName: dataToUse.requestedByClientName, // if from client request
-        requestedByAuthUid: dataToUse.requestedByAuthUid, // if from client request
-        // Initialize expenses object
+        requiresTarping: dataToUse.requiresTarping || false,
+        tarpingFee: dataToUse.tarpingFee || 0,
+        originalClientRequestId: dataToUse.originalClientRequestId,
+        requestedByClientName: dataToUse.requestedByClientName,
+        requestedByAuthUid: dataToUse.requestedByAuthUid,
         expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
       };
   
@@ -508,20 +504,19 @@ export default function DashDispatchProApp() {
   const updateLoad = useCallback(async (id: string, updates: Partial<Load>) => {
     if (!user || user.role !== 'admin') return;
     
-    // Recalculate totalAgreedRate if distance or ratePerMile is being updated
     let finalUpdates = { ...updates };
     const currentLoad = loads.find(l => l.id === id);
-    if (currentLoad && (updates.distance !== undefined || updates.ratePerMile !== undefined)) {
+
+    if (currentLoad && (updates.distance !== undefined || updates.ratePerMile !== undefined || updates.tarpingFee !== undefined)) {
         const newDistance = updates.distance !== undefined ? updates.distance : currentLoad.distance;
         const newRatePerMile = updates.ratePerMile !== undefined ? updates.ratePerMile : currentLoad.ratePerMile;
-        finalUpdates.totalAgreedRate = newDistance * newRatePerMile;
+        const newTarpingFee = updates.tarpingFee !== undefined ? updates.tarpingFee : (currentLoad.tarpingFee || 0);
+        finalUpdates.totalAgreedRate = (newDistance * newRatePerMile) + newTarpingFee;
     }
 
-    // Handle expense updates specifically - merge with existing if expenses object is passed
     if (updates.expenses && currentLoad?.expenses) {
         finalUpdates.expenses = { ...currentLoad.expenses, ...updates.expenses };
     }
-
 
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
       setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...finalUpdates } as Load : l));
@@ -550,26 +545,23 @@ export default function DashDispatchProApp() {
       console.error('Error updating load:', error);
       toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
     }
-  }, [user, toast, loads]); // Added loads to dependency array for currentLoad access
+  }, [user, toast, loads]);
 
   const handleDeleteLoad = async (loadId: string) => {
     if (!user || user.role !== 'admin') return;
   
-    // Simple confirmation for now
     if (!window.confirm("Are you sure you want to delete this load? This action cannot be undone.")) {
       return;
     }
   
     setIsSubmitting(true);
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      // Review Mode: Remove from local state
       setLoads(prevLoads => prevLoads.filter(l => l.id !== loadId));
       toast({ title: "Admin Review: Load Deleted", description: `Load ${loadId} removed from local view (not saved).` });
       setIsSubmitting(false);
       return;
     }
   
-    // Real Mode: Delete from Firestore
     try {
       await deleteDoc(doc(db, `users/${user.uid}/loads`, loadId));
       setLoads(prevLoads => prevLoads.filter(l => l.id !== loadId));
@@ -590,45 +582,40 @@ export default function DashDispatchProApp() {
   const approveClientLoadRequest = async (request: ClientLoadRequest) => {
     if (!user || user.role !== 'admin') return;
     
-    // Find client by name if possible, or leave blank for admin to fill
     const existingClient = clients.find(c => 
         (c.companyName || "").toLowerCase() === (request.requestedByClientName || "").toLowerCase() ||
         (c.contactName || "").toLowerCase() === (request.requestedByClientName || "").toLowerCase()
     );
 
     const loadDataFromRequest: Partial<Load> = {
-      clientId: existingClient?.id || '', // Pre-fill if client found
+      clientId: existingClient?.id || '', 
       origin: request.origin,
       destination: request.destination,
-      // Use toDateTimeLocal to format the date from client request for the datetime-local input
       pickupDateTime: toDateTimeLocal(request.requestedPickupDate),
-      // Default delivery to 24 hours after pickup for initial form fill
       deliveryDateTime: toDateTimeLocal(new Date(new Date(request.requestedPickupDate || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString()), 
-      ratePerMile: 0, // Admin to fill
-      distance: 0, // Admin to fill
+      ratePerMile: 0, 
+      distance: 0, 
       status: 'client-request-approved',
       cargoDescription: request.cargoDescription,
+      requiresTarping: false, // Default tarping to false for new loads from requests
+      tarpingFee: 0,      // Default tarping fee to 0
       originalClientRequestId: request.id,
       requestedByClientName: request.requestedByClientName,
       requestedByAuthUid: request.requestedByClientUid,
     };
-    setLoadForm(loadDataFromRequest); // Populate the main load form
-    setEditingLoadId(null); // Ensure it's treated as a new load (from request)
-    setActiveTab('loads'); // Switch to loads tab
-    // Consider also switching the inner tab in LoadsPage to 'createLoad'
-    // This might need a new state or prop for LoadsPage itself.
-
-    // Update client request status to 'viewed' (or 'processing')
+    setLoadForm(loadDataFromRequest); 
+    setEditingLoadId(null); 
+    setActiveTab('loads'); 
+    
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
       setClientLoadRequests(prev => prev.map(r => r.id === request.id ? {...r, status: 'viewed'} : r));
       toast({ title: "Admin Review: Client Request Processed", description: "Load form pre-filled locally. Request status updated to 'viewed' (not saved)." });
       return;
     }
     
-    // Real mode: update Firestore
     try {
         const requestRef = doc(db, 'clientLoadRequests', request.id!);
-        await updateDoc(requestRef, { status: 'viewed' }); // Or 'accepted' if that makes more sense
+        await updateDoc(requestRef, { status: 'viewed' }); 
         setClientLoadRequests(prev => prev.map(r => r.id === request.id ? {...r, status: 'viewed'} : r));
         toast({ title: "Process Client Request", description: "Load form pre-filled. Please complete and save the load. Request marked as viewed." });
     } catch (error: any) {
@@ -643,23 +630,21 @@ export default function DashDispatchProApp() {
     setIsSubmitting(true);
 
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      // Review Mode: Add to local state
       const newExpenseWithId: Expense = {
         ...expenseForm,
         id: `mock-expense-${Date.now()}`
       };
       setExpenses(prev => [...prev, newExpenseWithId]);
-      setExpenseForm({ date: new Date().toISOString().split('T')[0], category: '', amount: 0, loadId: '' }); // Reset form
+      setExpenseForm({ date: new Date().toISOString().split('T')[0], category: '', amount: 0, loadId: '' }); 
       toast({ title: "Admin Review: Expense Added", description: "Expense added to local view (not saved)." });
       setIsSubmitting(false);
       return;
     }
 
-    // Real Mode: Add to Firestore
     try {
       const docRef = await addDoc(collection(db, `users/${user.uid}/expenses`), expenseForm);
       setExpenses(prev => [...prev, { ...expenseForm, id: docRef.id }]);
-      setExpenseForm({ date: new Date().toISOString().split('T')[0], category: '', amount: 0, loadId: '' }); // Reset form
+      setExpenseForm({ date: new Date().toISOString().split('T')[0], category: '', amount: 0, loadId: '' }); 
       toast({ title: "Expense Added", description: "Expense has been successfully recorded." });
     } catch (error: any) {
       console.error('Error adding expense:', error);
@@ -674,23 +659,21 @@ export default function DashDispatchProApp() {
     setIsSubmitting(true);
 
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      // Review Mode: Add to local state
       const newClientWithId: Client = {
         ...clientForm,
         id: `mock-client-${Date.now()}`
       };
       setClients(prev => [...prev, newClientWithId]);
-      setClientForm({ companyName: '', contactName: '', contactEmail: '', contactPhone: '', address: '' }); // Reset form
+      setClientForm({ companyName: '', contactName: '', contactEmail: '', contactPhone: '', address: '' }); 
       toast({ title: "Admin Review: Client Added", description: "Client added to local view (not saved)." });
       setIsSubmitting(false);
       return;
     }
 
-    // Real Mode: Add to Firestore
     try {
       const docRef = await addDoc(collection(db, `users/${user.uid}/clients`), clientForm);
       setClients(prev => [...prev, { ...clientForm, id: docRef.id }]);
-      setClientForm({ companyName: '', contactName: '', contactEmail: '', contactPhone: '', address: '' }); // Reset form
+      setClientForm({ companyName: '', contactName: '', contactEmail: '', contactPhone: '', address: '' }); 
       toast({ title: "Client Added", description: "New client has been successfully added." });
     } catch (error: any) {
       console.error('Error adding client:', error);
@@ -705,18 +688,16 @@ export default function DashDispatchProApp() {
     setIsSubmitting(true);
 
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      // Review Mode: Update local state
       setSettings(settingsForm);
       toast({ title: "Admin Review: Settings Updated", description: "Settings updated locally (not saved)." });
       setIsSubmitting(false);
       return;
     }
 
-    // Real Mode: Update Firestore
     try {
       const settingsRef = doc(db, `users/${user.uid}/settings`, SETTINGS_DOC_ID);
       await updateDoc(settingsRef, settingsForm);
-      setSettings(settingsForm); // Update local state
+      setSettings(settingsForm); 
       toast({ title: "Settings Updated", description: "Your settings have been saved." });
     } catch (error: any) {
       console.error('Error updating settings:', error);
@@ -736,7 +717,6 @@ export default function DashDispatchProApp() {
       if (load.status === 'delivered' && !load.expenses.calculated && load.id) {
         const loadSpecificExpenses = expenses.filter(exp => exp.loadId === load.id);
         
-        // Calculate Fuel Cost
         const manualFuelExpense = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'fuel');
         const fuelCost = manualFuelExpense 
           ? manualFuelExpense.amount 
@@ -744,36 +724,32 @@ export default function DashDispatchProApp() {
             ? (load.distance / settings.truckMpg) * settings.defaultFuelCostPerGallon
             : 0;
 
-        // Calculate DEF Cost
         const manualDefExpense = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def');
         const defCost = manualDefExpense
           ? manualDefExpense.amount
-          : (load.distance > 0 && settings.defCostPerGallon > 0 && settings.truckMpg > 0) // Assuming DEF usage relates to fuel usage, indirectly to MPG
-            ? (load.distance / settings.truckMpg / 50) * settings.defCostPerGallon // Example: DEF used is 1/50th of fuel, or 2% of fuel consumption.
+          : (load.distance > 0 && settings.defCostPerGallon > 0 && settings.truckMpg > 0) 
+            ? (load.distance / settings.truckMpg / 50) * settings.defCostPerGallon 
             : 0;
 
-        // Calculate Payroll
         const payroll = load.totalAgreedRate * (settings.payrollPercentage / 100);
         
-        // Calculate Recurring Expenses (daily share of monthly expenses)
-        const dailyRecurringFactor = 30; // Assuming recurring expenses are monthly.
+        const dailyRecurringFactor = 30; 
         const recurring = settings.recurringExpenses.reduce(
           (sum, expense) => sum + (expense.amount / dailyRecurringFactor), 0 
         );
 
-        // Update the load with calculated expenses
         updateLoad(load.id, {
           expenses: {
             payroll: parseFloat(payroll.toFixed(2)),
             fuel: parseFloat(fuelCost.toFixed(2)),
             def: parseFloat(defCost.toFixed(2)),
             recurring: parseFloat(recurring.toFixed(2)),
-            calculated: true // Mark as calculated
+            calculated: true 
           }
         });
       }
     });
-  }, [loads, settings, expenses, user, updateLoad]); // updateLoad is stable due to useCallback
+  }, [loads, settings, expenses, user, updateLoad]); 
 
   const generateAgreement = async (loadData: Load) => {
     if (!user || user.role !== 'admin') return;
@@ -782,10 +758,10 @@ export default function DashDispatchProApp() {
         toast({ variant: "destructive", title: "Client Not Found", description: "Cannot generate agreement without client details." });
         return;
     }
-    setIsSubmitting(true); // Indicate processing
+    setIsSubmitting(true); 
     try {
       const pdfDoc = await PDFDocument.create();
-      let page = pdfDoc.addPage([600, 850]); // Slightly taller page
+      let page = pdfDoc.addPage([600, 850]); 
       const { width, height } = page.getSize();
       
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -795,19 +771,18 @@ export default function DashDispatchProApp() {
       const titleFontSize = 16;
       const subTitleFontSize = 12;
       const smallFontSize = 8;
-      const lineSpacing = 15; // Adjusted line spacing
+      const lineSpacing = 15; 
       const sectionSpacing = 25;
       const margin = 50;
       let yPos = height - margin;
 
-      // Helper to draw text and update yPos
       const drawTextLine = (text: string, fontToUse: any, size: number, x: number, y: number, color = rgb(0,0,0)) => {
-        if (y < margin + size) { // Check if new page is needed
+        if (y < margin + size) { 
             page = pdfDoc.addPage([600, 850]);
             y = height - margin;
         }
         page.drawText(text, { x, y, font: fontToUse, size, color });
-        return y - size - (size > 10 ? 5 : 3); // Adjust spacing based on font size
+        return y - size - (size > 10 ? 5 : 3); 
       };
       
       const drawBoldTextLine = (text: string, x: number, y: number) => {
@@ -819,10 +794,9 @@ export default function DashDispatchProApp() {
       };
       
       const drawLine = (x1: number, y1: number, x2: number, y2: number, thickness = 0.5) => {
-        if (y1 < margin) { // Check if new page is needed before drawing line
+        if (y1 < margin) { 
             page = pdfDoc.addPage([600, 850]);
-            y1 = height - margin; // Adjust y1 for new page, or manage yPos carefully
-            // This might need more sophisticated y-position management if lines span critical content breaks
+            y1 = height - margin; 
         }
         page.drawLine({start: {x: x1, y: y1}, end: {x: x2, y: y2}, thickness, color: rgb(0.7,0.7,0.7) });
       }
@@ -830,10 +804,9 @@ export default function DashDispatchProApp() {
       // 1. Document Title
       yPos = drawTextLine('Hotshot Trucking Agreement', boldFont, titleFontSize, margin, yPos, rgb(0.1, 0.1, 0.1));
       if (loadData.loadNumber) {
-        // Temporarily store yPos before drawing right-aligned text
         const tempYPos = yPos;
-        yPos = drawTextLine(`Load ID: ${loadData.loadNumber}`, boldFont, subTitleFontSize - 2, width - margin - 100, tempYPos + titleFontSize + 2); // Position to the right
-        yPos = tempYPos; // Restore yPos
+        yPos = drawTextLine(`Load ID: ${loadData.loadNumber}`, boldFont, subTitleFontSize - 2, width - margin - 100, tempYPos + titleFontSize + 2); 
+        yPos = tempYPos; 
       }
       yPos -= lineSpacing / 2;
 
@@ -846,7 +819,6 @@ export default function DashDispatchProApp() {
       yPos = drawTextLine('PARTIES', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       
-      // Carrier Information
       yPos = drawBoldTextLine('Carrier:', margin, yPos);
       yPos = drawRegularTextLine(settings.carrierName || 'N/A', margin + 10, yPos);
       yPos = drawRegularTextLine(settings.carrierAddress || 'N/A', margin + 10, yPos);
@@ -855,7 +827,6 @@ export default function DashDispatchProApp() {
       yPos = drawRegularTextLine(`Email: ${settings.carrierContactEmail || 'N/A'}`, margin + 10, yPos);
       yPos -= lineSpacing;
 
-      // Customer Information
       yPos = drawBoldTextLine('Customer:', margin, yPos);
       yPos = drawRegularTextLine(client.companyName || 'N/A', margin + 10, yPos);
       if (client.address) {
@@ -866,7 +837,7 @@ export default function DashDispatchProApp() {
       yPos = drawRegularTextLine(`Email: ${client.contactEmail || 'N/A'}`, margin + 10, yPos);
       yPos -= sectionSpacing;
       
-      drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2)); // Separator line
+      drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2)); 
 
       // 4. Load Details
       yPos = drawTextLine('LOAD DETAILS', boldFont, subTitleFontSize, margin, yPos);
@@ -904,10 +875,15 @@ export default function DashDispatchProApp() {
       yPos = drawRegularTextLine(`$${loadData.ratePerMile.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 10, yPos);
       yPos = drawBoldTextLine('Estimated Distance:', margin, yPos);
       yPos = drawRegularTextLine(`${loadData.distance} miles`, margin + 10, yPos);
+
+      if (loadData.tarpingFee && loadData.tarpingFee > 0) {
+        yPos = drawBoldTextLine('Tarping Fee:', margin, yPos);
+        yPos = drawRegularTextLine(`$${loadData.tarpingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 10, yPos);
+      }
+
       yPos = drawBoldTextLine('Total Agreed Rate for Service:', margin, yPos);
       yPos = drawRegularTextLine(`$${loadData.totalAgreedRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 10, yPos);
 
-      // Loading/Unloading and Detention Fees from settings or placeholders
       yPos = drawBoldTextLine('Loading/Unloading Fee:', margin, yPos);
       yPos = drawRegularTextLine(settings.loadingFee !== undefined ? `$${settings.loadingFee.toFixed(2)}` : "[As agreed / See Special Terms]", margin + 10, yPos);
       yPos = drawBoldTextLine('Detention Fee:', margin, yPos);
@@ -919,9 +895,8 @@ export default function DashDispatchProApp() {
       yPos = drawTextLine('SPECIAL TERMS & CONDITIONS', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       const specialTermsText = loadData.specialTerms || settings.defaultSpecialTerms || "Standard carrier terms apply. Full terms available upon request. Payment due upon delivery unless otherwise agreed in writing. Late payments may incur additional charges.";
-      // Basic text wrapping for special terms
       const termsLines = [];
-      const maxCharsPerLine = 85; // Adjust as needed based on font size and page width
+      const maxCharsPerLine = 85; 
       let currentLine = "";
       specialTermsText.split(' ').forEach(word => {
           if ((currentLine + word).length > maxCharsPerLine) {
@@ -934,10 +909,9 @@ export default function DashDispatchProApp() {
       termsLines.push(currentLine.trim());
 
       for (const line of termsLines) {
-          if (yPos < margin + 100) { // Check if new page is needed for terms
+          if (yPos < margin + 100) { 
               page = pdfDoc.addPage([600, 850]);
               yPos = height - margin;
-              // Add continued header if needed
               yPos = drawTextLine('SPECIAL TERMS & CONDITIONS (Continued)', boldFont, subTitleFontSize, margin, yPos);
               yPos -= lineSpacing * 0.75;
           }
@@ -946,8 +920,7 @@ export default function DashDispatchProApp() {
       yPos -= sectionSpacing;
       
 
-      // Ensure enough space for signatures, otherwise add a new page
-      if (yPos < margin + 150) { // Increased space check for signatures
+      if (yPos < margin + 150) { 
         page = pdfDoc.addPage([600, 850]);
         yPos = height - margin;
       }
@@ -955,30 +928,28 @@ export default function DashDispatchProApp() {
 
       // 7. Signatures
       yPos = drawTextLine('SIGNATURES', boldFont, subTitleFontSize, margin, yPos);
-      yPos -= lineSpacing * 2; // Extra space before signature boxes
+      yPos -= lineSpacing * 2; 
 
-      const signatureBoxWidth = (width - (margin * 3)) / 2; // Two signature boxes side-by-side
+      const signatureBoxWidth = (width - (margin * 3)) / 2; 
       const signatureBoxHeight = 60;
       const signatureYPos = yPos - signatureBoxHeight;
 
-      // Carrier Signature
       drawRegularTextLine('Carrier Representative:', margin, yPos);
       page.drawRectangle({ x: margin, y: signatureYPos, width: signatureBoxWidth, height: signatureBoxHeight, borderColor: rgb(0,0,0), borderWidth: 1 });
       drawRegularTextLine('Date:', margin, signatureYPos - lineSpacing);
-      drawLine(margin + 40, signatureYPos - lineSpacing + 3, margin + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1); // Line for date
+      drawLine(margin + 40, signatureYPos - lineSpacing + 3, margin + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1); 
 
 
-      // Customer Signature
       const customerSigX = margin + signatureBoxWidth + margin;
       drawRegularTextLine('Customer Representative:', customerSigX, yPos);
       page.drawRectangle({ x: customerSigX, y: signatureYPos, width: signatureBoxWidth, height: signatureBoxHeight, borderColor: rgb(0,0,0), borderWidth: 1 });
       drawRegularTextLine('Date:', customerSigX, signatureYPos - lineSpacing);
-      drawLine(customerSigX + 40, signatureYPos - lineSpacing + 3, customerSigX + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1); // Line for date
+      drawLine(customerSigX + 40, signatureYPos - lineSpacing + 3, customerSigX + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1); 
       
-      yPos = signatureYPos - lineSpacing * 2; // Update yPos after drawing signatures
+      yPos = signatureYPos - lineSpacing * 2; 
 
       // 8. Concluding Clause
-      if (yPos < margin + 50) { // Check for new page before footer
+      if (yPos < margin + 50) { 
         page = pdfDoc.addPage([600, 850]);
         yPos = height - margin;
       }
@@ -988,7 +959,6 @@ export default function DashDispatchProApp() {
       yPos = drawTextLine(footerText2, font, smallFontSize, margin, yPos, rgb(0.3,0.3,0.3));
 
 
-      // Save and download
       const pdfBytes = await pdfDoc.save();
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const link = document.createElement('a');
@@ -997,13 +967,13 @@ export default function DashDispatchProApp() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(link.href); // Clean up the object URL
+      URL.revokeObjectURL(link.href); 
       toast({ title: "Agreement Generated", description: "PDF has been downloaded." });
     } catch (error: any) {
       console.error("Error generating PDF:", error);
       toast({ variant: "destructive", title: "PDF Error", description: "Could not generate service agreement." });
     } finally {
-      setIsSubmitting(false); // Reset submitting state
+      setIsSubmitting(false); 
     }
   };
 
@@ -1016,7 +986,6 @@ export default function DashDispatchProApp() {
     { id: 'settings', label: 'Settings', icon: Cog },
   ];
 
-  // More robust loading check
   const isLoading = appLoading || (user === null && !IS_ADMIN_REVIEW_MODE) || (user !== null && userRole === undefined && !IS_ADMIN_REVIEW_MODE) || (IS_ADMIN_REVIEW_MODE && !user);
 
 
@@ -1029,7 +998,6 @@ export default function DashDispatchProApp() {
     );
   }
 
-  // If not in review mode and no user, show AuthPage
   if (!user && !IS_ADMIN_REVIEW_MODE) {
     return <AuthPage
               email={email}
@@ -1041,12 +1009,10 @@ export default function DashDispatchProApp() {
             />;
   }
   
-  // If user exists and is a client (and not in admin review mode, though IS_ADMIN_REVIEW_MODE implies admin anyway for mock user)
   if (user && userRole === 'client') {
     return <ClientPortalPage user={user} onSignOut={handleSignOut} />;
   }
 
-  // If user exists and is an admin (this includes the mock admin review user)
   if (user && userRole === 'admin') {
     return (
       <div className="min-h-screen flex flex-col bg-background">
@@ -1070,12 +1036,12 @@ export default function DashDispatchProApp() {
                                         generateAgreement={generateAgreement}
                                         approveClientLoadRequest={approveClientLoadRequest}
                                         isSubmittingLoad={isSubmitting}
-                                        isUpdatingStatus={isSubmitting} // Can be more granular if needed
+                                        isUpdatingStatus={isSubmitting} 
                                       />}
           {activeTab === 'expenses' && <ExpensesPage
                                           expenses={expenses}
                                           loads={loads}
-                                          settings={settings} // Pass settings for payroll calculation
+                                          settings={settings} 
                                           expenseForm={expenseForm}
                                           setExpenseForm={setExpenseForm}
                                           addExpense={addExpense}
@@ -1089,7 +1055,7 @@ export default function DashDispatchProApp() {
                                         setActiveTab={setActiveTab}
                                         setLoadFormClientId={(clientId) => {
                                           setLoadForm(prev => ({ ...initialLoadFormData, clientId }));
-                                          setEditingLoadId(null); // Ensure it's a new load when coming from client card
+                                          setEditingLoadId(null); 
                                         }}
                                         isSubmittingClient={isSubmitting}
                                        />}
@@ -1098,7 +1064,7 @@ export default function DashDispatchProApp() {
                                           setSettingsForm={setSettingsForm}
                                           updateSettings={updateSettings}
                                           isSavingSettings={isSubmitting}
-                                          initialSettings={initialSettings} // Pass initial settings for reference or reset
+                                          initialSettings={initialSettings} 
                                         />}
         </main>
 
@@ -1107,8 +1073,6 @@ export default function DashDispatchProApp() {
     );
   }
   
-  // Fallback loading state / redirect logic if somehow no condition met
-  // This should ideally not be reached if logic above is correct
   return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />

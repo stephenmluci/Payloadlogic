@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2, Ruler, Weight, Box } from 'lucide-react'; 
+import { MapPin, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2, Ruler, Weight, Box, ShieldCheck, ShieldX } from 'lucide-react'; 
 import { format as formatDate } from 'date-fns';
 
 type LoadCardProps = {
@@ -17,7 +17,7 @@ type LoadCardProps = {
   onEdit: (load: Load) => void;
   onDelete: (loadId: string) => Promise<void>;
   isUpdatingStatus?: boolean;
-  isDeleting?: boolean; // For disabling edit button if this specific load's edit form is submitting
+  isDeleting?: boolean; 
 };
 
 const statusConfig = {
@@ -93,13 +93,19 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
               <DollarSign className="h-4 w-4 mr-2" />
               Rate/Mile: ${load.ratePerMile.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            <div className="flex items-center font-semibold">
+             {(load.tarpingFee && load.tarpingFee > 0) && (
+              <div className="flex items-center text-muted-foreground">
+                <DollarSign className="h-4 w-4 mr-2" />
+                Tarping Fee: ${load.tarpingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            )}
+            <div className="flex items-center font-semibold col-span-full sm:col-span-1">
               <DollarSign className="h-4 w-4 mr-2 text-primary" />
               Total Agreed: ${load.totalAgreedRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
         </div>
         
-         { (load.cargoDescription || load.cargoDimensions || load.cargoWeight) && <Separator className="my-2" /> }
+         { (load.cargoDescription || load.cargoDimensions || load.cargoWeight || load.requiresTarping !== undefined) && <Separator className="my-2" /> }
 
         {load.cargoDescription && (
             <div>
@@ -117,6 +123,15 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
             <div>
                 <h4 className="font-medium text-xs text-muted-foreground flex items-center"><Weight className="h-3 w-3 mr-1.5"/>Cargo Weight:</h4>
                 <p className="text-xs ml-4">{load.cargoWeight}</p>
+            </div>
+        )}
+        {load.requiresTarping !== undefined && (
+             <div>
+                <h4 className="font-medium text-xs text-muted-foreground flex items-center">
+                  {load.requiresTarping ? <ShieldCheck className="h-3 w-3 mr-1.5 text-green-600"/> : <ShieldX className="h-3 w-3 mr-1.5 text-red-600"/>}
+                  Tarping Required:
+                </h4>
+                <p className="text-xs ml-4">{load.requiresTarping ? 'Yes' : 'No'}</p>
             </div>
         )}
 
@@ -165,7 +180,7 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
                 size="sm" 
                 onClick={() => onDelete(load.id!)}
                 className="flex-1 sm:flex-none"
-                disabled={isUpdatingStatus} // Simplified: only disable if a global operation is in progress
+                disabled={isUpdatingStatus} 
             >
                 <Trash2 className="h-4 w-4 mr-2" /> Delete
             </Button>

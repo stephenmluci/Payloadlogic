@@ -13,28 +13,52 @@ type DashboardPageProps = {
 
 export function DashboardPage({ loads, expenses }: DashboardPageProps) {
   const totalIncome = loads.reduce((sum, load) => sum + load.totalAgreedRate, 0);
-  const totalLoadRelatedExpenses = loads.reduce((sum, load) => {
+
+  // Calculate total for "Load-Related (Calculated)" for the metric card
+  const totalLoadRelatedExpensesFromLoads = loads.reduce((sum, load) => {
     if (load.status === 'delivered' && load.expenses.calculated) {
       return sum + load.expenses.payroll + load.expenses.fuel + load.expenses.def + load.expenses.recurring;
     }
     return sum;
   }, 0);
-  const totalOtherExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const totalCalculatedExpenses = totalLoadRelatedExpenses + totalOtherExpenses;
+
+  const totalOtherManualExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const totalCalculatedExpenses = totalLoadRelatedExpensesFromLoads + totalOtherManualExpenses;
   
   const netProfit = totalIncome - totalCalculatedExpenses;
 
-  const expenseByCategory = expenses.reduce((acc, expense) => {
-    acc[expense.category] = (acc[expense.category] || 0) + expense.amount;
-    return acc;
-  }, {} as Record<string, number>);
+  // Prepare data for the expense breakdown chart (itemized)
+  const expenseByCategoryForChart: Record<string, number> = {};
 
-  if (totalLoadRelatedExpenses > 0) {
-     expenseByCategory['Load-Related (Calculated)'] = (expenseByCategory['Load-Related (Calculated)'] || 0) + totalLoadRelatedExpenses;
-  }
-  const expenseChartData = Object.entries(expenseByCategory).map(([name, value]) => ({ name, value }));
+  // Process manually logged expenses for the chart
+  expenses.forEach(expense => {
+    expenseByCategoryForChart[expense.category] = (expenseByCategoryForChart[expense.category] || 0) + expense.amount;
+  });
+
+  // Process calculated expenses from delivered loads for the chart, itemized
+  loads.forEach(load => {
+    if (load.status === 'delivered' && load.expenses.calculated) {
+      if (load.expenses.payroll > 0) {
+        expenseByCategoryForChart['Calculated Payroll'] = (expenseByCategoryForChart['Calculated Payroll'] || 0) + load.expenses.payroll;
+      }
+      if (load.expenses.fuel > 0) {
+        expenseByCategoryForChart['Calculated Fuel'] = (expenseByCategoryForChart['Calculated Fuel'] || 0) + load.expenses.fuel;
+      }
+      if (load.expenses.def > 0) {
+        expenseByCategoryForChart['Calculated DEF'] = (expenseByCategoryForChart['Calculated DEF'] || 0) + load.expenses.def;
+      }
+      if (load.expenses.recurring > 0) {
+        expenseByCategoryForChart['Calculated Recurring'] = (expenseByCategoryForChart['Calculated Recurring'] || 0) + load.expenses.recurring;
+      }
+    }
+  });
+
+  const expenseChartData = Object.entries(expenseByCategoryForChart)
+    .filter(([, value]) => value > 0) // Only include categories with an amount greater than 0
+    .map(([name, value]) => ({ name, value }));
 
 
+  // Prepare data for Profit Trends chart (remains the same)
   const monthlyProfitData: { month: string, profit: number }[] = loads.reduce((acc, load) => {
     if (load.status === 'delivered' && load.expenses.calculated) {
       const month = "Current Month"; 
@@ -50,10 +74,11 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
     return acc;
   }, [] as { month: string, profit: number }[]);
   
-  if (monthlyProfitData.length > 0 && totalOtherExpenses > 0) {
-    monthlyProfitData[0].profit -= totalOtherExpenses;
-  } else if (totalOtherExpenses > 0) {
-     monthlyProfitData.push({ month: "Adjustments", profit: -totalOtherExpenses});
+  // Adjust profit data for other manual expenses
+  if (monthlyProfitData.length > 0 && totalOtherManualExpenses > 0) {
+    monthlyProfitData[0].profit -= totalOtherManualExpenses;
+  } else if (monthlyProfitData.length === 0 && totalOtherManualExpenses > 0) { // If no loads but there are manual expenses
+     monthlyProfitData.push({ month: "Adjustments", profit: -totalOtherManualExpenses});
   }
 
 
@@ -88,7 +113,7 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
             <p><strong>Total Income:</strong> Gross income from all your loads (sum of all load 'Total Agreed Rates').</p>
             <p><strong>Total Calculated Expenses:</strong> Combines direct load costs (like payroll, fuel for delivered loads) and other general business expenses you've logged.</p>
             <p><strong>Net Profit:</strong> The difference between Total Income and Total Calculated Expenses.</p>
-            <p className="mt-2 italic">The 'Expense Category Breakdown' chart below specifically details the categories of your expenses, not your income.</p>
+            <p className="mt-2 italic">The 'Expense Category Breakdown' chart below specifically details the categories of your expenses, not your income. Calculated expenses from loads (like 'Calculated Payroll') are itemized.</p>
         </CardContent>
       </Card>
       
@@ -106,7 +131,7 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
                 <BarChart data={expenseChartData} layout="vertical" margin={{ left: 30, right:30 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number"  tickFormatter={(value) => `$${value}`}/>
-                  <YAxis dataKey="name" type="category" width={100} />
+                  <YAxis dataKey="name" type="category" width={120} interval={0} /> {/* Increased width for longer labels */}
                   <Tooltip formatter={(value: number) => `$${value.toFixed(2)}`} />
                   <Bar dataKey="value" fill="hsl(var(--primary))" barSize={20} />
                 </BarChart>

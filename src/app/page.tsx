@@ -63,6 +63,8 @@ const initialSettings: Settings = {
   payrollPercentage: 25,
   defaultFuelCostPerGallon: 3.80,
   defCostPerGallon: 3.5,
+  truckMpg: 6, // Added
+  truckAverageSpeed: 60, // Added
   recurringExpenses: [
     { name: 'Insurance', amount: 1200 },
     { name: 'Truck Payment', amount: 2500 },
@@ -248,9 +250,9 @@ export default function DashDispatchProApp() {
   }, [toast]);
 
 
- useEffect(() => {
+  useEffect(() => {
     if (IS_ADMIN_REVIEW_MODE) {
-      fetchUserProfileAndData(mockReviewUser); // Directly call with mock user
+      fetchUserProfileAndData(mockReviewUser); // Directly call with mock user for review mode
       return; // Skip Firebase auth listener in review mode
     }
 

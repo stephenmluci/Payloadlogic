@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Percent, Droplet, Repeat, Trash2, PlusCircle, Save, Building2, Hash, User, Phone, Mail, Fuel, Briefcase, FileText, DollarSign } from 'lucide-react';
+import { Percent, Droplet, Repeat, Trash2, PlusCircle, Save, Building2, Hash, User, Phone, Mail, Fuel, Briefcase, FileText, DollarSign, Gauge, GaugeCircle, Truck } from 'lucide-react';
 
 type SettingsPageProps = {
   settingsForm: Settings;
@@ -22,7 +22,7 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     // Specific numeric fields
-    const numericFields = ['payrollPercentage', 'defaultFuelCostPerGallon', 'defCostPerGallon', 'loadingFee', 'detentionFeeRate'];
+    const numericFields = ['payrollPercentage', 'defaultFuelCostPerGallon', 'defCostPerGallon', 'loadingFee', 'detentionFeeRate', 'truckMpg', 'truckAverageSpeed'];
     if (numericFields.includes(name)) {
       setSettingsForm(prev => ({ ...prev, [name]: value === '' ? undefined : Number(value) })); // Allow unsetting optional numeric fields
     } else {
@@ -68,7 +68,7 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="text-2xl font-headline">Business Configuration</CardTitle>
-          <CardDescription>Set operational defaults, carrier information, contract terms, and recurring expenses.</CardDescription>
+          <CardDescription>Set operational defaults, truck info, carrier information, contract terms, and recurring expenses.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Operational Defaults Section */}
@@ -121,6 +121,49 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
                   />
                 </div>
               </div>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Truck Information Section */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3 flex items-center">
+              <Truck className="h-5 w-5 mr-2 text-primary" /> Truck Information
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="truckMpg">Miles per Gallon (MPG)</Label>
+                  <div className="relative">
+                    <Gauge className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <Input
+                      id="truckMpg"
+                      name="truckMpg"
+                      type="number"
+                      step="0.1"
+                      value={settingsForm.truckMpg}
+                      onChange={handleInputChange}
+                      className="pl-10"
+                      placeholder="e.g., 6.5"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="truckAverageSpeed">Average Speed (mph)</Label>
+                  <div className="relative">
+                    <GaugeCircle className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <Input
+                      id="truckAverageSpeed"
+                      name="truckAverageSpeed"
+                      type="number"
+                      step="1"
+                      value={settingsForm.truckAverageSpeed}
+                      onChange={handleInputChange}
+                      className="pl-10"
+                      placeholder="e.g., 60"
+                    />
+                  </div>
+                </div>
             </div>
           </div>
 

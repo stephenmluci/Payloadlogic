@@ -52,9 +52,10 @@ export type RecurringExpenseItem = {
 
 export type Settings = {
   payrollPercentage: number;
-  // basePayrollAmount?: number; // Removed as per request
   defaultFuelCostPerGallon: number;
   defCostPerGallon: number;
+  truckMpg: number; // Added
+  truckAverageSpeed: number; // Added
   recurringExpenses: RecurringExpenseItem[];
   carrierName: string;
   carrierAddress: string;
@@ -88,3 +89,4 @@ export type ClientLoadRequest = {
   status: 'new' | 'viewed' | 'accepted' | 'rejected';
   createdLoadId?: string;
 };
+

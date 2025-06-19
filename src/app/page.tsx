@@ -121,6 +121,7 @@ const initialLoadFormData: Partial<Load> = {
   specialTerms: '',
   requiresTarping: false,
   tarpingFee: 0,
+  estimatedDriveTimeHours: undefined,
 };
 
 
@@ -396,13 +397,22 @@ export default function DashDispatchProApp() {
   
     const dataToUse = loadDataToSave || loadForm; // Use passed data if available, else form state
     const calculatedTotalRate = (dataToUse.distance || 0) * (dataToUse.ratePerMile || 0) + (dataToUse.tarpingFee || 0);
-  
+    const calculatedDriveTime = (settings.truckAverageSpeed > 0 && dataToUse.distance && dataToUse.distance > 0) 
+        ? dataToUse.distance / settings.truckAverageSpeed 
+        : undefined;
+
+    const dataWithCalculations = {
+        ...dataToUse,
+        totalAgreedRate: calculatedTotalRate,
+        estimatedDriveTimeHours: calculatedDriveTime
+    };
+
     if (editingLoadId) { // This is an UPDATE
       if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
         // Review Mode: Update local state
         setLoads(prevLoads => prevLoads.map(l => 
           l.id === editingLoadId 
-            ? { ...l, ...dataToUse, id: editingLoadId, totalAgreedRate: calculatedTotalRate } as Load 
+            ? { ...l, ...dataWithCalculations, id: editingLoadId } as Load 
             : l
         ));
         toast({ title: "Admin Review: Load Updated", description: `Load ${dataToUse.loadNumber || editingLoadId} updated locally (not saved).` });
@@ -410,10 +420,10 @@ export default function DashDispatchProApp() {
         // Real Mode: Update Firestore
         try {
           const loadRef = doc(db, `users/${user.uid}/loads`, editingLoadId);
-          await updateDoc(loadRef, { ...dataToUse, totalAgreedRate: calculatedTotalRate });
+          await updateDoc(loadRef, dataWithCalculations);
           setLoads(prevLoads => prevLoads.map(l => 
             l.id === editingLoadId 
-              ? { ...l, ...dataToUse, id: editingLoadId, totalAgreedRate: calculatedTotalRate } as Load 
+              ? { ...l, ...dataWithCalculations, id: editingLoadId } as Load 
               : l
           ));
           toast({ title: "Load Updated", description: `Load ${dataToUse.loadNumber || editingLoadId} has been successfully updated.` });
@@ -426,9 +436,8 @@ export default function DashDispatchProApp() {
       // Determine the next load number
       let nextLoadNumeric = 1;
       if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-          // In review mode, just base it on current array length + 1 for simplicity
           nextLoadNumeric = loads.length + 1;
-      } else if (user) { // Real mode, query Firestore for the last load number
+      } else if (user) { 
           const loadsCollectionRef = collection(db, `users/${user.uid}/loads`);
           const q = query(loadsCollectionRef, orderBy('loadNumber', 'desc'), limit(1));
           try {
@@ -439,17 +448,14 @@ export default function DashDispatchProApp() {
                       const lastNumericPart = parseInt(lastLoad.loadNumber.split('-')[1]);
                       nextLoadNumeric = isNaN(lastNumericPart) ? (await getDocs(loadsCollectionRef)).size + 1 : lastNumericPart + 1;
                   } else {
-                      const allLoadsSnapshot = await getDocs(loadsCollectionRef);
-                      nextLoadNumeric = allLoadsSnapshot.size + 1;
+                      nextLoadNumeric = (await getDocs(loadsCollectionRef)).size + 1;
                   }
               } else {
-                   const allLoadsSnapshot = await getDocs(loadsCollectionRef); 
-                   nextLoadNumeric = allLoadsSnapshot.size + 1; 
+                   nextLoadNumeric = (await getDocs(loadsCollectionRef)).size + 1; 
               }
           } catch (e) {
               console.error("Error fetching last load number, falling back to collection size:", e);
-              const allLoadsSnapshot = await getDocs(loadsCollectionRef);
-              nextLoadNumeric = allLoadsSnapshot.size + 1;
+              nextLoadNumeric = (await getDocs(loadsCollectionRef)).size + 1;
           }
       }
       const newLoadNumber = formatLoadNumber(nextLoadNumeric);
@@ -457,24 +463,25 @@ export default function DashDispatchProApp() {
       // Prepare new load data
       const newLoadData: Omit<Load, 'id'> = {
         loadNumber: newLoadNumber,
-        clientId: dataToUse.clientId!,
-        origin: dataToUse.origin!,
-        destination: dataToUse.destination!,
-        pickupDateTime: dataToUse.pickupDateTime!,
-        deliveryDateTime: dataToUse.deliveryDateTime!,
-        ratePerMile: dataToUse.ratePerMile || 0,
-        distance: dataToUse.distance || 0,
-        totalAgreedRate: calculatedTotalRate,
-        status: dataToUse.status || 'pending',
-        cargoDescription: dataToUse.cargoDescription,
-        cargoDimensions: dataToUse.cargoDimensions,
-        cargoWeight: dataToUse.cargoWeight,
-        specialTerms: dataToUse.specialTerms,
-        requiresTarping: dataToUse.requiresTarping || false,
-        tarpingFee: dataToUse.tarpingFee || 0,
-        originalClientRequestId: dataToUse.originalClientRequestId,
-        requestedByClientName: dataToUse.requestedByClientName,
-        requestedByAuthUid: dataToUse.requestedByAuthUid,
+        clientId: dataWithCalculations.clientId!,
+        origin: dataWithCalculations.origin!,
+        destination: dataWithCalculations.destination!,
+        pickupDateTime: dataWithCalculations.pickupDateTime!,
+        deliveryDateTime: dataWithCalculations.deliveryDateTime!,
+        ratePerMile: dataWithCalculations.ratePerMile || 0,
+        distance: dataWithCalculations.distance || 0,
+        totalAgreedRate: dataWithCalculations.totalAgreedRate,
+        status: dataWithCalculations.status || 'pending',
+        cargoDescription: dataWithCalculations.cargoDescription,
+        cargoDimensions: dataWithCalculations.cargoDimensions,
+        cargoWeight: dataWithCalculations.cargoWeight,
+        specialTerms: dataWithCalculations.specialTerms,
+        requiresTarping: dataWithCalculations.requiresTarping || false,
+        tarpingFee: dataWithCalculations.tarpingFee || 0,
+        originalClientRequestId: dataWithCalculations.originalClientRequestId,
+        requestedByClientName: dataWithCalculations.requestedByClientName,
+        requestedByAuthUid: dataWithCalculations.requestedByAuthUid,
+        estimatedDriveTimeHours: dataWithCalculations.estimatedDriveTimeHours,
         expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
       };
   
@@ -507,16 +514,28 @@ export default function DashDispatchProApp() {
     let finalUpdates = { ...updates };
     const currentLoad = loads.find(l => l.id === id);
 
-    if (currentLoad && (updates.distance !== undefined || updates.ratePerMile !== undefined || updates.tarpingFee !== undefined)) {
-        const newDistance = updates.distance !== undefined ? updates.distance : currentLoad.distance;
-        const newRatePerMile = updates.ratePerMile !== undefined ? updates.ratePerMile : currentLoad.ratePerMile;
-        const newTarpingFee = updates.tarpingFee !== undefined ? updates.tarpingFee : (currentLoad.tarpingFee || 0);
-        finalUpdates.totalAgreedRate = (newDistance * newRatePerMile) + newTarpingFee;
+    if (currentLoad) {
+        // Recalculate totalAgreedRate if relevant fields change
+        if (updates.distance !== undefined || updates.ratePerMile !== undefined || updates.tarpingFee !== undefined) {
+            const newDistance = updates.distance !== undefined ? updates.distance : currentLoad.distance;
+            const newRatePerMile = updates.ratePerMile !== undefined ? updates.ratePerMile : currentLoad.ratePerMile;
+            const newTarpingFee = updates.tarpingFee !== undefined ? updates.tarpingFee : (currentLoad.tarpingFee || 0);
+            finalUpdates.totalAgreedRate = (newDistance * newRatePerMile) + newTarpingFee;
+        }
+
+        // Recalculate estimatedDriveTimeHours if distance changes (and settings are available)
+        if (updates.distance !== undefined && settings.truckAverageSpeed > 0) {
+            finalUpdates.estimatedDriveTimeHours = updates.distance / settings.truckAverageSpeed;
+        } else if (updates.distance !== undefined) { // If speed is 0 or not set, make drive time undefined
+            finalUpdates.estimatedDriveTimeHours = undefined;
+        }
+
+
+        if (updates.expenses && currentLoad.expenses) {
+            finalUpdates.expenses = { ...currentLoad.expenses, ...updates.expenses };
+        }
     }
 
-    if (updates.expenses && currentLoad?.expenses) {
-        finalUpdates.expenses = { ...currentLoad.expenses, ...updates.expenses };
-    }
 
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
       setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...finalUpdates } as Load : l));
@@ -545,10 +564,13 @@ export default function DashDispatchProApp() {
       console.error('Error updating load:', error);
       toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
     }
-  }, [user, toast, loads]);
+  }, [user, toast, loads, settings.truckAverageSpeed]);
 
   const handleDeleteLoad = async (loadId: string) => {
-    if (!user || user.role !== 'admin') return;
+    if (!user || user.role !== 'admin') {
+      console.warn("Attempted to delete load without admin privileges or user session.");
+      return;
+    }
   
     if (!window.confirm("Are you sure you want to delete this load? This action cannot be undone.")) {
       return;
@@ -597,11 +619,12 @@ export default function DashDispatchProApp() {
       distance: 0, 
       status: 'client-request-approved',
       cargoDescription: request.cargoDescription,
-      requiresTarping: false, // Default tarping to false for new loads from requests
-      tarpingFee: 0,      // Default tarping fee to 0
+      requiresTarping: false, 
+      tarpingFee: 0,      
       originalClientRequestId: request.id,
       requestedByClientName: request.requestedByClientName,
       requestedByAuthUid: request.requestedByClientUid,
+      estimatedDriveTimeHours: undefined, // Initialize as undefined
     };
     setLoadForm(loadDataFromRequest); 
     setEditingLoadId(null); 
@@ -727,15 +750,16 @@ export default function DashDispatchProApp() {
         const manualDefExpense = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def');
         const defCost = manualDefExpense
           ? manualDefExpense.amount
-          : (load.distance > 0 && settings.defCostPerGallon > 0 && settings.truckMpg > 0) 
+          : (load.distance > 0 && settings.defCostPerGallon > 0 && settings.truckMpg > 0) // Assuming DEF consumption is 1 gallon per 50 gallons of fuel, or truckMpg / 50 for DEF MPG.
             ? (load.distance / settings.truckMpg / 50) * settings.defCostPerGallon 
             : 0;
 
         const payroll = load.totalAgreedRate * (settings.payrollPercentage / 100);
         
-        const dailyRecurringFactor = 30; 
+        // This is a simplified daily factor. For more accuracy, one might calculate days per load.
+        const dailyRecurringFactor = 30; // Assuming recurring expenses are monthly, distribute over 30 days
         const recurring = settings.recurringExpenses.reduce(
-          (sum, expense) => sum + (expense.amount / dailyRecurringFactor), 0 
+          (sum, expense) => sum + (expense.amount / dailyRecurringFactor), 0 // Distribute monthly expense to daily
         );
 
         updateLoad(load.id, {
@@ -743,7 +767,7 @@ export default function DashDispatchProApp() {
             payroll: parseFloat(payroll.toFixed(2)),
             fuel: parseFloat(fuelCost.toFixed(2)),
             def: parseFloat(defCost.toFixed(2)),
-            recurring: parseFloat(recurring.toFixed(2)),
+            recurring: parseFloat(recurring.toFixed(2)), //This might need to be multiplied by load duration in days
             calculated: true 
           }
         });
@@ -864,6 +888,12 @@ export default function DashDispatchProApp() {
        if (loadData.deliveryDateTime) {
         yPos = drawRegularTextLine(`Scheduled Delivery: ${formatDate(new Date(loadData.deliveryDateTime), 'PPP p')}`, margin + 10, yPos);
       }
+
+      if (loadData.estimatedDriveTimeHours && loadData.estimatedDriveTimeHours > 0) {
+        yPos = drawBoldTextLine('Estimated Drive Time:', margin, yPos);
+        yPos = drawRegularTextLine(`${loadData.estimatedDriveTimeHours.toFixed(1)} hours`, margin + 10, yPos);
+      }
+
       yPos -= sectionSpacing;
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 

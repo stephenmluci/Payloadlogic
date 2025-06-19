@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2, Ruler, Weight, Box, ShieldCheck, ShieldX } from 'lucide-react'; 
+import { MapPin, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2, Ruler, Weight, Box, ShieldCheck, ShieldX, Timer } from 'lucide-react'; 
 import { format as formatDate } from 'date-fns';
 
 type LoadCardProps = {
@@ -97,6 +97,12 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
               <div className="flex items-center text-muted-foreground">
                 <DollarSign className="h-4 w-4 mr-2" />
                 Tarping Fee: ${load.tarpingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            )}
+            {load.estimatedDriveTimeHours !== undefined && load.estimatedDriveTimeHours > 0 && (
+              <div className="flex items-center text-muted-foreground">
+                <Timer className="h-4 w-4 mr-2" />
+                Est. Drive: {load.estimatedDriveTimeHours.toFixed(1)} hours
               </div>
             )}
             <div className="flex items-center font-semibold col-span-full sm:col-span-1">
@@ -215,3 +221,4 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
     </Card>
   );
 }
+

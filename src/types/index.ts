@@ -30,6 +30,7 @@ export type Load = {
   originalClientRequestId?: string;
   requestedByClientName?: string; // Name of the person who requested, if from client portal
   requestedByAuthUid?: string; // Auth UID of the client user who requested
+  estimatedDriveTimeHours?: number; // Calculated: distance / truckAverageSpeed
 };
 
 export type Expense = {

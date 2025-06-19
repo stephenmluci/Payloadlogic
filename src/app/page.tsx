@@ -8,7 +8,7 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { db, auth } from '@/lib/firebase';
 import type { User, Load, Expense, Client, Settings, UserProfile, ClientLoadRequest } from '@/types';
 import { useToast } from "@/hooks/use-toast";
-import { format as formatDate, differenceInCalendarDays } from 'date-fns';
+import { format as formatDate, differenceInCalendarDays, parseISO } from 'date-fns';
 
 
 // Page Components
@@ -92,7 +92,14 @@ function formatLoadNumber(num: number): string {
 const toDateTimeLocal = (isoString?: string): string => {
   if (!isoString) return new Date().toISOString().slice(0, 16);
   try {
-    const date = new Date(isoString);
+    let date;
+    // Check if it's already a full ISO string or just a date
+    if (isoString.includes('T')) {
+        date = new Date(isoString);
+    } else { // Assume it's a YYYY-MM-DD date string
+        date = parseISO(isoString); // Use parseISO for better date-only string handling
+    }
+
     if (isNaN(date.getTime())) {
       // If isoString is just a date (YYYY-MM-DD), append a default time
       if (isoString.match(/^\d{4}-\d{2}-\d{2}$/)) {
@@ -100,7 +107,14 @@ const toDateTimeLocal = (isoString?: string): string => {
       }
       return new Date().toISOString().slice(0, 16); // Fallback if still invalid
     }
-    return date.toISOString().slice(0, 16);
+    // Format to 'YYYY-MM-DDTHH:mm'
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+
   } catch (e) {
     return new Date().toISOString().slice(0, 16); // Fallback on any error
   }
@@ -614,7 +628,7 @@ export default function DashDispatchProApp() {
       origin: request.origin,
       destination: request.destination,
       pickupDateTime: toDateTimeLocal(request.requestedPickupDate),
-      deliveryDateTime: toDateTimeLocal(new Date(new Date(request.requestedPickupDate || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString()), 
+      deliveryDateTime: toDateTimeLocal(new Date(parseISO(request.requestedPickupDate).getTime() + 24 * 60 * 60 * 1000).toISOString()), 
       ratePerMile: 0, 
       distance: 0, 
       status: 'client-request-approved',
@@ -735,7 +749,9 @@ export default function DashDispatchProApp() {
     if (user?.role !== 'admin') {
       return;
     }
-  
+
+    const allCurrentLoads = [...loads]; // Stable copy for finding previous loads
+
     loads.forEach(load => {
       if (load.status === 'delivered' && !load.expenses.calculated && load.id) {
         const loadSpecificExpenses = expenses.filter(exp => exp.loadId === load.id);
@@ -756,23 +772,50 @@ export default function DashDispatchProApp() {
 
         const payroll = load.totalAgreedRate * (settings.payrollPercentage / 100);
         
+        // --- Calculate Recurring Expenses with Gap Coverage ---
         const dailyRecurringSum = settings.recurringExpenses.reduce(
           (sum, expense) => sum + (expense.amount / 30), 0 // Sum of daily recurring amounts
         );
         
-        let durationInDays = 1;
+        let durationInDaysForCurrentLoad = 1;
         try {
             const pickupDate = new Date(load.pickupDateTime);
             const deliveryDate = new Date(load.deliveryDateTime);
             if (!isNaN(pickupDate.getTime()) && !isNaN(deliveryDate.getTime()) && deliveryDate >= pickupDate) {
-                durationInDays = differenceInCalendarDays(deliveryDate, pickupDate) + 1;
+                durationInDaysForCurrentLoad = differenceInCalendarDays(deliveryDate, pickupDate) + 1;
             }
         } catch (e) {
-            console.warn("Error calculating duration for load, defaulting to 1 day:", load.id, e);
+            console.warn("Error calculating duration for current load, defaulting to 1 day:", load.id, e);
         }
-        durationInDays = Math.max(1, durationInDays); // Ensure at least 1 day
+        durationInDaysForCurrentLoad = Math.max(1, durationInDaysForCurrentLoad);
+
+        let idleDaysBeforeThisLoad = 0;
+        const previouslyDeliveredLoads = allCurrentLoads.filter(
+          l => l.id !== load.id && l.status === 'delivered' && l.deliveryDateTime
+        );
+
+        if (previouslyDeliveredLoads.length > 0) {
+          // Find the latest delivery date among previously delivered loads
+          const latestPreviousDeliveryTimestamp = Math.max(
+            ...previouslyDeliveredLoads.map(l => new Date(l.deliveryDateTime!).getTime())
+          );
+          const latestPreviousDeliveryDate = new Date(latestPreviousDeliveryTimestamp);
+          const currentLoadPickupDate = new Date(load.pickupDateTime);
+
+          if (!isNaN(latestPreviousDeliveryDate.getTime()) && 
+              !isNaN(currentLoadPickupDate.getTime()) && 
+              currentLoadPickupDate > latestPreviousDeliveryDate) {
+            
+            // Calculate idle days: days between the day *after* latestPreviousDeliveryDate 
+            // and the day *before* currentLoadPickupDate.
+            idleDaysBeforeThisLoad = differenceInCalendarDays(currentLoadPickupDate, latestPreviousDeliveryDate) - 1;
+          }
+          idleDaysBeforeThisLoad = Math.max(0, idleDaysBeforeThisLoad); // Ensure no negative idle days
+        }
         
-        const totalRecurringForLoad = dailyRecurringSum * durationInDays;
+        const totalDaysToAccountForRecurring = durationInDaysForCurrentLoad + idleDaysBeforeThisLoad;
+        const totalRecurringForLoad = dailyRecurringSum * totalDaysToAccountForRecurring;
+        // --- End Recurring Expense Calculation ---
 
         updateLoad(load.id, {
           expenses: {

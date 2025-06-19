@@ -1,6 +1,6 @@
 
-import React from 'react';
-import type { Expense, Load } from '@/types';
+import React, { useEffect } from 'react'; // Import useEffect
+import type { Expense, Load, Settings } from '@/types'; // Import Settings
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,13 +12,14 @@ type ExpenseFormProps = {
   expenseForm: Omit<Expense, 'id'>;
   setExpenseForm: React.Dispatch<React.SetStateAction<Omit<Expense, 'id'>>>;
   loads: Load[];
+  settings: Settings; // Add settings prop
   onSubmit: (e: React.FormEvent) => void;
   isSubmitting?: boolean;
 };
 
 const NO_LOAD_VALUE = "_NO_LOAD_SELECTED_";
 
-export function ExpenseForm({ expenseForm, setExpenseForm, loads, onSubmit, isSubmitting }: ExpenseFormProps) {
+export function ExpenseForm({ expenseForm, setExpenseForm, loads, settings, onSubmit, isSubmitting }: ExpenseFormProps) {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type } = e.target;
     setExpenseForm(prev => ({ ...prev, [name]: type === 'number' ? Number(value) : value }));
@@ -30,6 +31,22 @@ export function ExpenseForm({ expenseForm, setExpenseForm, loads, onSubmit, isSu
       loadId: selectedValue === NO_LOAD_VALUE ? '' : selectedValue
     }));
   };
+
+  useEffect(() => {
+    if (expenseForm.category.toLowerCase() === 'payroll' && expenseForm.loadId && expenseForm.loadId !== NO_LOAD_VALUE) {
+      const selectedLoad = loads.find(load => load.id === expenseForm.loadId);
+      if (selectedLoad && settings.payrollPercentage > 0) {
+        const calculatedPayroll = (selectedLoad.totalAgreedRate * settings.payrollPercentage) / 100;
+        // Only update if the amount is not already set or differs significantly, to avoid feedback loops if user manually changes it.
+        // Or simply always set it if category is payroll & load is selected.
+        // For simplicity, we'll set it. The user can then override if they wish.
+        if (expenseForm.amount !== calculatedPayroll) {
+           setExpenseForm(prev => ({ ...prev, amount: parseFloat(calculatedPayroll.toFixed(2)) }));
+        }
+      }
+    }
+  }, [expenseForm.category, expenseForm.loadId, loads, settings, setExpenseForm, expenseForm.amount]);
+
 
   return (
     <Card className="shadow-lg">
@@ -62,7 +79,7 @@ export function ExpenseForm({ expenseForm, setExpenseForm, loads, onSubmit, isSu
                   name="category"
                   value={expenseForm.category}
                   onChange={handleInputChange}
-                  placeholder="e.g., Fuel, Maintenance"
+                  placeholder="e.g., Fuel, Maintenance, Payroll"
                   className="pl-10"
                 />
               </div>

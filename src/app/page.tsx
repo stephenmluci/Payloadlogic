@@ -858,6 +858,7 @@ export default function DashDispatchProApp() {
           {activeTab === 'expenses' && <ExpensesPage
                                           expenses={expenses}
                                           loads={loads}
+                                          settings={settings} // Pass settings here
                                           expenseForm={expenseForm}
                                           setExpenseForm={setExpenseForm}
                                           addExpense={addExpense}

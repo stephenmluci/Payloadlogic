@@ -5,12 +5,12 @@ import type { Timestamp } from 'firebase/firestore';
 export type Load = {
   id?: string;
   loadNumber?: string;
-  clientId: string; 
+  clientId: string;
   origin: string;
   destination: string;
   pickupDateTime: string; // ISO string for date and time
   deliveryDateTime: string; // ISO string for date and time
-  ratePerMile: number; // Rate per mile
+  ratePerMile: number;
   distance: number;
   totalAgreedRate: number; // Calculated: distance * ratePerMile
   status: 'pending' | 'in-transit' | 'delivered' | 'client-request-approved';
@@ -23,7 +23,7 @@ export type Load = {
   };
   cargoDescription?: string;
   specialTerms?: string;
-  originalClientRequestId?: string; 
+  originalClientRequestId?: string;
   requestedByClientName?: string; // Name of the person who requested, if from client portal
   requestedByAuthUid?: string; // Auth UID of the client user who requested
 };
@@ -36,13 +36,13 @@ export type Expense = {
   loadId?: string;
 };
 
-export type Client = { // This is the trucking company's client (e.g., Acme Corp)
+export type Client = {
   id?: string;
   companyName: string;
   contactName: string;
   contactEmail: string;
   contactPhone: string;
-  address?: string; // Optional: client's main address
+  address?: string;
 };
 
 export type RecurringExpenseItem = {
@@ -52,6 +52,7 @@ export type RecurringExpenseItem = {
 
 export type Settings = {
   payrollPercentage: number;
+  // basePayrollAmount?: number; // Removed as per request
   defaultFuelCostPerGallon: number;
   defCostPerGallon: number;
   recurringExpenses: RecurringExpenseItem[];
@@ -87,4 +88,3 @@ export type ClientLoadRequest = {
   status: 'new' | 'viewed' | 'accepted' | 'rejected';
   createdLoadId?: string;
 };
-

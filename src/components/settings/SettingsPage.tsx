@@ -22,7 +22,7 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     // Specific numeric fields
-    const numericFields = ['payrollPercentage', 'basePayrollAmount', 'defaultFuelCostPerGallon', 'defCostPerGallon', 'loadingFee', 'detentionFeeRate'];
+    const numericFields = ['payrollPercentage', 'defaultFuelCostPerGallon', 'defCostPerGallon', 'loadingFee', 'detentionFeeRate'];
     if (numericFields.includes(name)) {
       setSettingsForm(prev => ({ ...prev, [name]: value === '' ? undefined : Number(value) })); // Allow unsetting optional numeric fields
     } else {
@@ -75,22 +75,6 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
           <div>
             <h3 className="text-lg font-semibold mb-3">Operational Defaults</h3>
             <div className="space-y-4">
-              <div>
-                <Label htmlFor="basePayrollAmount">Base Payroll Amount ($)</Label>
-                <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                  <Input
-                    id="basePayrollAmount"
-                    name="basePayrollAmount"
-                    type="number"
-                    value={settingsForm.basePayrollAmount === undefined ? '' : settingsForm.basePayrollAmount}
-                    onChange={handleInputChange}
-                    className="pl-10"
-                    placeholder="e.g., 0 or 50"
-                  />
-                </div>
-              </div>
-
               <div>
                 <Label htmlFor="payrollPercentage">Payroll Percentage (%)</Label>
                 <div className="relative">

@@ -1,11 +1,13 @@
+
 import React from 'react';
-import type { Expense, Load } from '@/types';
+import type { Expense, Load, Settings } from '@/types'; // Import Settings
 import { ExpenseForm } from './ExpenseForm';
 import { ExpensesTable } from './ExpensesTable';
 
 type ExpensesPageProps = {
   expenses: Expense[];
   loads: Load[];
+  settings: Settings; // Add settings prop
   expenseForm: Omit<Expense, 'id'>;
   setExpenseForm: React.Dispatch<React.SetStateAction<Omit<Expense, 'id'>>>;
   addExpense: () => Promise<void>;
@@ -15,6 +17,7 @@ type ExpensesPageProps = {
 export function ExpensesPage({ 
   expenses, 
   loads, 
+  settings, // Destructure settings
   expenseForm, 
   setExpenseForm, 
   addExpense,
@@ -39,6 +42,7 @@ export function ExpensesPage({
         expenseForm={expenseForm}
         setExpenseForm={setExpenseForm}
         loads={loads}
+        settings={settings} // Pass settings to ExpenseForm
         onSubmit={handleExpenseSubmit}
         isSubmitting={isSubmittingExpense}
       />

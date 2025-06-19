@@ -5,16 +5,40 @@ import { MetricCard } from './MetricCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DollarSign, AlertTriangle, TrendingUp, TrendingDown, ListChecks, BarChart3, Info } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { startOfWeek, format, parseISO } from 'date-fns';
 
 type DashboardPageProps = {
   loads: Load[];
   expenses: Expense[];
 };
 
+// Helper function to get the start of the week as a formatted string key
+const getWeekKey = (dateString?: string): string | null => {
+  if (!dateString) return null;
+  try {
+    const date = parseISO(dateString); // Handles 'YYYY-MM-DD' and full ISO strings
+    // Using Monday as the start of the week.
+    // Format as 'YYYY-MM-DD' for reliable sorting and unique keys.
+    return format(startOfWeek(date, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+  } catch (e) {
+    console.warn("Invalid date for week processing:", dateString, e);
+    return null;
+  }
+};
+
+// Helper function to format the week key for display
+const formatWeekDisplay = (weekKey: string): string => {
+  try {
+    return `Wk of ${format(parseISO(weekKey), 'MMM d')}`;
+  } catch (e) {
+    return "Invalid Week";
+  }
+};
+
+
 export function DashboardPage({ loads, expenses }: DashboardPageProps) {
   const totalIncome = loads.reduce((sum, load) => sum + load.totalAgreedRate, 0);
 
-  // Calculate total for "Load-Related (Calculated)" for the metric card
   const totalLoadRelatedExpensesFromLoads = loads.reduce((sum, load) => {
     if (load.status === 'delivered' && load.expenses.calculated) {
       return sum + load.expenses.payroll + load.expenses.fuel + load.expenses.def + load.expenses.recurring;
@@ -27,60 +51,69 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
   
   const netProfit = totalIncome - totalCalculatedExpenses;
 
-  // Prepare data for the expense breakdown chart (itemized)
-  const expenseByCategoryForChart: Record<string, number> = {};
+  // --- Prepare data for Weekly Profit Trends chart ---
+  const weeklyProfitAccumulator: Record<string, number> = {};
 
-  // Process manually logged expenses for the chart
-  expenses.forEach(expense => {
-    expenseByCategoryForChart[expense.category] = (expenseByCategoryForChart[expense.category] || 0) + expense.amount;
-  });
-
-  // Process calculated expenses from delivered loads for the chart, itemized
   loads.forEach(load => {
-    if (load.status === 'delivered' && load.expenses.calculated) {
-      if (load.expenses.payroll > 0) {
-        expenseByCategoryForChart['Calculated Payroll'] = (expenseByCategoryForChart['Calculated Payroll'] || 0) + load.expenses.payroll;
-      }
-      if (load.expenses.fuel > 0) {
-        expenseByCategoryForChart['Calculated Fuel'] = (expenseByCategoryForChart['Calculated Fuel'] || 0) + load.expenses.fuel;
-      }
-      if (load.expenses.def > 0) {
-        expenseByCategoryForChart['Calculated DEF'] = (expenseByCategoryForChart['Calculated DEF'] || 0) + load.expenses.def;
-      }
-      if (load.expenses.recurring > 0) {
-        expenseByCategoryForChart['Calculated Recurring'] = (expenseByCategoryForChart['Calculated Recurring'] || 0) + load.expenses.recurring;
+    if (load.status === 'delivered' && load.expenses.calculated && load.deliveryDateTime) {
+      const weekKey = getWeekKey(load.deliveryDateTime);
+      if (weekKey) {
+        const loadProfit = load.totalAgreedRate - (load.expenses.payroll + load.expenses.fuel + load.expenses.def + load.expenses.recurring);
+        weeklyProfitAccumulator[weekKey] = (weeklyProfitAccumulator[weekKey] || 0) + loadProfit;
       }
     }
   });
 
-  const expenseChartData = Object.entries(expenseByCategoryForChart)
-    .filter(([, value]) => value > 0) // Only include categories with an amount greater than 0
-    .map(([name, value]) => ({ name, value }));
-
-
-  // Prepare data for Profit Trends chart (remains the same)
-  const monthlyProfitData: { month: string, profit: number }[] = loads.reduce((acc, load) => {
-    if (load.status === 'delivered' && load.expenses.calculated) {
-      const month = "Current Month"; 
-      const loadProfit = load.totalAgreedRate - (load.expenses.payroll + load.expenses.fuel + load.expenses.def + load.expenses.recurring);
-      
-      const existingEntry = acc.find(entry => entry.month === month);
-      if (existingEntry) {
-        existingEntry.profit += loadProfit;
-      } else {
-        acc.push({ month, profit: loadProfit });
+  expenses.forEach(expense => {
+    if (expense.date) {
+      const weekKey = getWeekKey(expense.date);
+      if (weekKey) {
+        // Subtract manual expenses from profits for that week
+        weeklyProfitAccumulator[weekKey] = (weeklyProfitAccumulator[weekKey] || 0) - expense.amount;
       }
     }
-    return acc;
-  }, [] as { month: string, profit: number }[]);
+  });
   
-  // Adjust profit data for other manual expenses
-  if (monthlyProfitData.length > 0 && totalOtherManualExpenses > 0) {
-    monthlyProfitData[0].profit -= totalOtherManualExpenses;
-  } else if (monthlyProfitData.length === 0 && totalOtherManualExpenses > 0) { // If no loads but there are manual expenses
-     monthlyProfitData.push({ month: "Adjustments", profit: -totalOtherManualExpenses});
-  }
+  const profitChartData = Object.entries(weeklyProfitAccumulator)
+    .map(([weekKey, profitValue]) => ({
+      weekKey, 
+      name: formatWeekDisplay(weekKey),
+      value: profitValue,
+    }))
+    .sort((a, b) => a.weekKey.localeCompare(b.weekKey)) 
+    .map(({ name, value }) => ({ name, profit: value })); // Rename 'value' to 'profit' for consistency if Bar dataKey is 'profit'
 
+
+  // --- Prepare data for Weekly Total Expenses chart ---
+  const weeklyTotalExpensesAccumulator: Record<string, number> = {};
+
+  loads.forEach(load => {
+    if (load.status === 'delivered' && load.expenses.calculated && load.deliveryDateTime) {
+      const weekKey = getWeekKey(load.deliveryDateTime);
+      if (weekKey) {
+        const loadCalculatedExpenses = load.expenses.payroll + load.expenses.fuel + load.expenses.def + load.expenses.recurring;
+        weeklyTotalExpensesAccumulator[weekKey] = (weeklyTotalExpensesAccumulator[weekKey] || 0) + loadCalculatedExpenses;
+      }
+    }
+  });
+
+  expenses.forEach(expense => {
+    if (expense.date) {
+      const weekKey = getWeekKey(expense.date);
+      if (weekKey) {
+        weeklyTotalExpensesAccumulator[weekKey] = (weeklyTotalExpensesAccumulator[weekKey] || 0) + expense.amount;
+      }
+    }
+  });
+
+  const weeklyExpensesChartData = Object.entries(weeklyTotalExpensesAccumulator)
+    .map(([weekKey, expenseValue]) => ({
+      weekKey,
+      name: formatWeekDisplay(weekKey),
+      value: expenseValue,
+    }))
+    .sort((a, b) => a.weekKey.localeCompare(b.weekKey))
+    .map(({ name, value }) => ({ name, totalExpenses: value })); // Rename 'value' to 'totalExpenses'
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -113,7 +146,7 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
             <p><strong>Total Income:</strong> Gross income from all your loads (sum of all load 'Total Agreed Rates').</p>
             <p><strong>Total Calculated Expenses:</strong> Combines direct load costs (like payroll, fuel for delivered loads) and other general business expenses you've logged.</p>
             <p><strong>Net Profit:</strong> The difference between Total Income and Total Calculated Expenses.</p>
-            <p className="mt-2 italic">The 'Expense Category Breakdown' chart below specifically details the categories of your expenses, not your income. Calculated expenses from loads (like 'Calculated Payroll') are itemized.</p>
+            <p className="mt-2 italic">The charts below show weekly trends. "Weekly Total Expenses" sums all expenses for a given week. "Profit Trends" shows net profit per week.</p>
         </CardContent>
       </Card>
       
@@ -122,22 +155,22 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ListChecks className="h-5 w-5" />
-              Expense Category Breakdown
+              Weekly Total Expenses
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {expenseChartData.length > 0 ? (
+            {weeklyExpensesChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={expenseChartData} layout="vertical" margin={{ left: 30, right:30 }}>
+                <BarChart data={weeklyExpensesChartData} margin={{ left: 0, right:30, top: 5, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number"  tickFormatter={(value) => `$${value}`}/>
-                  <YAxis dataKey="name" type="category" width={120} interval={0} /> {/* Increased width for longer labels */}
-                  <Tooltip formatter={(value: number) => `$${value.toFixed(2)}`} />
-                  <Bar dataKey="value" fill="hsl(var(--primary))" barSize={20} />
+                  <XAxis dataKey="name" angle={-30} textAnchor="end" height={70} interval={0} />
+                  <YAxis tickFormatter={(value) => `$${value}`} />
+                  <Tooltip formatter={(value: number) => [`$${value.toFixed(2)}`, "Total Expenses"]} />
+                  <Bar dataKey="totalExpenses" fill="hsl(var(--primary))" barSize={30} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <p className="text-muted-foreground">No expense data available.</p>
+              <p className="text-muted-foreground">No weekly expense data available.</p>
             )}
           </CardContent>
         </Card>
@@ -146,27 +179,27 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
-              Profit Trends
+              Weekly Profit Trends
             </CardTitle>
           </CardHeader>
           <CardContent>
-             {monthlyProfitData.length > 0 ? (
+             {profitChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={monthlyProfitData} margin={{ left:0, right:30 }}>
+                <BarChart data={profitChartData} margin={{ left:0, right:30, top: 5, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
+                  <XAxis dataKey="name" angle={-30} textAnchor="end" height={70} interval={0} />
                   <YAxis tickFormatter={(value) => `$${value}`} />
-                  <Tooltip formatter={(value: number) => `$${value.toFixed(2)}`} />
-                  <Legend />
+                  <Tooltip formatter={(value: number) => [`$${value.toFixed(2)}`, "Net Profit"]} />
+                  <Legend verticalAlign="top" height={36}/>
                   <Bar dataKey="profit">
-                    {monthlyProfitData.map((entry, index) => (
+                    {profitChartData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.profit >= 0 ? 'hsl(var(--primary))' : 'hsl(var(--destructive))'} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <p className="text-muted-foreground">No profit data available.</p>
+              <p className="text-muted-foreground">No weekly profit data available.</p>
             )}
           </CardContent>
         </Card>
@@ -174,3 +207,4 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
     </div>
   );
 }
+

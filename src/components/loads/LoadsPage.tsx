@@ -1,6 +1,6 @@
 
 import React from 'react';
-import type { Load, Client, ClientLoadRequest } from '@/types';
+import type { Load, Client, ClientLoadRequest, Settings } from '@/types';
 import { LoadForm } from './LoadForm';
 import { LoadCard } from './LoadCard';
 import { ClientLoadRequestCard } from './ClientLoadRequestCard'; 
@@ -12,10 +12,11 @@ type LoadsPageProps = {
   loads: Load[];
   clients: Client[]; 
   clientLoadRequests: ClientLoadRequest[];
-  loadForm: Partial<Load>; // Changed to Partial<Load>
+  settings: Settings; // Added settings
+  loadForm: Partial<Load>; 
   setLoadForm: React.Dispatch<React.SetStateAction<Partial<Load>>>;
   editingLoadId: string | null;
-  onSaveLoad: (loadData?: Partial<Load>) => Promise<void>; // Renamed from addLoad
+  onSaveLoad: (loadData?: Partial<Load>) => Promise<void>; 
   onEditLoad: (load: Load) => void;
   onDeleteLoad: (loadId: string) => Promise<void>;
   onCancelEditLoad: () => void;
@@ -30,6 +31,7 @@ export function LoadsPage({
   loads, 
   clients, 
   clientLoadRequests,
+  settings, // Destructure settings
   loadForm, 
   setLoadForm, 
   editingLoadId,
@@ -148,12 +150,13 @@ export function LoadsPage({
                 key={load.id}
                 load={load}
                 client={getClientForLoad(load)}
+                settings={settings} // Pass settings
                 onStatusChange={updateLoadStatus}
                 onGenerateAgreement={generateAgreement}
                 onEdit={onEditLoad}
                 onDelete={onDeleteLoad}
                 isUpdatingStatus={isUpdatingStatus}
-                isDeleting={isSubmittingLoad && load.id === editingLoadId} // Basic check
+                isDeleting={isSubmittingLoad && load.id === editingLoadId} 
               />
             ))}
           </div>
@@ -174,6 +177,7 @@ export function LoadsPage({
                 key={load.id}
                 load={load}
                 client={getClientForLoad(load)}
+                settings={settings} // Pass settings
                 onStatusChange={updateLoadStatus}
                 onGenerateAgreement={generateAgreement}
                 onEdit={onEditLoad}

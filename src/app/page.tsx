@@ -1064,6 +1064,7 @@ export default function DashDispatchProApp() {
                                         loads={loads}
                                         clients={clients}
                                         clientLoadRequests={clientLoadRequests}
+                                        settings={settings}
                                         loadForm={loadForm}
                                         setLoadForm={setLoadForm}
                                         editingLoadId={editingLoadId}

@@ -1,17 +1,18 @@
 
 import React from 'react';
-import type { Load, Client } from '@/types';
+import type { Load, Client, Settings } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2, Ruler, Weight, Box, ShieldCheck, ShieldX, Timer, Phone } from 'lucide-react';
+import { MapPin, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2, Ruler, Weight, Box, ShieldCheck, ShieldX, Timer, Phone, TrendingUp, TrendingDown, Info } from 'lucide-react';
 import { format as formatDate } from 'date-fns';
 
 type LoadCardProps = {
   load: Load;
   client: Client | undefined;
+  settings: Settings; // Added settings
   onStatusChange: (loadId: string, status: Load['status']) => void;
   onGenerateAgreement: (load: Load) => void;
   onEdit: (load: Load) => void;
@@ -37,10 +38,10 @@ const formatDateTimeDisplay = (isoString: string | undefined) => {
 };
 
 
-export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, onEdit, onDelete, isUpdatingStatus, isDeleting }: LoadCardProps) {
+export function LoadCard({ load, client, settings, onStatusChange, onGenerateAgreement, onEdit, onDelete, isUpdatingStatus, isDeleting }: LoadCardProps) {
   const currentStatus = statusConfig[load.status] || statusConfig.pending;
 
-  const profit = load.totalAgreedRate - (
+  const actualProfit = load.totalAgreedRate - (
     load.expenses.payroll +
     load.expenses.recurring +
     load.expenses.fuel +
@@ -50,6 +51,33 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
   const clientDisplayInfo = client
     ? `${client.companyName} (Contact: ${client.contactName})`
     : load.requestedByClientName || 'Unknown Client';
+
+  // Calculate Projected Profit
+  let projectedProfit: number | null = null;
+  let projectedPayroll = 0;
+  let projectedFuelCost = 0;
+  let projectedDefCost = 0;
+  let projectedRecurringDaily = 0;
+
+  if (load.status !== 'delivered' || !load.expenses.calculated) {
+    projectedPayroll = load.totalAgreedRate * (settings.payrollPercentage / 100);
+    
+    projectedFuelCost = (load.distance > 0 && settings.truckMpg > 0 && settings.defaultFuelCostPerGallon > 0)
+      ? (load.distance / settings.truckMpg) * settings.defaultFuelCostPerGallon
+      : 0;
+    
+    projectedDefCost = (load.distance > 0 && settings.defCostPerGallon > 0)
+      ? (load.distance / 250) * settings.defCostPerGallon 
+      : 0;
+    
+    projectedRecurringDaily = settings.recurringExpenses.reduce(
+      (sum, expense) => sum + (expense.amount / 30), 0
+    );
+    
+    const totalProjectedExpenses = projectedPayroll + projectedFuelCost + projectedDefCost + projectedRecurringDaily;
+    projectedProfit = load.totalAgreedRate - totalProjectedExpenses;
+  }
+
 
   return (
     <Card className="shadow-md hover:shadow-lg transition-shadow duration-300 flex flex-col">
@@ -148,12 +176,38 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
             </div>
         )}
 
+        {(projectedProfit !== null) && (
+          <>
+            <Separator className="my-3" />
+            <div className="p-3 bg-blue-500/10 rounded-md space-y-2">
+              <h4 className="font-semibold text-sm mb-1 flex items-center">
+                <Info className="h-4 w-4 mr-1.5 text-blue-700" /> Projected Financials:
+              </h4>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <span>Est. Payroll:</span> <span className="text-right">${projectedPayroll.toFixed(2)}</span>
+                <span>Est. Fuel:</span> <span className="text-right">${projectedFuelCost.toFixed(2)}</span>
+                <span>Est. DEF:</span> <span className="text-right">${projectedDefCost.toFixed(2)}</span>
+                <span>Est. Recurring:</span> <span className="text-right">${projectedRecurringDaily.toFixed(2)}</span>
+              </div>
+              <Separator className="my-1" />
+              <div className="flex justify-between items-center font-semibold text-sm">
+                <span>Projected Profit:</span>
+                <span className={`flex items-center ${projectedProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {projectedProfit >= 0 ? <TrendingUp className="h-4 w-4 mr-1" /> : <TrendingDown className="h-4 w-4 mr-1" />}
+                  ${projectedProfit.toFixed(2)}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground italic mt-1">Estimates based on current settings. Actuals calculated upon delivery.</p>
+            </div>
+          </>
+        )}
+
 
         {load.status === 'delivered' && load.expenses.calculated && (
           <>
             <Separator className="my-3" />
             <div className="p-3 bg-muted/50 rounded-md space-y-2">
-              <h4 className="font-semibold text-sm mb-1">Expense Breakdown:</h4>
+              <h4 className="font-semibold text-sm mb-1">Actual Expense Breakdown:</h4>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                 <span>Payroll:</span> <span className="text-right">${load.expenses.payroll.toFixed(2)}</span>
                 <span>Recurring:</span> <span className="text-right">${load.expenses.recurring.toFixed(2)}</span>
@@ -162,9 +216,9 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
               </div>
               <Separator className="my-1" />
               <div className="flex justify-between items-center font-semibold text-sm">
-                <span>Profit:</span>
-                <span className={profit >= 0 ? 'text-green-600' : 'text-red-600'}>
-                  ${profit.toFixed(2)}
+                <span>Actual Profit:</span>
+                <span className={actualProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
+                  ${actualProfit.toFixed(2)}
                 </span>
               </div>
             </div>

@@ -6,23 +6,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2, Ruler, Weight, Box, ShieldCheck, ShieldX, Timer } from 'lucide-react'; 
+import { MapPin, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2, Ruler, Weight, Box, ShieldCheck, ShieldX, Timer, Phone } from 'lucide-react';
 import { format as formatDate } from 'date-fns';
 
 type LoadCardProps = {
   load: Load;
-  client: Client | undefined; 
+  client: Client | undefined;
   onStatusChange: (loadId: string, status: Load['status']) => void;
   onGenerateAgreement: (load: Load) => void;
   onEdit: (load: Load) => void;
   onDelete: (loadId: string) => Promise<void>;
   isUpdatingStatus?: boolean;
-  isDeleting?: boolean; 
+  isDeleting?: boolean;
 };
 
 const statusConfig = {
   pending: { label: 'Pending', color: 'bg-yellow-500', icon: <Clock className="h-4 w-4 mr-1" /> },
-  'in-transit': { label: 'In Transit', color: 'bg-blue-500', icon: <TruckIcon className="h-4 w-4 mr-1" /> }, 
+  'in-transit': { label: 'In Transit', color: 'bg-blue-500', icon: <TruckIcon className="h-4 w-4 mr-1" /> },
   delivered: { label: 'Delivered', color: 'bg-green-500', icon: <CheckCircle className="h-4 w-4 mr-1" /> },
   'client-request-approved': { label: 'Req. Approved', color: 'bg-teal-500', icon: <CheckCircle className="h-4 w-4 mr-1" /> },
 };
@@ -30,7 +30,7 @@ const statusConfig = {
 const formatDateTimeDisplay = (isoString: string | undefined) => {
   if (!isoString) return 'N/A';
   try {
-    return formatDate(new Date(isoString), 'PPpp'); 
+    return formatDate(new Date(isoString), 'PPpp');
   } catch {
     return 'Invalid Date';
   }
@@ -41,14 +41,14 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
   const currentStatus = statusConfig[load.status] || statusConfig.pending;
 
   const profit = load.totalAgreedRate - (
-    load.expenses.payroll + 
-    load.expenses.recurring + 
-    load.expenses.fuel + 
+    load.expenses.payroll +
+    load.expenses.recurring +
+    load.expenses.fuel +
     load.expenses.def
   );
 
-  const clientDisplayInfo = client 
-    ? `${client.companyName} (Contact: ${client.contactName})` 
+  const clientDisplayInfo = client
+    ? `${client.companyName} (Contact: ${client.contactName})`
     : load.requestedByClientName || 'Unknown Client';
 
   return (
@@ -67,8 +67,15 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
           )}
         </div>
         <div className="flex justify-between items-center">
-            <CardDescription className="flex items-center text-sm">
-                <UserCircle className="h-4 w-4 mr-1 text-muted-foreground" /> {clientDisplayInfo}
+            <CardDescription className="text-sm space-y-0.5">
+                <div className="flex items-center">
+                    <UserCircle className="h-4 w-4 mr-1 text-muted-foreground" /> {clientDisplayInfo}
+                </div>
+                {client && client.contactPhone && (
+                    <div className="flex items-center text-xs text-muted-foreground">
+                        <Phone className="h-3 w-3 mr-1" /> {client.contactPhone}
+                    </div>
+                )}
             </CardDescription>
             <Badge variant="outline" className={`${currentStatus.color} text-white border-none flex items-center`}>
                 {currentStatus.icon} {currentStatus.label}
@@ -110,7 +117,7 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
               Total Agreed: ${load.totalAgreedRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
         </div>
-        
+
          { (load.cargoDescription || load.cargoDimensions || load.cargoWeight || load.requiresTarping !== undefined) && <Separator className="my-2" /> }
 
         {load.cargoDescription && (
@@ -172,28 +179,28 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
       </CardContent>
       <CardFooter className="flex flex-col sm:flex-row justify-between items-center gap-2 pt-4 border-t mt-auto">
         <div className="flex gap-2 w-full sm:w-auto">
-            <Button 
-                variant="outline" 
-                size="sm" 
+            <Button
+                variant="outline"
+                size="sm"
                 onClick={() => onEdit(load)}
                 className="flex-1 sm:flex-none"
                 disabled={isUpdatingStatus || isDeleting}
             >
                 <Pencil className="h-4 w-4 mr-2" /> Edit
             </Button>
-            <Button 
-                variant="destructive" 
-                size="sm" 
+            <Button
+                variant="destructive"
+                size="sm"
                 onClick={() => onDelete(load.id!)}
                 className="flex-1 sm:flex-none"
-                disabled={isUpdatingStatus} 
+                disabled={isUpdatingStatus}
             >
                 <Trash2 className="h-4 w-4 mr-2" /> Delete
             </Button>
         </div>
         <div className="flex gap-2 w-full sm:w-auto flex-col sm:flex-row mt-2 sm:mt-0">
-            <Select 
-                value={load.status} 
+            <Select
+                value={load.status}
                 onValueChange={(value) => onStatusChange(load.id!, value as Load['status'])}
                 disabled={isUpdatingStatus || isDeleting}
             >
@@ -207,12 +214,12 @@ export function LoadCard({ load, client, onStatusChange, onGenerateAgreement, on
                 <SelectItem value="delivered">Delivered</SelectItem>
                 </SelectContent>
             </Select>
-            <Button 
-                variant="outline" 
-                size="sm" 
+            <Button
+                variant="outline"
+                size="sm"
                 onClick={() => onGenerateAgreement(load)}
                 className="w-full sm:w-auto"
-                disabled={!client || isUpdatingStatus || isDeleting} 
+                disabled={!client || isUpdatingStatus || isDeleting}
             >
                 <FileText className="h-4 w-4 mr-2" /> Agreement
             </Button>

@@ -193,7 +193,6 @@ const MAX_CARGO_HEIGHT_FEET = 101 / 12; // 8 feet 5 inches
 export default function DashDispatchProApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [user, setUser] = useState<User | null>(null);
-  const [userRole, setUserRole] = useState<'admin' | 'client' | undefined>(undefined);
   
   const [appDisplayState, setAppDisplayState] = useState<AppDisplayState>('loading');
   const [isTrialSession, setIsTrialSession] = useState(false);
@@ -241,7 +240,6 @@ export default function DashDispatchProApp() {
   const fetchUserProfileAndData = useCallback(async (currentUser: FirebaseUser | User | null) => {
     if (!currentUser) {
       setUser(null);
-      setUserRole(undefined);
       setIsTrialSession(false); 
       setAppDisplayState('auth');
       return;
@@ -249,7 +247,6 @@ export default function DashDispatchProApp() {
   
     if (IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) {
       setUser(mockReviewUser);
-      setUserRole(mockReviewUser.role!);
       setLoads([]); setExpenses([]); setClients([]); setClientLoadRequests([]);
       const reviewSettings = { ...initialSettings };
       setSettings(reviewSettings); setSettingsForm(reviewSettings);
@@ -265,7 +262,6 @@ export default function DashDispatchProApp() {
         currentTrialRole = (trialProfileSnap.data() as UserProfile).role;
       }
       setUser({ ...(currentUser as FirebaseUser), role: currentTrialRole });
-      setUserRole(currentTrialRole);
       setLoads([]); setExpenses([]); setClients([]); setClientLoadRequests([]);
       setSettings(initialSettings); setSettingsForm(initialSettings);
       setAppDisplayState(currentTrialRole === 'client' ? 'client_portal' : 'admin_dashboard');
@@ -293,7 +289,6 @@ export default function DashDispatchProApp() {
     }
     
     setUser({ ...(currentUser as FirebaseUser), role: fetchedRole });
-    setUserRole(fetchedRole);
 
     if (shouldGoToSubscriptionChoice) {
         setAppDisplayState('subscription_choice');
@@ -355,13 +350,12 @@ export default function DashDispatchProApp() {
         } else if (appDisplayState === 'subscription_choice') {
             setUser(prev => ({ ...(authUser as FirebaseUser), role: prev?.role || 'admin' }));
         } else {
-            if (!user || user.uid !== authUser.uid || !userRole) {
+            if (!user || user.uid !== authUser.uid || !user.role) {
                  fetchUserProfileAndData(authUser);
             }
         }
       } else {
         setUser(null);
-        setUserRole(undefined);
         setIsTrialSession(false);
         setLoads([]); setExpenses([]); setClients([]); setClientLoadRequests([]);
         setSettings(initialSettings); setSettingsForm(initialSettings);
@@ -369,7 +363,7 @@ export default function DashDispatchProApp() {
       }
     });
     return () => unsubscribe();
-  }, [fetchUserProfileAndData, isTrialSession, appDisplayState, userRole, user]);
+  }, [fetchUserProfileAndData, isTrialSession, appDisplayState, user]);
 
 
   const handleSignUp = async (role: 'admin' | 'client' = 'admin') => {
@@ -384,7 +378,6 @@ export default function DashDispatchProApp() {
       await setDoc(profileRef, { role }); 
 
       setUser({ ...userCredential.user, role: role });
-      setUserRole(role); 
       setAppDisplayState('subscription_choice'); 
       toast({ title: "Account Created", description: `Welcome! Please choose your subscription.` });
     } catch (error: any) {
@@ -428,7 +421,6 @@ export default function DashDispatchProApp() {
   const handleSignOut = async () => {
     if (IS_ADMIN_REVIEW_MODE && !isTrialSession) {
       setUser(null); 
-      setUserRole(undefined);
       setAppDisplayState('auth'); 
       toast({ title: "Admin Review Mode", description: "Exited review session." });
       return;
@@ -1176,11 +1168,11 @@ export default function DashDispatchProApp() {
              />;
   }
 
-  if (appDisplayState === 'client_portal' && user && userRole === 'client') {
+  if (appDisplayState === 'client_portal' && user && user.role === 'client') {
     return <ClientPortalPage user={user} onSignOut={handleSignOut} isTrialSession={isTrialSession} />;
   }
 
-  if (appDisplayState === 'admin_dashboard' && user && userRole === 'admin') {
+  if (appDisplayState === 'admin_dashboard' && user && user.role === 'admin') {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <AppHeader userEmail={user.email} onSignOut={handleSignOut} />
@@ -1247,5 +1239,7 @@ export default function DashDispatchProApp() {
       </div>
     );
 }
+
+    
 
     

@@ -132,6 +132,63 @@ const initialLoadFormData: Partial<Load> = {
   estimatedDriveTimeHours: undefined,
 };
 
+// Helper function to parse dimension strings (e.g., "48ft L x 8.5ft W", "10x8x6", "120in H")
+// Returns an object { length: number | null, width: number | null, height: number | null } in feet.
+const parseDimensionString = (dimStr: string | undefined): { length: number | null, width: number | null, height: number | null } => {
+  if (!dimStr || typeof dimStr !== 'string') return { length: null, width: null, height: null };
+
+  let length: number | null = null;
+  let width: number | null = null;
+  let height: number | null = null;
+
+  const getValInFeet = (valueStr: string, unitStr: string | undefined): number => {
+    const num = parseFloat(valueStr);
+    if (unitStr?.toLowerCase() === 'in' || unitStr === '"') return num / 12;
+    return num; // Assume feet if 'ft', "'", or no unit specific to L/W/H
+  };
+  
+  // Try to extract L, W, H with units explicitly
+  const lMatch = dimStr.match(/(\d+(?:\.\d+)?)\s*(ft|'|in|"|)\s*[lL]/i);
+  const wMatch = dimStr.match(/(\d+(?:\.\d+)?)\s*(ft|'|in|"|)\s*[wW]/i);
+  const hMatch = dimStr.match(/(\d+(?:\.\d+)?)\s*(ft|'|in|"|)\s*[hH]/i);
+
+  if (lMatch) length = getValInFeet(lMatch[1], lMatch[2]);
+  if (wMatch) width = getValInFeet(wMatch[1], wMatch[2]);
+  if (hMatch) height = getValInFeet(hMatch[1], hMatch[2]);
+
+  // Fallback for "Number x Number x Number" or "Number x Number" (assuming feet)
+  // This is less robust and should only apply if L/W/H specific matches weren't found or weren't all found
+  if (length === null || width === null || (dimStr.toLowerCase().includes('x') && height === null)) {
+      const parts = dimStr.toLowerCase().split('x').map(part => part.trim());
+      const attemptParseSimple = (valStr: string) => {
+          // Check if it already contains L,W,H designator from previous regex
+          if (/[lwh]/i.test(valStr) && (valStr.includes('ft') || valStr.includes("'") || valStr.includes('in') || valStr.includes('"'))) {
+              // It was likely parsed by specific L/W/H regex already, or should be
+              return null; 
+          }
+          const numMatch = valStr.match(/^(\d+(?:\.\d+)?)\s*(ft|'|in|"|)?/i);
+          if (numMatch) return getValInFeet(numMatch[1], numMatch[2]);
+          return null;
+      };
+      
+      if (parts.length >= 1 && length === null) length = attemptParseSimple(parts[0]) ?? length;
+      if (parts.length >= 2 && width === null) width = attemptParseSimple(parts[1]) ?? width;
+      if (parts.length >= 3 && height === null) height = attemptParseSimple(parts[2]) ?? height;
+  }
+   // If still no L/W/H but just numbers (e.g. "10 8 6")
+   if (length === null && width === null && height === null && !dimStr.toLowerCase().includes('x') && !/[lwh]/i.test(dimStr.toLowerCase())) {
+    const numericParts = dimStr.split(/\s+/).map(p => parseFloat(p)).filter(p => !isNaN(p));
+    if (numericParts.length > 0 && length === null) length = numericParts[0]; // Assume feet
+    if (numericParts.length > 1 && width === null) width = numericParts[1]; // Assume feet
+    if (numericParts.length > 2 && height === null) height = numericParts[2]; // Assume feet
+  }
+
+
+  return { length, width, height };
+};
+
+const MAX_CARGO_HEIGHT_FEET = 101 / 12; // 8 feet 5 inches
+
 
 export default function DashDispatchProApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -426,6 +483,44 @@ export default function DashDispatchProApp() {
         estimatedDriveTimeHours: calculatedDriveTime
     };
 
+    if (dataWithCalculations.cargoDimensions) {
+      const parsedTrailerDims = parseDimensionString(settings.trailerDimensions);
+      const parsedCargoDims = parseDimensionString(dataWithCalculations.cargoDimensions);
+
+      let validationFailed = false;
+      const messages: string[] = [];
+
+      if (parsedCargoDims.height !== null && parsedCargoDims.height > MAX_CARGO_HEIGHT_FEET) {
+        messages.push(`Height (${parsedCargoDims.height.toFixed(2)}ft) exceeds max ${MAX_CARGO_HEIGHT_FEET.toFixed(2)}ft (8'5").`);
+        validationFailed = true;
+      }
+
+      if (parsedTrailerDims.length !== null && parsedCargoDims.length !== null && parsedCargoDims.length > parsedTrailerDims.length) {
+        messages.push(`Length (${parsedCargoDims.length.toFixed(2)}ft) exceeds trailer length (${parsedTrailerDims.length.toFixed(2)}ft).`);
+        validationFailed = true;
+      } else if (parsedTrailerDims.length === null && parsedCargoDims.length !== null) {
+        messages.push(`Trailer length not defined in settings for full validation.`);
+      }
+
+      if (parsedTrailerDims.width !== null && parsedCargoDims.width !== null && parsedCargoDims.width > parsedTrailerDims.width) {
+        messages.push(`Width (${parsedCargoDims.width.toFixed(2)}ft) exceeds trailer width (${parsedTrailerDims.width.toFixed(2)}ft).`);
+        validationFailed = true;
+      } else if (parsedTrailerDims.width === null && parsedCargoDims.width !== null) {
+         messages.push(`Trailer width not defined in settings for full validation.`);
+      }
+
+      if (validationFailed) {
+        toast({
+          variant: "destructive",
+          title: "Cargo Dimension Error",
+          description: "Cargo dimensions are invalid: " + messages.join(" "),
+        });
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
+
     if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
         let newLoadDataForTrial: Load;
         if (editingLoadId) {
@@ -458,7 +553,7 @@ export default function DashDispatchProApp() {
                 tarpingFee: dataWithCalculations.tarpingFee || 0,
                 originalClientRequestId: dataWithCalculations.originalClientRequestId,
                 requestedByClientName: dataWithCalculations.requestedByClientName,
-                requestedByAuthUid: dataWithCalculations.requestedByAuthUid,
+                requestedByAuthUid: dataWithCalculations.requestedByClientUid,
                 estimatedDriveTimeHours: dataWithCalculations.estimatedDriveTimeHours,
                 expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false },
                 id: `mock-load-${Date.now()}`

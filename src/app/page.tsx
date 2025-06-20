@@ -88,44 +88,35 @@ function formatLoadNumber(num: number): string {
   return `L-${String(num).padStart(4, '0')}`;
 }
 
-// Helper to format date-time string for input type="datetime-local"
-const toDateTimeLocal = (isoString?: string): string => {
-  if (!isoString) return new Date().toISOString().slice(0, 16);
+// Helper to format ISO date-time string for input type="datetime-local"
+const toDateTimeLocalInput = (isoString?: string): string => {
+  if (!isoString) return new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16); // Default to current local time
   try {
-    let date;
-    // Check if it's already a full ISO string or just a date
-    if (isoString.includes('T')) {
-        date = new Date(isoString);
-    } else { // Assume it's a YYYY-MM-DD date string
-        date = parseISO(isoString); // Use parseISO for better date-only string handling
-    }
-
+    const date = new Date(isoString);
     if (isNaN(date.getTime())) {
-      // If isoString is just a date (YYYY-MM-DD), append a default time
+      // If isoString is just a date (YYYY-MM-DD), append a default time like 09:00
       if (isoString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        return `${isoString}T09:00`; // Default to 9 AM
+        const withTime = `${isoString}T09:00:00Z`; // Assume UTC if only date
+        const localDateFromDateOnly = new Date(new Date(withTime).getTime() - new Date().getTimezoneOffset() * 60000);
+        return localDateFromDateOnly.toISOString().slice(0,16);
       }
-      return new Date().toISOString().slice(0, 16); // Fallback if still invalid
+      return new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16); // Fallback
     }
-    // Format to 'YYYY-MM-DDTHH:mm'
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
-
+    // Convert valid ISO string to local datetime-local format
+    const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return localDate.toISOString().slice(0, 16);
   } catch (e) {
-    return new Date().toISOString().slice(0, 16); // Fallback on any error
+    return new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16); // Fallback on any error
   }
 };
+
 
 const initialLoadFormData: Partial<Load> = {
   clientId: '',
   origin: '',
   destination: '',
-  pickupDateTime: toDateTimeLocal(),
-  deliveryDateTime: toDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()), // Default to 24 hours from now
+  pickupDateTime: toDateTimeLocalInput(),
+  deliveryDateTime: toDateTimeLocalInput(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()), // Default to 24 hours from now
   ratePerMile: 0,
   distance: 0,
   status: 'pending',
@@ -186,13 +177,12 @@ export default function DashDispatchProApp() {
       return;
     }
 
-    let currentRole: 'admin' | 'client' = 'admin'; // Default role
+    let currentRole: 'admin' | 'client' = 'admin'; 
 
-    // Handle Admin Review Mode specifically
     if (IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) {
       currentRole = mockReviewUser.role!;
-      setUser(mockReviewUser); // Set the mock user
-    } else if (!IS_ADMIN_REVIEW_MODE) { // Normal Firebase user logic
+      setUser(mockReviewUser); 
+    } else if (!IS_ADMIN_REVIEW_MODE) { 
       try {
         const profileRef = doc(db, `users/${currentUser.uid}/profile`);
         const profileSnap = await getDoc(profileRef);
@@ -200,48 +190,41 @@ export default function DashDispatchProApp() {
           const userProfile = profileSnap.data() as UserProfile;
           currentRole = userProfile.role;
         } else {
-          // If profile doesn't exist, create it with a default role (e.g., admin)
+          
           await setDoc(profileRef, { role: 'admin' });
-          currentRole = 'admin'; // Or prompt for role selection
+          currentRole = 'admin'; 
         }
       } catch (error) {
         console.error("Error fetching user profile:", error);
         toast({ variant: "destructive", title: "Profile Error", description: "Could not fetch user profile." });
-        // Potentially sign out user or set a default role to prevent app crash
       }
     }
     
     setUserRole(currentRole);
 
-    // Set the user object - merge FirebaseUser with role
-    // Skip this if it's the mock user already set above
     if (!(IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) && !IS_ADMIN_REVIEW_MODE) {
          setUser({ ...(currentUser as FirebaseUser), role: currentRole });
     }
 
 
-    // If user is client and not in review mode, only client portal logic applies. Stop here.
     if (currentRole === 'client' && !IS_ADMIN_REVIEW_MODE) {
       setAppLoading(false);
       return;
     }
     
-    // For Admin Review Mode: Initialize with mock/empty data
     if (IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) {
-      // Simulate an empty database for the review user
       setLoads([]); 
       setExpenses([]);
       setClients([]);
-      const reviewSettings = { ...initialSettings }; // Use a copy of initial settings for review
+      const reviewSettings = { ...initialSettings }; 
       setSettings(reviewSettings);
       setSettingsForm(reviewSettings);
-      setClientLoadRequests([]); // Start with no client requests in review mode
+      setClientLoadRequests([]); 
       setAppLoading(false);
       return;
     }
     
-    // For real admin users (not in review mode), fetch all data from Firestore
-    if (!IS_ADMIN_REVIEW_MODE) { // This check is technically redundant due to client check above but good for clarity
+    if (!IS_ADMIN_REVIEW_MODE) { 
         setAppLoading(true);
         try {
           const collectionsToFetch = [
@@ -255,23 +238,19 @@ export default function DashDispatchProApp() {
             setter(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
           }
 
-          // Fetch settings
           const settingsRef = doc(db, `users/${currentUser.uid}/settings`, SETTINGS_DOC_ID);
           const settingsSnap = await getDoc(settingsRef);
           if (settingsSnap.exists()) {
             const settingsData = settingsSnap.data() as Settings;
-            // Merge with initialSettings to ensure all fields are present, even if some were not saved
             const completeSettings = { ...initialSettings, ...settingsData };
             setSettings(completeSettings);
-            setSettingsForm(completeSettings); // Also set the form with complete settings
+            setSettingsForm(completeSettings); 
           } else {
-            // If no settings doc, create one with initialSettings
             await setDoc(settingsRef, initialSettings);
             setSettings(initialSettings);
             setSettingsForm(initialSettings);
           }
 
-          // Fetch client load requests (these are global, not per-user in this structure)
           const clientRequestsSnapshot = await getDocs(collection(db, 'clientLoadRequests'));
           setClientLoadRequests(clientRequestsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as ClientLoadRequest)));
 
@@ -282,25 +261,21 @@ export default function DashDispatchProApp() {
           setAppLoading(false);
         }
     }
-  }, [toast]); // Added toast as a dependency
+  }, [toast]); 
 
 
   useEffect(() => {
     if (IS_ADMIN_REVIEW_MODE) {
-      // For Admin Review Mode, directly use the mock user
       fetchUserProfileAndData(mockReviewUser);
-      return; // Skip Firebase auth listener
+      return; 
     }
 
-    // For normal operation, listen to Firebase auth state changes
     const unsubscribe = auth.onAuthStateChanged(authUser => {
       if (authUser) {
         fetchUserProfileAndData(authUser);
       } else {
-        // User is signed out
         setUser(null);
         setUserRole(undefined);
-        // Clear all data
         setLoads([]);
         setExpenses([]);
         setClients([]);
@@ -310,8 +285,8 @@ export default function DashDispatchProApp() {
         setAppLoading(false);
       }
     });
-    return () => unsubscribe(); // Cleanup subscription on unmount
-  }, [fetchUserProfileAndData]); // fetchUserProfileAndData is memoized with useCallback
+    return () => unsubscribe(); 
+  }, [fetchUserProfileAndData]); 
 
 
   const handleSignUp = async (role: 'admin' | 'client' = 'admin') => {
@@ -322,18 +297,15 @@ export default function DashDispatchProApp() {
     setIsSubmitting(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      // Create user profile document with role
       const profileRef = doc(db, `users/${userCredential.user.uid}/profile`);
       await setDoc(profileRef, { role });
 
-      // If admin, also initialize settings
       if (role === 'admin') {
         const settingsRef = doc(db, `users/${userCredential.user.uid}/settings`, SETTINGS_DOC_ID);
         await setDoc(settingsRef, initialSettings);
-        setSettings(initialSettings); // Set local state for settings
+        setSettings(initialSettings); 
         setSettingsForm(initialSettings);
       }
-      // setUser and fetchUserProfileAndData will be handled by onAuthStateChanged
       toast({ title: "Account Created", description: `Welcome! You are registered as ${role}.` });
     } catch (error: any) {
       console.error('Sign up error:', error);
@@ -345,7 +317,6 @@ export default function DashDispatchProApp() {
 
   const handleSignIn = async () => {
     if (IS_ADMIN_REVIEW_MODE) {
-      // Simulate a "refresh" of the review session
       fetchUserProfileAndData(mockReviewUser);
       toast({ title: "Admin Review Mode", description: "Review session refreshed." });
       return;
@@ -353,7 +324,6 @@ export default function DashDispatchProApp() {
     setIsSubmitting(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // setUser and fetchUserProfileAndData will be handled by onAuthStateChanged
       toast({ title: "Signed In", description: "Welcome back!" });
     } catch (error: any)
      {
@@ -366,20 +336,18 @@ export default function DashDispatchProApp() {
 
   const handleSignOut = async () => {
     if (IS_ADMIN_REVIEW_MODE) {
-      setUser(null); // Effectively logs out the mock user
+      setUser(null); 
       setUserRole(undefined);
-      // To simulate re-login for review, re-trigger fetch with mock user
-      setAppLoading(true); // Show loading briefly
+      setAppLoading(true); 
       setTimeout(() => {
-         fetchUserProfileAndData(mockReviewUser); // Re-initialize review mode
-      }, 50); // Small delay to allow state to clear
+         fetchUserProfileAndData(mockReviewUser); 
+      }, 50); 
       toast({ title: "Admin Review Mode", description: "Review session refreshed." });
       return;
     }
     setIsSubmitting(true);
     try {
       await signOut(auth);
-      // setUser and data clearing will be handled by onAuthStateChanged
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
     } catch (error: any) {
       console.error('Sign out error:', error);
@@ -389,41 +357,46 @@ export default function DashDispatchProApp() {
     }
   };
 
-  // Handler to populate form for editing a load
   const handleStartEditLoad = (loadToEdit: Load) => {
     if (!user || user.role !== 'admin') return;
-    setLoadForm(loadToEdit);
+     const loadWithLocalTimes = {
+      ...loadToEdit,
+      pickupDateTime: toDateTimeLocalInput(loadToEdit.pickupDateTime),
+      deliveryDateTime: toDateTimeLocalInput(loadToEdit.deliveryDateTime),
+    };
+    setLoadForm(loadWithLocalTimes);
     setEditingLoadId(loadToEdit.id!);
-    setActiveTab('loads'); // Switch to loads tab if not already there
-    // Optionally, scroll to the form or ensure the createLoad tab is active within LoadsPage
+    setActiveTab('loads'); 
   };
 
-  // Handler to cancel editing and reset form
   const handleCancelEditLoad = () => {
     setLoadForm(initialLoadFormData);
     setEditingLoadId(null);
   };
 
-  // Combined handler for adding a new load or updating an existing one
   const handleSaveLoad = async (loadDataToSave?: Partial<Load>) => {
     if (!user || user.role !== 'admin') return;
     setIsSubmitting(true);
   
-    const dataToUse = loadDataToSave || loadForm; // Use passed data if available, else form state
+    const dataToUse = loadDataToSave || loadForm; 
     const calculatedTotalRate = (dataToUse.distance || 0) * (dataToUse.ratePerMile || 0) + (dataToUse.tarpingFee || 0);
     const calculatedDriveTime = (settings.truckAverageSpeed > 0 && dataToUse.distance && dataToUse.distance > 0) 
         ? dataToUse.distance / settings.truckAverageSpeed 
         : undefined;
 
+    const finalPickupDateTime = new Date(dataToUse.pickupDateTime!).toISOString();
+    const finalDeliveryDateTime = new Date(dataToUse.deliveryDateTime!).toISOString();
+
     const dataWithCalculations = {
         ...dataToUse,
+        pickupDateTime: finalPickupDateTime,
+        deliveryDateTime: finalDeliveryDateTime,
         totalAgreedRate: calculatedTotalRate,
         estimatedDriveTimeHours: calculatedDriveTime
     };
 
-    if (editingLoadId) { // This is an UPDATE
+    if (editingLoadId) { 
       if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-        // Review Mode: Update local state
         setLoads(prevLoads => prevLoads.map(l => 
           l.id === editingLoadId 
             ? { ...l, ...dataWithCalculations, id: editingLoadId } as Load 
@@ -431,7 +404,6 @@ export default function DashDispatchProApp() {
         ));
         toast({ title: "Admin Review: Load Updated", description: `Load ${dataToUse.loadNumber || editingLoadId} updated locally (not saved).` });
       } else {
-        // Real Mode: Update Firestore
         try {
           const loadRef = doc(db, `users/${user.uid}/loads`, editingLoadId);
           await updateDoc(loadRef, dataWithCalculations);
@@ -446,8 +418,7 @@ export default function DashDispatchProApp() {
           toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
         }
       }
-    } else { // This is an ADD
-      // Determine the next load number
+    } else { 
       let nextLoadNumeric = 1;
       if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
           nextLoadNumeric = loads.length + 1;
@@ -474,7 +445,6 @@ export default function DashDispatchProApp() {
       }
       const newLoadNumber = formatLoadNumber(nextLoadNumeric);
   
-      // Prepare new load data
       const newLoadData: Omit<Load, 'id'> = {
         loadNumber: newLoadNumber,
         clientId: dataWithCalculations.clientId!,
@@ -500,12 +470,10 @@ export default function DashDispatchProApp() {
       };
   
       if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-        // Review Mode: Add to local state
         const mockNewLoad = { ...newLoadData, id: `mock-load-${Date.now()}` } as Load;
         setLoads(prev => [...prev, mockNewLoad]);
         toast({ title: "Admin Review: Load Added", description: `Load ${newLoadNumber} added to local view (not saved).` });
       } else {
-        // Real Mode: Add to Firestore
         try {
           const docRef = await addDoc(collection(db, `users/${user.uid}/loads`), newLoadData);
           setLoads(prev => [...prev, { ...newLoadData, id: docRef.id } as Load]);
@@ -517,11 +485,10 @@ export default function DashDispatchProApp() {
       }
     }
   
-    handleCancelEditLoad(); // Reset form and editing state
+    handleCancelEditLoad(); 
     setIsSubmitting(false);
   };
   
-  // Generic update function, used for status changes or other partial updates
   const updateLoad = useCallback(async (id: string, updates: Partial<Load>) => {
     if (!user || user.role !== 'admin') return;
     
@@ -529,7 +496,6 @@ export default function DashDispatchProApp() {
     const currentLoad = loads.find(l => l.id === id);
 
     if (currentLoad) {
-        // Recalculate totalAgreedRate if relevant fields change
         if (updates.distance !== undefined || updates.ratePerMile !== undefined || updates.tarpingFee !== undefined) {
             const newDistance = updates.distance !== undefined ? updates.distance : currentLoad.distance;
             const newRatePerMile = updates.ratePerMile !== undefined ? updates.ratePerMile : currentLoad.ratePerMile;
@@ -537,19 +503,16 @@ export default function DashDispatchProApp() {
             finalUpdates.totalAgreedRate = (newDistance * newRatePerMile) + newTarpingFee;
         }
 
-        // Recalculate estimatedDriveTimeHours if distance changes (and settings are available)
         if (updates.distance !== undefined && settings.truckAverageSpeed > 0) {
             finalUpdates.estimatedDriveTimeHours = updates.distance / settings.truckAverageSpeed;
-        } else if (updates.distance !== undefined) { // If speed is 0 or not set, make drive time undefined
+        } else if (updates.distance !== undefined) { 
             finalUpdates.estimatedDriveTimeHours = undefined;
         }
-
 
         if (updates.expenses && currentLoad.expenses) {
             finalUpdates.expenses = { ...currentLoad.expenses, ...updates.expenses };
         }
     }
-
 
     if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
       setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...finalUpdates } as Load : l));
@@ -563,7 +526,6 @@ export default function DashDispatchProApp() {
       return;
     }
 
-    // Real Mode: Update Firestore
     try {
       await updateDoc(doc(db, `users/${user.uid}/loads`, id), finalUpdates);
       setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...finalUpdates } as Load : l));
@@ -620,15 +582,16 @@ export default function DashDispatchProApp() {
     
     const existingClient = clients.find(c => 
         (c.companyName || "").toLowerCase() === (request.requestedByClientName || "").toLowerCase() ||
-        (c.contactName || "").toLowerCase() === (request.requestedByClientName || "").toLowerCase()
+        (c.contactName || "").toLowerCase() === (request.requestContactName || "").toLowerCase() ||
+        (c.contactEmail || "").toLowerCase() === (request.requestContactEmail || "").toLowerCase()
     );
 
     const loadDataFromRequest: Partial<Load> = {
       clientId: existingClient?.id || '', 
       origin: request.origin,
       destination: request.destination,
-      pickupDateTime: toDateTimeLocal(request.requestedPickupDate),
-      deliveryDateTime: toDateTimeLocal(new Date(parseISO(request.requestedPickupDate).getTime() + 24 * 60 * 60 * 1000).toISOString()), 
+      pickupDateTime: toDateTimeLocalInput(request.requestedPickupDateTime),
+      deliveryDateTime: toDateTimeLocalInput(request.requestedDeliveryDateTime),
       ratePerMile: 0, 
       distance: 0, 
       status: 'client-request-approved',
@@ -636,9 +599,9 @@ export default function DashDispatchProApp() {
       requiresTarping: false, 
       tarpingFee: 0,      
       originalClientRequestId: request.id,
-      requestedByClientName: request.requestedByClientName,
-      requestedByAuthUid: request.requestedByClientUid,
-      estimatedDriveTimeHours: undefined, // Initialize as undefined
+      requestedByClientName: request.requestedByClientName, // Name of logged-in client
+      requestedByAuthUid: request.requestedByClientUid,   // UID of logged-in client
+      estimatedDriveTimeHours: undefined, 
     };
     setLoadForm(loadDataFromRequest); 
     setEditingLoadId(null); 
@@ -744,13 +707,12 @@ export default function DashDispatchProApp() {
     }
   };
 
-  // Effect to calculate expenses for delivered loads
   useEffect(() => {
     if (user?.role !== 'admin') {
       return;
     }
 
-    const allCurrentLoads = [...loads]; // Stable copy for finding previous loads
+    const allCurrentLoads = [...loads]; 
 
     loads.forEach(load => {
       if (load.status === 'delivered' && !load.expenses.calculated && load.id) {
@@ -772,15 +734,14 @@ export default function DashDispatchProApp() {
 
         const payroll = load.totalAgreedRate * (settings.payrollPercentage / 100);
         
-        // --- Calculate Recurring Expenses with Gap Coverage ---
         const dailyRecurringSum = settings.recurringExpenses.reduce(
-          (sum, expense) => sum + (expense.amount / 30), 0 // Sum of daily recurring amounts
+          (sum, expense) => sum + (expense.amount / 30), 0 
         );
         
         let durationInDaysForCurrentLoad = 1;
         try {
-            const pickupDate = new Date(load.pickupDateTime);
-            const deliveryDate = new Date(load.deliveryDateTime);
+            const pickupDate = parseISO(load.pickupDateTime);
+            const deliveryDate = parseISO(load.deliveryDateTime);
             if (!isNaN(pickupDate.getTime()) && !isNaN(deliveryDate.getTime()) && deliveryDate >= pickupDate) {
                 durationInDaysForCurrentLoad = differenceInCalendarDays(deliveryDate, pickupDate) + 1;
             }
@@ -791,31 +752,26 @@ export default function DashDispatchProApp() {
 
         let idleDaysBeforeThisLoad = 0;
         const previouslyDeliveredLoads = allCurrentLoads.filter(
-          l => l.id !== load.id && l.status === 'delivered' && l.deliveryDateTime
+          l => l.id !== load.id && l.status === 'delivered' && l.deliveryDateTime && parseISO(l.deliveryDateTime) < parseISO(load.pickupDateTime)
         );
 
         if (previouslyDeliveredLoads.length > 0) {
-          // Find the latest delivery date among previously delivered loads
           const latestPreviousDeliveryTimestamp = Math.max(
-            ...previouslyDeliveredLoads.map(l => new Date(l.deliveryDateTime!).getTime())
+            ...previouslyDeliveredLoads.map(l => parseISO(l.deliveryDateTime!).getTime())
           );
           const latestPreviousDeliveryDate = new Date(latestPreviousDeliveryTimestamp);
-          const currentLoadPickupDate = new Date(load.pickupDateTime);
+          const currentLoadPickupDate = parseISO(load.pickupDateTime);
 
           if (!isNaN(latestPreviousDeliveryDate.getTime()) && 
               !isNaN(currentLoadPickupDate.getTime()) && 
               currentLoadPickupDate > latestPreviousDeliveryDate) {
-            
-            // Calculate idle days: days between the day *after* latestPreviousDeliveryDate 
-            // and the day *before* currentLoadPickupDate.
-            idleDaysBeforeThisLoad = differenceInCalendarDays(currentLoadPickupDate, latestPreviousDeliveryDate) - 1;
+            idleDaysBeforeThisLoad = differenceInCalendarDays(currentLoadPickupDate, latestPreviousDeliveryDate) -1;
           }
-          idleDaysBeforeThisLoad = Math.max(0, idleDaysBeforeThisLoad); // Ensure no negative idle days
+          idleDaysBeforeThisLoad = Math.max(0, idleDaysBeforeThisLoad);
         }
         
         const totalDaysToAccountForRecurring = durationInDaysForCurrentLoad + idleDaysBeforeThisLoad;
         const totalRecurringForLoad = dailyRecurringSum * totalDaysToAccountForRecurring;
-        // --- End Recurring Expense Calculation ---
 
         updateLoad(load.id, {
           expenses: {
@@ -880,7 +836,6 @@ export default function DashDispatchProApp() {
         page.drawLine({start: {x: x1, y: y1}, end: {x: x2, y: y2}, thickness, color: rgb(0.7,0.7,0.7) });
       }
 
-      // 1. Document Title
       yPos = drawTextLine('Hotshot Trucking Agreement', boldFont, titleFontSize, margin, yPos, rgb(0.1, 0.1, 0.1));
       if (loadData.loadNumber) {
         const tempYPos = yPos;
@@ -889,12 +844,10 @@ export default function DashDispatchProApp() {
       }
       yPos -= lineSpacing / 2;
 
-      // 2. Date of Agreement
       const agreementDate = new Date().toLocaleDateString();
       yPos = drawRegularTextLine(`Date of Agreement: ${agreementDate}`, margin, yPos);
       yPos -= sectionSpacing;
 
-      // 3. Parties
       yPos = drawTextLine('PARTIES', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       
@@ -918,7 +871,6 @@ export default function DashDispatchProApp() {
       
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2)); 
 
-      // 4. Load Details
       yPos = drawTextLine('LOAD DETAILS', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       yPos = drawBoldTextLine('Description:', margin, yPos);
@@ -935,13 +887,13 @@ export default function DashDispatchProApp() {
       yPos = drawBoldTextLine('Pickup Location:', margin, yPos);
       yPos = drawRegularTextLine(loadData.origin, margin + 10, yPos);
       if (loadData.pickupDateTime) {
-        yPos = drawRegularTextLine(`Scheduled Pickup: ${formatDate(new Date(loadData.pickupDateTime), 'PPP p')}`, margin + 10, yPos);
+        yPos = drawRegularTextLine(`Scheduled Pickup: ${formatDate(parseISO(loadData.pickupDateTime), 'PPP p')}`, margin + 10, yPos);
       }
 
       yPos = drawBoldTextLine('Delivery Location:', margin, yPos);
       yPos = drawRegularTextLine(loadData.destination, margin + 10, yPos);
        if (loadData.deliveryDateTime) {
-        yPos = drawRegularTextLine(`Scheduled Delivery: ${formatDate(new Date(loadData.deliveryDateTime), 'PPP p')}`, margin + 10, yPos);
+        yPos = drawRegularTextLine(`Scheduled Delivery: ${formatDate(parseISO(loadData.deliveryDateTime), 'PPP p')}`, margin + 10, yPos);
       }
 
       if (loadData.estimatedDriveTimeHours && loadData.estimatedDriveTimeHours > 0) {
@@ -952,7 +904,6 @@ export default function DashDispatchProApp() {
       yPos -= sectionSpacing;
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
-      // 5. Rates & Fees
       yPos = drawTextLine('RATES & FEES', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       
@@ -969,7 +920,6 @@ export default function DashDispatchProApp() {
         yPos = drawRegularTextLine('Required (Fee included or N/A)', margin + 10, yPos);
       }
 
-
       yPos = drawBoldTextLine('Total Agreed Rate for Service:', margin, yPos);
       yPos = drawRegularTextLine(`$${loadData.totalAgreedRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 10, yPos);
 
@@ -980,7 +930,6 @@ export default function DashDispatchProApp() {
       yPos -= sectionSpacing;
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
-      // 6. Special Terms
       yPos = drawTextLine('SPECIAL TERMS & CONDITIONS', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       const specialTermsText = loadData.specialTerms || settings.defaultSpecialTerms || "Standard carrier terms apply. Full terms available upon request. Payment due upon delivery unless otherwise agreed in writing. Late payments may incur additional charges.";
@@ -1015,7 +964,6 @@ export default function DashDispatchProApp() {
       }
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
-      // 7. Signatures
       yPos = drawTextLine('SIGNATURES', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 2; 
 
@@ -1037,7 +985,6 @@ export default function DashDispatchProApp() {
       
       yPos = signatureYPos - lineSpacing * 2; 
 
-      // 8. Concluding Clause
       if (yPos < margin + 50) { 
         page = pdfDoc.addPage([600, 850]);
         yPos = height - margin;
@@ -1170,4 +1117,3 @@ export default function DashDispatchProApp() {
       </div>
     );
 }
-

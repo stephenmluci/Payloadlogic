@@ -12,7 +12,7 @@ export type Load = {
   deliveryDateTime: string; // ISO string for date and time
   ratePerMile: number;
   distance: number;
-  totalAgreedRate: number; // Calculated: (distance * ratePerMile) + tarpingFee
+  totalAgreedRate: number; // Calculated: (distance * ratePerMile) + (tarpingFee || 0)
   status: 'pending' | 'in-transit' | 'delivered' | 'client-request-approved';
   expenses: {
     payroll: number;
@@ -87,11 +87,14 @@ export type ClientLoadRequest = {
   origin: string;
   destination: string;
   cargoDescription: string;
-  requestedPickupDate: string; // ISO Date string (YYYY-MM-DD from client input)
-  requestedByClientUid: string;
-  requestedByClientName: string | null;
+  requestedPickupDateTime: string; // ISO datetime string
+  requestedDeliveryDateTime: string; // ISO datetime string
+  requestContactName: string;
+  requestContactEmail: string;
+  requestContactPhone: string;
+  requestedByClientUid: string; // UID of the authenticated client user
+  requestedByClientName: string | null; // Display name/email of authenticated client user
   submissionTimestamp: Timestamp;
   status: 'new' | 'viewed' | 'accepted' | 'rejected';
   createdLoadId?: string;
 };
-

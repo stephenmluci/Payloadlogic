@@ -1,8 +1,8 @@
 
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation'; // For potential redirects
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -11,29 +11,58 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import type { User, ClientLoadRequest } from '@/types';
 import { ClientLoadRequestForm } from '@/components/client-portal/ClientLoadRequestForm';
 import { LogOut, Truck, Loader2 } from 'lucide-react';
+import { formatISO, addHours } from 'date-fns';
 
 type ClientPortalPageProps = {
-  user: User | null; // User object passed from main app
+  user: User | null;
   onSignOut: () => Promise<void>;
 };
+
+// Helper to format date to YYYY-MM-DDTHH:mm for datetime-local input
+const toDateTimeLocalInput = (date: Date): string => {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 16);
+};
+
 
 export default function ClientPortalPage({ user, onSignOut }: ClientPortalPageProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [requestForm, setRequestForm] = useState<Omit<ClientLoadRequest, 'id' | 'requestedByClientUid' | 'requestedByClientName' | 'submissionTimestamp' | 'status'>>({
-    origin: '',
-    destination: '',
-    cargoDescription: '',
-    requestedPickupDate: new Date().toISOString().split('T')[0], // Default to today
-  });
+  
+  const getInitialRequestFormState = (): Omit<ClientLoadRequest, 'id' | 'requestedByClientUid' | 'requestedByClientName' | 'submissionTimestamp' | 'status'> => {
+    const now = new Date();
+    const pickupDateTime = toDateTimeLocalInput(now);
+    const deliveryDateTime = toDateTimeLocalInput(addHours(now, 24)); // Default to 24 hours later
+
+    return {
+      origin: '',
+      destination: '',
+      cargoDescription: '',
+      requestedPickupDateTime: pickupDateTime,
+      requestedDeliveryDateTime: deliveryDateTime,
+      requestContactName: auth.currentUser?.displayName || '',
+      requestContactEmail: auth.currentUser?.email || '',
+      requestContactPhone: '',
+    };
+  };
+
+  const [requestForm, setRequestForm] = useState(getInitialRequestFormState());
+
+  useEffect(() => {
+    // Re-initialize form if user changes (e.g., after login) to prefill contact details
+    if (auth.currentUser) {
+       setRequestForm(prev => ({
+           ...prev, // Keep existing form data like origin/destination if any
+           requestContactName: auth.currentUser?.displayName || prev.requestContactName || '',
+           requestContactEmail: auth.currentUser?.email || prev.requestContactEmail || '',
+       }));
+    }
+  }, [user]); // Depend on user object, which changes on auth state change
+
 
   if (!user || user.role !== 'client') {
-    // This page should only be accessible if user is a client.
-    // Redirect or show error if accessed directly without proper role.
-    // In a real app, Next.js middleware or route protection would handle this.
-    // For now, if user prop isn't a client, show loading or redirect.
-    if (typeof window !== 'undefined') router.push('/'); // Redirect to home if not client
+    if (typeof window !== 'undefined') router.push('/');
     return (
         <div className="min-h-screen flex items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin" />
@@ -47,14 +76,21 @@ export default function ClientPortalPage({ user, onSignOut }: ClientPortalPagePr
       toast({ variant: "destructive", title: "Error", description: "You must be logged in to submit a request." });
       return;
     }
-    if (!requestForm.origin || !requestForm.destination || !requestForm.cargoDescription || !requestForm.requestedPickupDate) {
-      toast({ variant: "destructive", title: "Missing Information", description: "Please fill out all fields." });
+    if (!requestForm.origin || !requestForm.destination || !requestForm.cargoDescription || 
+        !requestForm.requestedPickupDateTime || !requestForm.requestedDeliveryDateTime ||
+        !requestForm.requestContactName || !requestForm.requestContactEmail || !requestForm.requestContactPhone) {
+      toast({ variant: "destructive", title: "Missing Information", description: "Please fill out all fields, including contact details and date/times." });
       return;
     }
 
     setIsSubmitting(true);
     const newRequest: Omit<ClientLoadRequest, 'id'> = {
       ...requestForm,
+      // Convert local datetime string to full ISO string for storage if needed,
+      // or ensure backend/Firestore handles string conversion appropriately.
+      // For Firestore, string format 'YYYY-MM-DDTHH:MM' is fine for querying/sorting.
+      requestedPickupDateTime: new Date(requestForm.requestedPickupDateTime).toISOString(),
+      requestedDeliveryDateTime: new Date(requestForm.requestedDeliveryDateTime).toISOString(),
       requestedByClientUid: auth.currentUser.uid,
       requestedByClientName: auth.currentUser.displayName || auth.currentUser.email,
       submissionTimestamp: serverTimestamp(),
@@ -64,7 +100,7 @@ export default function ClientPortalPage({ user, onSignOut }: ClientPortalPagePr
     try {
       await addDoc(collection(db, 'clientLoadRequests'), newRequest);
       toast({ title: "Request Submitted", description: "Your load request has been sent successfully." });
-      setRequestForm({ origin: '', destination: '', cargoDescription: '', requestedPickupDate: new Date().toISOString().split('T')[0] }); // Reset form
+      setRequestForm(getInitialRequestFormState()); // Reset form to initial state with defaults
     } catch (error: any) {
       console.error("Error submitting load request:", error);
       toast({ variant: "destructive", title: "Submission Error", description: error.message });
@@ -103,7 +139,7 @@ export default function ClientPortalPage({ user, onSignOut }: ClientPortalPagePr
             <ClientLoadRequestForm
               requestForm={requestForm}
               setRequestForm={setRequestForm}
-              onSubmit={handleSubmitRequest}
+              onSubmit={(e) => { e.preventDefault(); handleSubmitRequest();}}
               isSubmitting={isSubmitting}
             />
           </CardContent>
@@ -118,4 +154,3 @@ export default function ClientPortalPage({ user, onSignOut }: ClientPortalPagePr
     </div>
   );
 }
-

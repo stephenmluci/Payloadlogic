@@ -72,6 +72,9 @@ export type Settings = {
   loadingFee?: number;
   detentionFeeRate?: number;
   defaultSpecialTerms?: string;
+  trailerType: string;
+  trailerDimensions: string;
+  trailerWeightCapacity: string;
 };
 
 export type User = FirebaseUser & {
@@ -87,14 +90,15 @@ export type ClientLoadRequest = {
   origin: string;
   destination: string;
   cargoDescription: string;
-  requestedPickupDateTime: string; // ISO datetime string
-  requestedDeliveryDateTime: string; // ISO datetime string
+  requestedPickupDateTime: string; 
+  requestedDeliveryDateTime: string; 
   requestContactName: string;
   requestContactEmail: string;
   requestContactPhone: string;
-  requestedByClientUid: string; // UID of the authenticated client user
-  requestedByClientName: string | null; // Display name/email of authenticated client user
+  requestedByClientUid: string; 
+  requestedByClientName: string | null; 
   submissionTimestamp: Timestamp;
   status: 'new' | 'viewed' | 'accepted' | 'rejected';
   createdLoadId?: string;
 };
+

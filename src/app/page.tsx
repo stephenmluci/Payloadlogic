@@ -82,7 +82,10 @@ const initialSettings: Settings = {
   carrierContactEmail: 'contact@mockcarrier.com',
   loadingFee: 50,
   detentionFeeRate: 75,
-  defaultSpecialTerms: "Standard carrier terms apply. Full terms available upon request. Payment due upon delivery unless otherwise agreed in writing. Late payments may incur additional charges. Carrier's liability for cargo loss or damage is limited to $100,000 unless otherwise agreed in writing and specified in Special Terms."
+  defaultSpecialTerms: "Standard carrier terms apply. Full terms available upon request. Payment due upon delivery unless otherwise agreed in writing. Late payments may incur additional charges. Carrier's liability for cargo loss or damage is limited to $100,000 unless otherwise agreed in writing and specified in Special Terms.",
+  trailerType: 'Flatbed',
+  trailerDimensions: '48ft L x 8.5ft W',
+  trailerWeightCapacity: '48000 lbs',
 };
 
 const SETTINGS_DOC_ID = 'userSettings';
@@ -200,14 +203,9 @@ export default function DashDispatchProApp() {
     if (isTrialSession) {
       const trialUserProfileRef = doc(db, `users/${currentUser.uid}/profile`);
       const trialProfileSnap = await getDoc(trialUserProfileRef);
-      let currentTrialRole: 'admin' | 'client' = 'admin'; // Default role for trial if no profile
+      let currentTrialRole: 'admin' | 'client' = 'admin'; 
       if (trialProfileSnap.exists()) {
         currentTrialRole = (trialProfileSnap.data() as UserProfile).role;
-      } else {
-        // If a new user starts a trial immediately after sign up, they might not have a profile yet.
-        // We'll use the role determined at sign up, or default.
-        // The `user` state set during signup (which includes role) might be more reliable here.
-        // For simplicity, we can default or enhance this if needed. Let's assume 'admin' for now if profile is missing.
       }
       setUser({ ...(currentUser as FirebaseUser), role: currentTrialRole });
       setUserRole(currentTrialRole);
@@ -296,11 +294,10 @@ export default function DashDispatchProApp() {
 
       if (authUser) {
         if (isTrialSession) {
-            fetchUserProfileAndData(authUser); // Handles trial data mocking and state setting
+             fetchUserProfileAndData(authUser);
         } else if (appDisplayState === 'subscription_choice') {
             setUser(prev => ({ ...(authUser as FirebaseUser), role: prev?.role || 'admin' }));
         } else {
-            // Only call fetchUserProfileAndData if the user state isn't set for this authUser or role is unknown
             if (!user || user.uid !== authUser.uid || !userRole) {
                  fetchUserProfileAndData(authUser);
             }
@@ -366,7 +363,7 @@ export default function DashDispatchProApp() {
         toast({variant: "destructive", title: "Error", description: "User not found for trial."});
         return;
     }
-    setIsTrialSession(true); // This will trigger the useEffect, which calls fetchUserProfileAndData for trial.
+    setIsTrialSession(true); 
     toast({ title: "Free Trial Started", description: "Enjoy your free trial! Data will not be saved." });
   };
 
@@ -537,7 +534,7 @@ export default function DashDispatchProApp() {
                 tarpingFee: dataWithCalculations.tarpingFee || 0,
                 originalClientRequestId: dataWithCalculations.originalClientRequestId,
                 requestedByClientName: dataWithCalculations.requestedByClientName,
-                requestedByAuthUid: dataWithCalculations.requestedByClientUid,
+                requestedByAuthUid: dataWithCalculations.requestedByAuthUid,
                 estimatedDriveTimeHours: dataWithCalculations.estimatedDriveTimeHours,
                 expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
             };

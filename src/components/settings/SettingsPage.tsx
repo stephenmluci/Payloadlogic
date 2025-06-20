@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Percent, Droplet, Repeat, Trash2, PlusCircle, Save, Building2, Hash, User, Phone, Mail, Fuel, FileText, DollarSign, Gauge, GaugeCircle, Truck } from 'lucide-react';
+import { Percent, Droplet, Repeat, Trash2, PlusCircle, Save, Building2, Hash, User, Phone, Mail, Fuel, FileText, DollarSign, Gauge, GaugeCircle, Truck, Tag, Ruler, Weight } from 'lucide-react';
 
 type SettingsPageProps = {
   settingsForm: Settings;
@@ -167,6 +167,59 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
                     />
                   </div>
                 </div>
+            </div>
+          </div>
+
+          <Separator />
+          
+          {/* Trailer Information Section */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3 flex items-center">
+              <Truck className="h-5 w-5 mr-2 text-primary" /> Trailer Information
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="trailerType">Trailer Type</Label>
+                <div className="relative">
+                  <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Input 
+                    id="trailerType" 
+                    name="trailerType" 
+                    value={settingsForm.trailerType || ''} 
+                    onChange={handleInputChange} 
+                    placeholder="e.g., Flatbed, Car Hauler, Step Deck"
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="trailerDimensions">Trailer Dimensions (e.g., L x W)</Label>
+                <div className="relative">
+                  <Ruler className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Input 
+                    id="trailerDimensions" 
+                    name="trailerDimensions" 
+                    value={settingsForm.trailerDimensions || ''} 
+                    onChange={handleInputChange} 
+                    placeholder="e.g., 48ft L x 8.5ft W or 53ft L"
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="trailerWeightCapacity">Trailer Weight Capacity (e.g., lbs or kg)</Label>
+                <div className="relative">
+                  <Weight className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Input 
+                    id="trailerWeightCapacity" 
+                    name="trailerWeightCapacity" 
+                    value={settingsForm.trailerWeightCapacity || ''} 
+                    onChange={handleInputChange} 
+                    placeholder="e.g., 48000 lbs"
+                    className="pl-10"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 

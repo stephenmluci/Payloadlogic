@@ -75,6 +75,8 @@ export type Settings = {
   trailerType: string;
   trailerDimensions: string;
   trailerWeightCapacity: string;
+  trailerHitchType: 'gooseneck' | 'fifth-wheel' | '';
+  trailerDeckHeight: string;
 };
 
 export type User = FirebaseUser & {
@@ -101,4 +103,3 @@ export type ClientLoadRequest = {
   status: 'new' | 'viewed' | 'accepted' | 'rejected';
   createdLoadId?: string;
 };
-

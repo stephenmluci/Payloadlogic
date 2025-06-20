@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Percent, Droplet, Repeat, Trash2, PlusCircle, Save, Building2, Hash, User, Phone, Mail, Fuel, FileText, DollarSign, Gauge, GaugeCircle, Truck, Tag, Ruler, Weight } from 'lucide-react';
+import { Percent, Droplet, Repeat, Trash2, PlusCircle, Save, Building2, Hash, User, Phone, Mail, Fuel, FileText, DollarSign, Gauge, GaugeCircle, Truck, Tag, Ruler, Weight, ArrowUpFromLine } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 type SettingsPageProps = {
   settingsForm: Settings;
@@ -33,6 +34,10 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
       setSettingsForm(prev => ({ ...prev, [name]: value }));
     }
   };
+
+  const handleRadioChange = (value: string) => {
+    setSettingsForm(prev => ({...prev, trailerHitchType: value as 'gooseneck' | 'fifth-wheel' | ''}));
+  }
 
   const addRecurringExpense = () => {
     setSettingsForm(prev => ({
@@ -178,6 +183,39 @@ export function SettingsPage({ settingsForm, setSettingsForm, updateSettings, is
               <Truck className="h-5 w-5 mr-2 text-primary" /> Trailer Information
             </h3>
             <div className="space-y-4">
+              <div>
+                <Label>Hitch Type</Label>
+                <RadioGroup
+                  value={settingsForm.trailerHitchType}
+                  onValueChange={handleRadioChange}
+                  className="flex items-center space-x-4 pt-2"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="gooseneck" id="gooseneck" />
+                    <Label htmlFor="gooseneck">Gooseneck</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="fifth-wheel" id="fifth-wheel" />
+                    <Label htmlFor="fifth-wheel">Fifth Wheel</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              <div>
+                <Label htmlFor="trailerDeckHeight">Deck Height</Label>
+                <div className="relative">
+                  <ArrowUpFromLine className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Input
+                    id="trailerDeckHeight"
+                    name="trailerDeckHeight"
+                    value={settingsForm.trailerDeckHeight || ''}
+                    onChange={handleInputChange}
+                    placeholder="e.g., 34 in"
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+
               <div>
                 <Label htmlFor="trailerType">Trailer Type</Label>
                 <div className="relative">

@@ -86,6 +86,8 @@ const initialSettings: Settings = {
   trailerType: 'Flatbed',
   trailerDimensions: '48ft L x 8.5ft W',
   trailerWeightCapacity: '48000 lbs',
+  trailerHitchType: 'gooseneck',
+  trailerDeckHeight: '34 in',
 };
 
 const SETTINGS_DOC_ID = 'userSettings';
@@ -288,14 +290,15 @@ export default function DashDispatchProApp() {
       return;
     }
     
-    setUser({ ...(currentUser as FirebaseUser), role: fetchedRole });
+    const augmentedUser = { ...(currentUser as FirebaseUser), role: fetchedRole };
+    setUser(augmentedUser);
 
     if (shouldGoToSubscriptionChoice) {
         setAppDisplayState('subscription_choice');
         return;
     }
   
-    if (fetchedRole === 'client') {
+    if (augmentedUser.role === 'client') {
       setAppDisplayState('client_portal');
       return;
     }
@@ -345,14 +348,8 @@ export default function DashDispatchProApp() {
       }
 
       if (authUser) {
-        if (isTrialSession) {
+        if (!user || user.uid !== authUser.uid || !user.role) {
              fetchUserProfileAndData(authUser);
-        } else if (appDisplayState === 'subscription_choice') {
-            setUser(prev => ({ ...(authUser as FirebaseUser), role: prev?.role || 'admin' }));
-        } else {
-            if (!user || user.uid !== authUser.uid || !user.role) {
-                 fetchUserProfileAndData(authUser);
-            }
         }
       } else {
         setUser(null);
@@ -363,7 +360,7 @@ export default function DashDispatchProApp() {
       }
     });
     return () => unsubscribe();
-  }, [fetchUserProfileAndData, isTrialSession, appDisplayState, user]);
+  }, [fetchUserProfileAndData, isTrialSession, user]);
 
 
   const handleSignUp = async (role: 'admin' | 'client' = 'admin') => {
@@ -414,6 +411,7 @@ export default function DashDispatchProApp() {
         return;
     }
     setIsTrialSession(true); 
+    fetchUserProfileAndData(user);
     toast({ title: "Free Trial Started", description: "Enjoy your free trial! Data will not be saved." });
   };
 
@@ -1239,7 +1237,3 @@ export default function DashDispatchProApp() {
       </div>
     );
 }
-
-    
-
-    

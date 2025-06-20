@@ -171,6 +171,12 @@ export default function DashDispatchProApp() {
 
   const [settingsForm, setSettingsForm] = useState<Settings>(initialSettings);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo(0, 0);
+    }
+  }, [activeTab]);
+
   const fetchUserProfileAndData = useCallback(async (currentUser: FirebaseUser | User | null) => {
     if (!currentUser) {
       setUser(null);

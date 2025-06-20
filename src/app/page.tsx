@@ -13,12 +13,13 @@ import { format as formatDate, differenceInCalendarDays, parseISO } from 'date-f
 
 // Page Components
 import { AuthPage } from '@/components/auth/AuthPage';
+import { SubscriptionPage } from '@/components/subscription/SubscriptionPage'; // New
 import { DashboardPage } from '@/components/dashboard/DashboardPage';
 import { LoadsPage } from '@/components/loads/LoadsPage';
 import { ExpensesPage } from '@/components/expenses/ExpensesPage';
 import { ClientsPage } from '@/components/clients/ClientsPage';
 import { SettingsPage } from '@/components/settings/SettingsPage';
-import ClientPortalPage from '@/app/client-portal/page'; // Import ClientPortalPage
+import ClientPortalPage from '@/app/client-portal/page';
 
 // Layout Components
 import { AppHeader } from '@/components/layout/AppHeader';
@@ -28,7 +29,9 @@ import { AppFooter } from '@/components/layout/AppFooter';
 import { LayoutDashboard, Package, DollarSign, Users, Cog, Loader2 } from 'lucide-react';
 
 // Admin review mode flag
-const IS_ADMIN_REVIEW_MODE = true;
+const IS_ADMIN_REVIEW_MODE = true; 
+
+type AppDisplayState = 'loading' | 'auth' | 'subscription_choice' | 'admin_dashboard' | 'client_portal';
 
 const mockReviewUser: User = {
   uid: 'admin-reviewer-uid',
@@ -55,7 +58,7 @@ const mockReviewUser: User = {
   }),
   reload: async () => { console.log("Mock user reload called"); },
   toJSON: () => ({ uid: 'admin-reviewer-uid', email: 'reviewer@example.com', displayName: "Admin Reviewer" }),
-  role: 'admin', // Assign role for mock user
+  role: 'admin',
 };
 
 
@@ -83,30 +86,26 @@ const initialSettings: Settings = {
 
 const SETTINGS_DOC_ID = 'userSettings';
 
-// Helper to format load number
 function formatLoadNumber(num: number): string {
   return `L-${String(num).padStart(4, '0')}`;
 }
 
-// Helper to format ISO date-time string for input type="datetime-local"
 const toDateTimeLocalInput = (isoString?: string): string => {
-  if (!isoString) return new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16); // Default to current local time
+  if (!isoString) return new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   try {
     const date = new Date(isoString);
     if (isNaN(date.getTime())) {
-      // If isoString is just a date (YYYY-MM-DD), append a default time like 09:00
       if (isoString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        const withTime = `${isoString}T09:00:00Z`; // Assume UTC if only date
+        const withTime = `${isoString}T09:00:00Z`;
         const localDateFromDateOnly = new Date(new Date(withTime).getTime() - new Date().getTimezoneOffset() * 60000);
         return localDateFromDateOnly.toISOString().slice(0,16);
       }
-      return new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16); // Fallback
+      return new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     }
-    // Convert valid ISO string to local datetime-local format
     const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
     return localDate.toISOString().slice(0, 16);
   } catch (e) {
-    return new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16); // Fallback on any error
+    return new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   }
 };
 
@@ -116,7 +115,7 @@ const initialLoadFormData: Partial<Load> = {
   origin: '',
   destination: '',
   pickupDateTime: toDateTimeLocalInput(),
-  deliveryDateTime: toDateTimeLocalInput(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()), // Default to 24 hours from now
+  deliveryDateTime: toDateTimeLocalInput(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()),
   ratePerMile: 0,
   distance: 0,
   status: 'pending',
@@ -134,11 +133,13 @@ export default function DashDispatchProApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<'admin' | 'client' | undefined>(undefined);
+  
+  const [appDisplayState, setAppDisplayState] = useState<AppDisplayState>('loading');
+  const [isTrialSession, setIsTrialSession] = useState(false);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const [appLoading, setAppLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { toast } = useToast();
@@ -170,123 +171,176 @@ export default function DashDispatchProApp() {
 
   const [settingsForm, setSettingsForm] = useState<Settings>(initialSettings);
 
-  const fetchUserProfileAndData = useCallback(async (currentUser: FirebaseUser | User) => {
+  const fetchUserProfileAndData = useCallback(async (currentUser: FirebaseUser | User | null) => {
     if (!currentUser) {
+      setUser(null);
       setUserRole(undefined);
-      setAppLoading(false);
+      setIsTrialSession(false); 
+      setAppDisplayState('auth');
       return;
     }
-
-    let currentRole: 'admin' | 'client' = 'admin'; 
-
+  
+    let currentRole: 'admin' | 'client' = 'admin'; // Default role
+    let isNewUserWithoutSubscriptionChoice = false;
+  
     if (IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) {
       currentRole = mockReviewUser.role!;
-      setUser(mockReviewUser); 
-    } else if (!IS_ADMIN_REVIEW_MODE) { 
-      try {
-        const profileRef = doc(db, `users/${currentUser.uid}/profile`);
-        const profileSnap = await getDoc(profileRef);
-        if (profileSnap.exists()) {
-          const userProfile = profileSnap.data() as UserProfile;
-          currentRole = userProfile.role;
-        } else {
-          
-          await setDoc(profileRef, { role: 'admin' });
-          currentRole = 'admin'; 
-        }
-      } catch (error) {
-        console.error("Error fetching user profile:", error);
-        toast({ variant: "destructive", title: "Profile Error", description: "Could not fetch user profile." });
-      }
-    }
-    
-    setUserRole(currentRole);
-
-    if (!(IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) && !IS_ADMIN_REVIEW_MODE) {
-         setUser({ ...(currentUser as FirebaseUser), role: currentRole });
-    }
-
-
-    if (currentRole === 'client' && !IS_ADMIN_REVIEW_MODE) {
-      setAppLoading(false);
-      return;
-    }
-    
-    if (IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) {
-      setLoads([]); 
+      setUser(mockReviewUser);
+      setUserRole(currentRole);
+      setLoads([]);
       setExpenses([]);
       setClients([]);
-      const reviewSettings = { ...initialSettings }; 
+      setClientLoadRequests([]);
+      const reviewSettings = { ...initialSettings };
       setSettings(reviewSettings);
       setSettingsForm(reviewSettings);
-      setClientLoadRequests([]); 
-      setAppLoading(false);
+      setAppDisplayState('admin_dashboard');
+      return;
+    }
+  
+    if (isTrialSession) {
+      // For trial session, use current user's auth details but mock data
+      const trialUserProfileRef = doc(db, `users/${currentUser.uid}/profile`);
+      const trialProfileSnap = await getDoc(trialUserProfileRef);
+      if (trialProfileSnap.exists()) {
+        currentRole = (trialProfileSnap.data() as UserProfile).role;
+      }
+      setUser({ ...(currentUser as FirebaseUser), role: currentRole });
+      setUserRole(currentRole);
+      setLoads([]);
+      setExpenses([]);
+      setClients([]);
+      setClientLoadRequests([]);
+      setSettings(initialSettings);
+      setSettingsForm(initialSettings);
+      setAppDisplayState(currentRole === 'client' ? 'client_portal' : 'admin_dashboard');
+      return;
+    }
+  
+    // Regular user flow (not admin review, not trial session)
+    try {
+      const profileRef = doc(db, `users/${currentUser.uid}/profile`);
+      const profileSnap = await getDoc(profileRef);
+  
+      if (profileSnap.exists()) {
+        const userProfile = profileSnap.data() as UserProfile;
+        currentRole = userProfile.role;
+        // Check if user has made a subscription choice (logic to be expanded if subscription status is stored)
+        // For now, if profile exists, assume they passed subscription choice unless a specific flag indicates otherwise.
+        // This part needs to be more robust if we persist subscription status.
+        // For this iteration, if profile exists, we assume they are not a "new user needing subscription choice".
+      } else {
+        // This case should ideally not happen if signup creates a profile.
+        // If it does, treat as new user needing choices or default to admin.
+        // Forcing to subscription_choice if profile doesn't exist after auth.
+        isNewUserWithoutSubscriptionChoice = true; 
+        currentRole = 'admin'; // Or a default role before they pick in signup
+      }
+    } catch (error) {
+      console.error("Error fetching user profile:", error);
+      toast({ variant: "destructive", title: "Profile Error", description: "Could not fetch user profile." });
+      setAppDisplayState('auth'); // Fallback to auth on error
       return;
     }
     
-    if (!IS_ADMIN_REVIEW_MODE) { 
-        setAppLoading(true);
-        try {
-          const collectionsToFetch = [
-            { name: 'loads', setter: setLoads },
-            { name: 'expenses', setter: setExpenses },
-            { name: 'clients', setter: setClients },
-          ];
-
-          for (const { name, setter } of collectionsToFetch) {
-            const snapshot = await getDocs(collection(db, `users/${currentUser.uid}/${name}`));
-            setter(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
-          }
-
-          const settingsRef = doc(db, `users/${currentUser.uid}/settings`, SETTINGS_DOC_ID);
-          const settingsSnap = await getDoc(settingsRef);
-          if (settingsSnap.exists()) {
-            const settingsData = settingsSnap.data() as Settings;
-            const completeSettings = { ...initialSettings, ...settingsData };
-            setSettings(completeSettings);
-            setSettingsForm(completeSettings); 
-          } else {
-            await setDoc(settingsRef, initialSettings);
-            setSettings(initialSettings);
-            setSettingsForm(initialSettings);
-          }
-
-          const clientRequestsSnapshot = await getDocs(collection(db, 'clientLoadRequests'));
-          setClientLoadRequests(clientRequestsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as ClientLoadRequest)));
-
-        } catch (error: any) {
-          console.error('Error fetching admin data:', error);
-          toast({ variant: "destructive", title: "Fetch Error", description: error.message });
-        } finally {
-          setAppLoading(false);
-        }
+    // If onAuthStateChange picked up a user, but we determined they need to make a subscription choice
+    if(appDisplayState === 'loading' && isNewUserWithoutSubscriptionChoice){
+        setUser({ ...(currentUser as FirebaseUser), role: currentRole });
+        setUserRole(currentRole);
+        setAppDisplayState('subscription_choice');
+        return;
     }
-  }, [toast]); 
+    // If already in subscription_choice state, keep them there until they choose.
+    if (appDisplayState === 'subscription_choice' && !isTrialSession) {
+        setUser({ ...(currentUser as FirebaseUser), role: currentRole });
+        setUserRole(currentRole);
+        return; 
+    }
+
+    setUser({ ...(currentUser as FirebaseUser), role: currentRole });
+    setUserRole(currentRole);
+  
+    if (currentRole === 'client') {
+      setAppDisplayState('client_portal');
+      // Client data (requests they submitted) could be fetched here if needed, but not all app data.
+      // For now, client portal is self-contained for their submissions.
+      return;
+    }
+  
+    // Admin user, fetch all data
+    setAppDisplayState('loading'); // Show loading while fetching admin data
+    try {
+      const collectionsToFetch = [
+        { name: 'loads', setter: setLoads },
+        { name: 'expenses', setter: setExpenses },
+        { name: 'clients', setter: setClients },
+      ];
+  
+      for (const { name, setter } of collectionsToFetch) {
+        const snapshot = await getDocs(collection(db, `users/${currentUser.uid}/${name}`));
+        setter(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
+      }
+  
+      const settingsRef = doc(db, `users/${currentUser.uid}/settings`, SETTINGS_DOC_ID);
+      const settingsSnap = await getDoc(settingsRef);
+      if (settingsSnap.exists()) {
+        const settingsData = settingsSnap.data() as Settings;
+        const completeSettings = { ...initialSettings, ...settingsData };
+        setSettings(completeSettings);
+        setSettingsForm(completeSettings);
+      } else {
+        await setDoc(settingsRef, initialSettings);
+        setSettings(initialSettings);
+        setSettingsForm(initialSettings);
+      }
+  
+      const clientRequestsSnapshot = await getDocs(collection(db, 'clientLoadRequests'));
+      setClientLoadRequests(clientRequestsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as ClientLoadRequest)));
+      
+      setAppDisplayState('admin_dashboard');
+    } catch (error: any) {
+      console.error('Error fetching admin data:', error);
+      toast({ variant: "destructive", title: "Fetch Error", description: error.message });
+      setAppDisplayState('auth'); // Fallback on error
+    }
+  }, [toast, appDisplayState]); // Added appDisplayState
 
 
   useEffect(() => {
-    if (IS_ADMIN_REVIEW_MODE) {
+    if (IS_ADMIN_REVIEW_MODE && !isTrialSession) { // Ensure trial session doesn't get overridden by admin review mode startup
       fetchUserProfileAndData(mockReviewUser);
-      return; 
+      return;
     }
 
     const unsubscribe = auth.onAuthStateChanged(authUser => {
       if (authUser) {
-        fetchUserProfileAndData(authUser);
+        if (!isTrialSession && appDisplayState !== 'subscription_choice') { // Don't refetch if already in trial or mid-choice
+             fetchUserProfileAndData(authUser);
+        } else if (isTrialSession) {
+            // If it's a trial session, we've already set mock data.
+            // Just ensure user object and role are consistent.
+            const trialUserRole = userRole || 'admin'; // Get role established during trial start
+            setUser({ ...(authUser as FirebaseUser), role: trialUserRole });
+            setUserRole(trialUserRole);
+            setAppDisplayState(trialUserRole === 'client' ? 'client_portal' : 'admin_dashboard');
+        } else { // Is in subscription_choice, keep it there. authUser is set.
+            setUser({ ...(authUser as FirebaseUser), role: userRole }); // Keep current role or default
+        }
       } else {
         setUser(null);
         setUserRole(undefined);
+        setIsTrialSession(false);
         setLoads([]);
         setExpenses([]);
         setClients([]);
+        setClientLoadRequests([]);
         setSettings(initialSettings);
         setSettingsForm(initialSettings);
-        setClientLoadRequests([]);
-        setAppLoading(false);
+        setAppDisplayState('auth');
       }
     });
-    return () => unsubscribe(); 
-  }, [fetchUserProfileAndData]); 
+    return () => unsubscribe();
+  }, [fetchUserProfileAndData, isTrialSession, userRole, appDisplayState]);
 
 
   const handleSignUp = async (role: 'admin' | 'client' = 'admin') => {
@@ -298,25 +352,23 @@ export default function DashDispatchProApp() {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const profileRef = doc(db, `users/${userCredential.user.uid}/profile`);
-      await setDoc(profileRef, { role });
+      await setDoc(profileRef, { role }); // Store role
 
-      if (role === 'admin') {
-        const settingsRef = doc(db, `users/${userCredential.user.uid}/settings`, SETTINGS_DOC_ID);
-        await setDoc(settingsRef, initialSettings);
-        setSettings(initialSettings); 
-        setSettingsForm(initialSettings);
-      }
-      toast({ title: "Account Created", description: `Welcome! You are registered as ${role}.` });
+      setUser({ ...userCredential.user, role: role });
+      setUserRole(role);
+      setAppDisplayState('subscription_choice'); // Go to subscription choice page
+      toast({ title: "Account Created", description: `Welcome! Please choose your subscription.` });
     } catch (error: any) {
       console.error('Sign up error:', error);
       toast({ variant: "destructive", title: "Sign Up Error", description: error.message });
+      setAppDisplayState('auth');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleSignIn = async () => {
-    if (IS_ADMIN_REVIEW_MODE) {
+    if (IS_ADMIN_REVIEW_MODE && !isTrialSession) {
       fetchUserProfileAndData(mockReviewUser);
       toast({ title: "Admin Review Mode", description: "Review session refreshed." });
       return;
@@ -324,30 +376,46 @@ export default function DashDispatchProApp() {
     setIsSubmitting(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      // onAuthStateChanged will handle the rest, including calling fetchUserProfileAndData
+      // and setting the correct appDisplayState
       toast({ title: "Signed In", description: "Welcome back!" });
-    } catch (error: any)
-     {
+    } catch (error: any) {
       console.error('Sign in error:', error);
       toast({ variant: "destructive", title: "Sign In Error", description: error.message });
+      setAppDisplayState('auth');
     } finally {
       setIsSubmitting(false);
     }
   };
+  
+  const handleStartTrial = () => {
+    if (!user) { // Should not happen if on subscription page
+        setAppDisplayState('auth');
+        return;
+    }
+    setIsTrialSession(true);
+    // User role should have been set during signup and available in 'user' state
+    // fetchUserProfileAndData will use this 'user.role' and 'isTrialSession'
+    fetchUserProfileAndData(user); 
+    toast({ title: "Free Trial Started", description: "Enjoy your free trial! Data will not be saved." });
+  };
+
 
   const handleSignOut = async () => {
-    if (IS_ADMIN_REVIEW_MODE) {
-      setUser(null); 
+    if (IS_ADMIN_REVIEW_MODE && !isTrialSession) {
+      setUser(null);
       setUserRole(undefined);
-      setAppLoading(true); 
+      setAppDisplayState('loading'); // Will transition to auth or refresh review
       setTimeout(() => {
-         fetchUserProfileAndData(mockReviewUser); 
-      }, 50); 
+         fetchUserProfileAndData(mockReviewUser);
+      }, 50);
       toast({ title: "Admin Review Mode", description: "Review session refreshed." });
       return;
     }
     setIsSubmitting(true);
     try {
       await signOut(auth);
+      // onAuthStateChanged will set user to null and appDisplayState to 'auth'
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
     } catch (error: any) {
       console.error('Sign out error:', error);
@@ -366,7 +434,7 @@ export default function DashDispatchProApp() {
     };
     setLoadForm(loadWithLocalTimes);
     setEditingLoadId(loadToEdit.id!);
-    setActiveTab('loads'); 
+    setActiveTab('loads');
   };
 
   const handleCancelEditLoad = () => {
@@ -377,11 +445,11 @@ export default function DashDispatchProApp() {
   const handleSaveLoad = async (loadDataToSave?: Partial<Load>) => {
     if (!user || user.role !== 'admin') return;
     setIsSubmitting(true);
-  
-    const dataToUse = loadDataToSave || loadForm; 
+
+    const dataToUse = loadDataToSave || loadForm;
     const calculatedTotalRate = (dataToUse.distance || 0) * (dataToUse.ratePerMile || 0) + (dataToUse.tarpingFee || 0);
-    const calculatedDriveTime = (settings.truckAverageSpeed > 0 && dataToUse.distance && dataToUse.distance > 0) 
-        ? dataToUse.distance / settings.truckAverageSpeed 
+    const calculatedDriveTime = (settings.truckAverageSpeed > 0 && dataToUse.distance && dataToUse.distance > 0)
+        ? dataToUse.distance / settings.truckAverageSpeed
         : undefined;
 
     const finalPickupDateTime = new Date(dataToUse.pickupDateTime!).toISOString();
@@ -395,103 +463,121 @@ export default function DashDispatchProApp() {
         estimatedDriveTimeHours: calculatedDriveTime
     };
 
-    if (editingLoadId) { 
-      if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-        setLoads(prevLoads => prevLoads.map(l => 
-          l.id === editingLoadId 
-            ? { ...l, ...dataWithCalculations, id: editingLoadId } as Load 
-            : l
-        ));
-        toast({ title: "Admin Review: Load Updated", description: `Load ${dataToUse.loadNumber || editingLoadId} updated locally (not saved).` });
-      } else {
-        try {
-          const loadRef = doc(db, `users/${user.uid}/loads`, editingLoadId);
-          await updateDoc(loadRef, dataWithCalculations);
-          setLoads(prevLoads => prevLoads.map(l => 
-            l.id === editingLoadId 
-              ? { ...l, ...dataWithCalculations, id: editingLoadId } as Load 
-              : l
-          ));
-          toast({ title: "Load Updated", description: `Load ${dataToUse.loadNumber || editingLoadId} has been successfully updated.` });
-        } catch (error: any) {
-          console.error('Error updating load:', error);
-          toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
+    if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
+        if (editingLoadId) {
+            setLoads(prevLoads => prevLoads.map(l =>
+              l.id === editingLoadId
+                ? { ...l, ...dataWithCalculations, id: editingLoadId } as Load
+                : l
+            ));
+            toast({ title: "Trial/Review: Load Updated", description: `Load ${dataToUse.loadNumber || editingLoadId} updated locally.` });
+        } else {
+            const nextLoadNumeric = loads.length + 1;
+            const newLoadNumber = formatLoadNumber(nextLoadNumeric);
+            const newLoadData: Load = {
+                loadNumber: newLoadNumber,
+                clientId: dataWithCalculations.clientId!,
+                origin: dataWithCalculations.origin!,
+                destination: dataWithCalculations.destination!,
+                pickupDateTime: dataWithCalculations.pickupDateTime!,
+                deliveryDateTime: dataWithCalculations.deliveryDateTime!,
+                ratePerMile: dataWithCalculations.ratePerMile || 0,
+                distance: dataWithCalculations.distance || 0,
+                totalAgreedRate: dataWithCalculations.totalAgreedRate!,
+                status: dataWithCalculations.status || 'pending',
+                cargoDescription: dataWithCalculations.cargoDescription,
+                cargoDimensions: dataWithCalculations.cargoDimensions,
+                cargoWeight: dataWithCalculations.cargoWeight,
+                specialTerms: dataWithCalculations.specialTerms,
+                requiresTarping: dataWithCalculations.requiresTarping || false,
+                tarpingFee: dataWithCalculations.tarpingFee || 0,
+                originalClientRequestId: dataWithCalculations.originalClientRequestId,
+                requestedByClientName: dataWithCalculations.requestedByClientName,
+                requestedByAuthUid: dataWithCalculations.requestedByAuthUid,
+                estimatedDriveTimeHours: dataWithCalculations.estimatedDriveTimeHours,
+                expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false },
+                id: `mock-load-${Date.now()}`
+            };
+            setLoads(prev => [...prev, newLoadData]);
+            toast({ title: "Trial/Review: Load Added", description: `Load ${newLoadNumber} added locally.` });
         }
-      }
-    } else { 
-      let nextLoadNumeric = 1;
-      if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-          nextLoadNumeric = loads.length + 1;
-      } else if (user) { 
-          const loadsCollectionRef = collection(db, `users/${user.uid}/loads`);
-          const q = query(loadsCollectionRef, orderBy('loadNumber', 'desc'), limit(1));
-          try {
-              const querySnapshot = await getDocs(q);
-              if (!querySnapshot.empty) {
-                  const lastLoad = querySnapshot.docs[0].data() as Load;
-                  if (lastLoad.loadNumber) {
-                      const lastNumericPart = parseInt(lastLoad.loadNumber.split('-')[1]);
-                      nextLoadNumeric = isNaN(lastNumericPart) ? (await getDocs(loadsCollectionRef)).size + 1 : lastNumericPart + 1;
-                  } else {
-                      nextLoadNumeric = (await getDocs(loadsCollectionRef)).size + 1;
-                  }
-              } else {
-                   nextLoadNumeric = (await getDocs(loadsCollectionRef)).size + 1; 
-              }
-          } catch (e) {
-              console.error("Error fetching last load number, falling back to collection size:", e);
-              nextLoadNumeric = (await getDocs(loadsCollectionRef)).size + 1;
-          }
-      }
-      const newLoadNumber = formatLoadNumber(nextLoadNumeric);
-  
-      const newLoadData: Omit<Load, 'id'> = {
-        loadNumber: newLoadNumber,
-        clientId: dataWithCalculations.clientId!,
-        origin: dataWithCalculations.origin!,
-        destination: dataWithCalculations.destination!,
-        pickupDateTime: dataWithCalculations.pickupDateTime!,
-        deliveryDateTime: dataWithCalculations.deliveryDateTime!,
-        ratePerMile: dataWithCalculations.ratePerMile || 0,
-        distance: dataWithCalculations.distance || 0,
-        totalAgreedRate: dataWithCalculations.totalAgreedRate,
-        status: dataWithCalculations.status || 'pending',
-        cargoDescription: dataWithCalculations.cargoDescription,
-        cargoDimensions: dataWithCalculations.cargoDimensions,
-        cargoWeight: dataWithCalculations.cargoWeight,
-        specialTerms: dataWithCalculations.specialTerms,
-        requiresTarping: dataWithCalculations.requiresTarping || false,
-        tarpingFee: dataWithCalculations.tarpingFee || 0,
-        originalClientRequestId: dataWithCalculations.originalClientRequestId,
-        requestedByClientName: dataWithCalculations.requestedByClientName,
-        requestedByAuthUid: dataWithCalculations.requestedByAuthUid,
-        estimatedDriveTimeHours: dataWithCalculations.estimatedDriveTimeHours,
-        expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
-      };
-  
-      if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-        const mockNewLoad = { ...newLoadData, id: `mock-load-${Date.now()}` } as Load;
-        setLoads(prev => [...prev, mockNewLoad]);
-        toast({ title: "Admin Review: Load Added", description: `Load ${newLoadNumber} added to local view (not saved).` });
-      } else {
-        try {
-          const docRef = await addDoc(collection(db, `users/${user.uid}/loads`), newLoadData);
-          setLoads(prev => [...prev, { ...newLoadData, id: docRef.id } as Load]);
-          toast({ title: "Load Added", description: `New load ${newLoadNumber} has been successfully created.` });
-        } catch (error: any) {
-          console.error('Error adding load:', error);
-          toast({ variant: "destructive", title: "Error Adding Load", description: error.message });
+    } else { // Firestore logic
+        if (editingLoadId) {
+            try {
+              const loadRef = doc(db, `users/${user.uid}/loads`, editingLoadId);
+              await updateDoc(loadRef, dataWithCalculations);
+              setLoads(prevLoads => prevLoads.map(l =>
+                l.id === editingLoadId
+                  ? { ...l, ...dataWithCalculations, id: editingLoadId } as Load
+                  : l
+              ));
+              toast({ title: "Load Updated", description: `Load ${dataToUse.loadNumber || editingLoadId} has been successfully updated.` });
+            } catch (error: any) {
+              console.error('Error updating load:', error);
+              toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
+            }
+        } else {
+            let nextLoadNumeric = 1;
+            const loadsCollectionRef = collection(db, `users/${user.uid}/loads`);
+            const q = query(loadsCollectionRef, orderBy('loadNumber', 'desc'), limit(1));
+            try {
+                const querySnapshot = await getDocs(q);
+                if (!querySnapshot.empty) {
+                    const lastLoad = querySnapshot.docs[0].data() as Load;
+                    if (lastLoad.loadNumber) {
+                        const lastNumericPart = parseInt(lastLoad.loadNumber.split('-')[1]);
+                        nextLoadNumeric = isNaN(lastNumericPart) ? (await getDocs(loadsCollectionRef)).size + 1 : lastNumericPart + 1;
+                    } else {
+                        nextLoadNumeric = (await getDocs(loadsCollectionRef)).size + 1;
+                    }
+                } else {
+                     nextLoadNumeric = (await getDocs(loadsCollectionRef)).size + 1;
+                }
+            } catch (e) {
+                console.error("Error fetching last load number, falling back to collection size:", e);
+                nextLoadNumeric = (await getDocs(loadsCollectionRef)).size + 1;
+            }
+            const newLoadNumber = formatLoadNumber(nextLoadNumeric);
+            const newLoadData: Omit<Load, 'id'> = { /* ... as before ... */
+                loadNumber: newLoadNumber,
+                clientId: dataWithCalculations.clientId!,
+                origin: dataWithCalculations.origin!,
+                destination: dataWithCalculations.destination!,
+                pickupDateTime: dataWithCalculations.pickupDateTime!,
+                deliveryDateTime: dataWithCalculations.deliveryDateTime!,
+                ratePerMile: dataWithCalculations.ratePerMile || 0,
+                distance: dataWithCalculations.distance || 0,
+                totalAgreedRate: dataWithCalculations.totalAgreedRate,
+                status: dataWithCalculations.status || 'pending',
+                cargoDescription: dataWithCalculations.cargoDescription,
+                cargoDimensions: dataWithCalculations.cargoDimensions,
+                cargoWeight: dataWithCalculations.cargoWeight,
+                specialTerms: dataWithCalculations.specialTerms,
+                requiresTarping: dataWithCalculations.requiresTarping || false,
+                tarpingFee: dataWithCalculations.tarpingFee || 0,
+                originalClientRequestId: dataWithCalculations.originalClientRequestId,
+                requestedByClientName: dataWithCalculations.requestedByClientName,
+                requestedByAuthUid: dataWithCalculations.requestedByAuthUid,
+                estimatedDriveTimeHours: dataWithCalculations.estimatedDriveTimeHours,
+                expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
+            };
+            try {
+              const docRef = await addDoc(collection(db, `users/${user.uid}/loads`), newLoadData);
+              setLoads(prev => [...prev, { ...newLoadData, id: docRef.id } as Load]);
+              toast({ title: "Load Added", description: `New load ${newLoadNumber} has been successfully created.` });
+            } catch (error: any) {
+              console.error('Error adding load:', error);
+              toast({ variant: "destructive", title: "Error Adding Load", description: error.message });
+            }
         }
-      }
     }
-  
-    handleCancelEditLoad(); 
+    handleCancelEditLoad();
     setIsSubmitting(false);
   };
-  
+
   const updateLoad = useCallback(async (id: string, updates: Partial<Load>) => {
     if (!user || user.role !== 'admin') return;
-    
+
     let finalUpdates = { ...updates };
     const currentLoad = loads.find(l => l.id === id);
 
@@ -502,76 +588,57 @@ export default function DashDispatchProApp() {
             const newTarpingFee = updates.tarpingFee !== undefined ? updates.tarpingFee : (currentLoad.tarpingFee || 0);
             finalUpdates.totalAgreedRate = (newDistance * newRatePerMile) + newTarpingFee;
         }
-
         if (updates.distance !== undefined && settings.truckAverageSpeed > 0) {
             finalUpdates.estimatedDriveTimeHours = updates.distance / settings.truckAverageSpeed;
-        } else if (updates.distance !== undefined) { 
+        } else if (updates.distance !== undefined) {
             finalUpdates.estimatedDriveTimeHours = undefined;
         }
-
         if (updates.expenses && currentLoad.expenses) {
             finalUpdates.expenses = { ...currentLoad.expenses, ...updates.expenses };
         }
     }
 
-    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...finalUpdates } as Load : l));
-      let description = "Load details updated locally (not saved).";
-      if (updates.status) {
-        description = `Load status changed to ${updates.status} (not saved).`;
-      } else if (updates.expenses?.calculated) {
-        description = "Load expenses calculated and updated locally (not saved)."
-      }
-      toast({ title: "Admin Review: Load Updated", description });
-      return;
+    if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
+        setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...finalUpdates } as Load : l));
+        let description = "Trial/Review: Load details updated locally.";
+        if (updates.status) description = `Trial/Review: Load status changed to ${updates.status} locally.`;
+        else if (updates.expenses?.calculated) description = "Trial/Review: Load expenses calculated locally.";
+        toast({ title: "Trial/Review: Load Updated", description });
+        return;
     }
 
     try {
       await updateDoc(doc(db, `users/${user.uid}/loads`, id), finalUpdates);
       setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...finalUpdates } as Load : l));
-      if (updates.status) {
-        toast({ title: "Load Updated", description: `Load status changed to ${updates.status}.` });
-      } else if (updates.expenses?.calculated) {
-        toast({ title: "Load Updated", description: "Load expenses calculated and saved." });
-      } else {
-         toast({ title: "Load Updated", description: "Load details saved." });
-      }
+      if (updates.status) toast({ title: "Load Updated", description: `Load status changed to ${updates.status}.` });
+      else if (updates.expenses?.calculated) toast({ title: "Load Updated", description: "Load expenses calculated and saved." });
+      else toast({ title: "Load Updated", description: "Load details saved." });
     } catch (error: any) {
       console.error('Error updating load:', error);
       toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
     }
-  }, [user, toast, loads, settings]); 
+  }, [user, toast, loads, settings, isTrialSession]);
 
   const handleDeleteLoad = async (loadId: string) => {
-    if (!user || user.role !== 'admin') {
-      console.warn("Attempted to delete load without admin privileges or user session.");
-      return;
-    }
-  
-    if (!window.confirm("Are you sure you want to delete this load? This action cannot be undone.")) {
-      return;
-    }
-  
+    if (!user || user.role !== 'admin') return;
+    if (!window.confirm("Are you sure you want to delete this load? This action cannot be undone.")) return;
     setIsSubmitting(true);
-    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      setLoads(prevLoads => prevLoads.filter(l => l.id !== loadId));
-      toast({ title: "Admin Review: Load Deleted", description: `Load ${loadId} removed from local view (not saved).` });
-      setIsSubmitting(false);
-      return;
-    }
-  
-    try {
-      await deleteDoc(doc(db, `users/${user.uid}/loads`, loadId));
-      setLoads(prevLoads => prevLoads.filter(l => l.id !== loadId));
-      toast({ title: "Load Deleted", description: "Load has been successfully deleted." });
-    } catch (error: any) {
-      console.error('Error deleting load:', error);
-      toast({ variant: "destructive", title: "Error Deleting Load", description: error.message });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
+    if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
+        setLoads(prevLoads => prevLoads.filter(l => l.id !== loadId));
+        toast({ title: "Trial/Review: Load Deleted", description: `Load ${loadId} removed locally.` });
+    } else {
+        try {
+          await deleteDoc(doc(db, `users/${user.uid}/loads`, loadId));
+          setLoads(prevLoads => prevLoads.filter(l => l.id !== loadId));
+          toast({ title: "Load Deleted", description: "Load has been successfully deleted." });
+        } catch (error: any) {
+          console.error('Error deleting load:', error);
+          toast({ variant: "destructive", title: "Error Deleting Load", description: error.message });
+        }
+    }
+    setIsSubmitting(false);
+  };
 
   const updateLoadStatus = async (id: string, status: Load['status']) => {
     await updateLoad(id, { status });
@@ -579,164 +646,129 @@ export default function DashDispatchProApp() {
 
   const approveClientLoadRequest = async (request: ClientLoadRequest) => {
     if (!user || user.role !== 'admin') return;
-    
-    const existingClient = clients.find(c => 
+     const existingClient = clients.find(c =>
         (c.companyName || "").toLowerCase() === (request.requestedByClientName || "").toLowerCase() ||
         (c.contactName || "").toLowerCase() === (request.requestContactName || "").toLowerCase() ||
         (c.contactEmail || "").toLowerCase() === (request.requestContactEmail || "").toLowerCase()
     );
-
     const loadDataFromRequest: Partial<Load> = {
-      clientId: existingClient?.id || '', 
+      clientId: existingClient?.id || '',
       origin: request.origin,
       destination: request.destination,
       pickupDateTime: toDateTimeLocalInput(request.requestedPickupDateTime),
       deliveryDateTime: toDateTimeLocalInput(request.requestedDeliveryDateTime),
-      ratePerMile: 0, 
-      distance: 0, 
-      status: 'client-request-approved',
+      ratePerMile: 0, distance: 0, status: 'client-request-approved',
       cargoDescription: request.cargoDescription,
-      requiresTarping: false, 
-      tarpingFee: 0,      
+      requiresTarping: false, tarpingFee: 0,
       originalClientRequestId: request.id,
-      requestedByClientName: request.requestedByClientName, // Name of logged-in client
-      requestedByAuthUid: request.requestedByClientUid,   // UID of logged-in client
-      estimatedDriveTimeHours: undefined, 
+      requestedByClientName: request.requestedByClientName,
+      requestedByAuthUid: request.requestedByClientUid,
+      estimatedDriveTimeHours: undefined,
     };
-    setLoadForm(loadDataFromRequest); 
-    setEditingLoadId(null); 
-    setActiveTab('loads'); 
-    
-    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      setClientLoadRequests(prev => prev.map(r => r.id === request.id ? {...r, status: 'viewed'} : r));
-      toast({ title: "Admin Review: Client Request Processed", description: "Load form pre-filled locally. Request status updated to 'viewed' (not saved)." });
-      return;
-    }
-    
-    try {
-        const requestRef = doc(db, 'clientLoadRequests', request.id!);
-        await updateDoc(requestRef, { status: 'viewed' }); 
+    setLoadForm(loadDataFromRequest);
+    setEditingLoadId(null);
+    setActiveTab('loads');
+
+    if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
         setClientLoadRequests(prev => prev.map(r => r.id === request.id ? {...r, status: 'viewed'} : r));
-        toast({ title: "Process Client Request", description: "Load form pre-filled. Please complete and save the load. Request marked as viewed." });
-    } catch (error: any) {
-        console.error("Error processing client request:", error);
-        toast({variant: "destructive", title: "Error", description: "Could not update client request status."});
+        toast({ title: "Trial/Review: Client Request Processed", description: "Load form pre-filled locally. Request status 'viewed'." });
+    } else {
+        try {
+            const requestRef = doc(db, 'clientLoadRequests', request.id!);
+            await updateDoc(requestRef, { status: 'viewed' });
+            setClientLoadRequests(prev => prev.map(r => r.id === request.id ? {...r, status: 'viewed'} : r));
+            toast({ title: "Process Client Request", description: "Load form pre-filled. Please complete and save the load." });
+        } catch (error: any) {
+            console.error("Error processing client request:", error);
+            toast({variant: "destructive", title: "Error", description: "Could not update client request status."});
+        }
     }
   };
-
 
   const addExpense = async () => {
     if (!user || user.role !== 'admin') return;
     setIsSubmitting(true);
 
-    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      const newExpenseWithId: Expense = {
-        ...expenseForm,
-        id: `mock-expense-${Date.now()}`
-      };
-      setExpenses(prev => [...prev, newExpenseWithId]);
-      setExpenseForm({ date: new Date().toISOString().split('T')[0], category: '', amount: 0, loadId: '' }); 
-      toast({ title: "Admin Review: Expense Added", description: "Expense added to local view (not saved)." });
-      setIsSubmitting(false);
-      return;
+    if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
+        const newExpenseWithId: Expense = { ...expenseForm, id: `mock-expense-${Date.now()}` };
+        setExpenses(prev => [...prev, newExpenseWithId]);
+        toast({ title: "Trial/Review: Expense Added", description: "Expense added locally." });
+    } else {
+        try {
+          const docRef = await addDoc(collection(db, `users/${user.uid}/expenses`), expenseForm);
+          setExpenses(prev => [...prev, { ...expenseForm, id: docRef.id }]);
+          toast({ title: "Expense Added", description: "Expense has been successfully recorded." });
+        } catch (error: any) {
+          console.error('Error adding expense:', error);
+          toast({ variant: "destructive", title: "Error Adding Expense", description: error.message });
+        }
     }
-
-    try {
-      const docRef = await addDoc(collection(db, `users/${user.uid}/expenses`), expenseForm);
-      setExpenses(prev => [...prev, { ...expenseForm, id: docRef.id }]);
-      setExpenseForm({ date: new Date().toISOString().split('T')[0], category: '', amount: 0, loadId: '' }); 
-      toast({ title: "Expense Added", description: "Expense has been successfully recorded." });
-    } catch (error: any) {
-      console.error('Error adding expense:', error);
-      toast({ variant: "destructive", title: "Error Adding Expense", description: error.message });
-    } finally {
-      setIsSubmitting(false);
-    }
+    setExpenseForm({ date: new Date().toISOString().split('T')[0], category: '', amount: 0, loadId: '' });
+    setIsSubmitting(false);
   };
 
   const addClient = async () => {
     if (!user || user.role !== 'admin') return;
     setIsSubmitting(true);
 
-    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      const newClientWithId: Client = {
-        ...clientForm,
-        id: `mock-client-${Date.now()}`
-      };
-      setClients(prev => [...prev, newClientWithId]);
-      setClientForm({ companyName: '', contactName: '', contactEmail: '', contactPhone: '', address: '' }); 
-      toast({ title: "Admin Review: Client Added", description: "Client added to local view (not saved)." });
-      setIsSubmitting(false);
-      return;
+    if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
+        const newClientWithId: Client = { ...clientForm, id: `mock-client-${Date.now()}` };
+        setClients(prev => [...prev, newClientWithId]);
+        toast({ title: "Trial/Review: Client Added", description: "Client added locally." });
+    } else {
+        try {
+          const docRef = await addDoc(collection(db, `users/${user.uid}/clients`), clientForm);
+          setClients(prev => [...prev, { ...clientForm, id: docRef.id }]);
+          toast({ title: "Client Added", description: "New client has been successfully added." });
+        } catch (error: any) {
+          console.error('Error adding client:', error);
+          toast({ variant: "destructive", title: "Error Adding Client", description: error.message });
+        }
     }
-
-    try {
-      const docRef = await addDoc(collection(db, `users/${user.uid}/clients`), clientForm);
-      setClients(prev => [...prev, { ...clientForm, id: docRef.id }]);
-      setClientForm({ companyName: '', contactName: '', contactEmail: '', contactPhone: '', address: '' }); 
-      toast({ title: "Client Added", description: "New client has been successfully added." });
-    } catch (error: any) {
-      console.error('Error adding client:', error);
-      toast({ variant: "destructive", title: "Error Adding Client", description: error.message });
-    } finally {
-      setIsSubmitting(false);
-    }
+    setClientForm({ companyName: '', contactName: '', contactEmail: '', contactPhone: '', address: '' });
+    setIsSubmitting(false);
   };
 
   const updateSettings = async () => {
     if (!user || user.role !== 'admin') return;
     setIsSubmitting(true);
 
-    if (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid) {
-      setSettings(settingsForm);
-      toast({ title: "Admin Review: Settings Updated", description: "Settings updated locally (not saved)." });
-      setIsSubmitting(false);
-      return;
+    if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
+        setSettings(settingsForm);
+        toast({ title: "Trial/Review: Settings Updated", description: "Settings updated locally." });
+    } else {
+        try {
+          const settingsRef = doc(db, `users/${user.uid}/settings`, SETTINGS_DOC_ID);
+          await updateDoc(settingsRef, settingsForm);
+          setSettings(settingsForm);
+          toast({ title: "Settings Updated", description: "Your settings have been saved." });
+        } catch (error: any) {
+          console.error('Error updating settings:', error);
+          toast({ variant: "destructive", title: "Error Updating Settings", description: error.message });
+        }
     }
-
-    try {
-      const settingsRef = doc(db, `users/${user.uid}/settings`, SETTINGS_DOC_ID);
-      await updateDoc(settingsRef, settingsForm);
-      setSettings(settingsForm); 
-      toast({ title: "Settings Updated", description: "Your settings have been saved." });
-    } catch (error: any) {
-      console.error('Error updating settings:', error);
-      toast({ variant: "destructive", title: "Error Updating Settings", description: error.message });
-    } finally {
-      setIsSubmitting(false);
-    }
+    setIsSubmitting(false);
   };
 
   useEffect(() => {
-    if (user?.role !== 'admin') {
-      return;
-    }
-
-    const allCurrentLoads = [...loads]; 
-
+    if (user?.role !== 'admin') return;
+    // This effect is complex and might need adjustment for trial mode if its output (updated loads)
+    // should also be purely local during a trial.
+    // For now, it will use the `updateLoad` function which is already trial-aware.
+    const allCurrentLoads = [...loads];
     loads.forEach(load => {
       if (load.status === 'delivered' && !load.expenses.calculated && load.id) {
         const loadSpecificExpenses = expenses.filter(exp => exp.loadId === load.id);
-        
         const manualFuelExpense = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'fuel');
-        const fuelCost = manualFuelExpense 
-          ? manualFuelExpense.amount 
-          : (load.distance > 0 && settings.truckMpg > 0 && settings.defaultFuelCostPerGallon > 0)
-            ? (load.distance / settings.truckMpg) * settings.defaultFuelCostPerGallon
-            : 0;
-
+        const fuelCost = manualFuelExpense ? manualFuelExpense.amount
+            : (load.distance > 0 && settings.truckMpg > 0 && settings.defaultFuelCostPerGallon > 0)
+            ? (load.distance / settings.truckMpg) * settings.defaultFuelCostPerGallon : 0;
         const manualDefExpense = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def');
-        const defCost = manualDefExpense
-          ? manualDefExpense.amount
-          : (load.distance > 0 && settings.defCostPerGallon > 0) 
-            ? (load.distance / 250) * settings.defCostPerGallon 
-            : 0;
-
+        const defCost = manualDefExpense ? manualDefExpense.amount
+            : (load.distance > 0 && settings.defCostPerGallon > 0)
+            ? (load.distance / 250) * settings.defCostPerGallon : 0;
         const payroll = load.totalAgreedRate * (settings.payrollPercentage / 100);
-        
-        const dailyRecurringSum = settings.recurringExpenses.reduce(
-          (sum, expense) => sum + (expense.amount / 30), 0 
-        );
+        const dailyRecurringSum = settings.recurringExpenses.reduce((sum, expense) => sum + (expense.amount / 30), 0);
         
         let durationInDaysForCurrentLoad = 1;
         try {
@@ -745,26 +777,19 @@ export default function DashDispatchProApp() {
             if (!isNaN(pickupDate.getTime()) && !isNaN(deliveryDate.getTime()) && deliveryDate >= pickupDate) {
                 durationInDaysForCurrentLoad = differenceInCalendarDays(deliveryDate, pickupDate) + 1;
             }
-        } catch (e) {
-            console.warn("Error calculating duration for current load, defaulting to 1 day:", load.id, e);
-        }
+        } catch (e) { console.warn("Error calculating duration for current load, defaulting to 1 day:", load.id, e); }
         durationInDaysForCurrentLoad = Math.max(1, durationInDaysForCurrentLoad);
 
         let idleDaysBeforeThisLoad = 0;
         const previouslyDeliveredLoads = allCurrentLoads.filter(
           l => l.id !== load.id && l.status === 'delivered' && l.deliveryDateTime && parseISO(l.deliveryDateTime) < parseISO(load.pickupDateTime)
-        );
+        ).sort((a,b) => parseISO(b.deliveryDateTime!).getTime() - parseISO(a.deliveryDateTime!).getTime());
+
 
         if (previouslyDeliveredLoads.length > 0) {
-          const latestPreviousDeliveryTimestamp = Math.max(
-            ...previouslyDeliveredLoads.map(l => parseISO(l.deliveryDateTime!).getTime())
-          );
-          const latestPreviousDeliveryDate = new Date(latestPreviousDeliveryTimestamp);
+          const latestPreviousDeliveryDate = parseISO(previouslyDeliveredLoads[0].deliveryDateTime!);
           const currentLoadPickupDate = parseISO(load.pickupDateTime);
-
-          if (!isNaN(latestPreviousDeliveryDate.getTime()) && 
-              !isNaN(currentLoadPickupDate.getTime()) && 
-              currentLoadPickupDate > latestPreviousDeliveryDate) {
+          if (!isNaN(latestPreviousDeliveryDate.getTime()) && !isNaN(currentLoadPickupDate.getTime()) && currentLoadPickupDate > latestPreviousDeliveryDate) {
             idleDaysBeforeThisLoad = differenceInCalendarDays(currentLoadPickupDate, latestPreviousDeliveryDate) -1;
           }
           idleDaysBeforeThisLoad = Math.max(0, idleDaysBeforeThisLoad);
@@ -775,16 +800,14 @@ export default function DashDispatchProApp() {
 
         updateLoad(load.id, {
           expenses: {
-            payroll: parseFloat(payroll.toFixed(2)),
-            fuel: parseFloat(fuelCost.toFixed(2)),
-            def: parseFloat(defCost.toFixed(2)),
-            recurring: parseFloat(totalRecurringForLoad.toFixed(2)),
-            calculated: true 
+            payroll: parseFloat(payroll.toFixed(2)), fuel: parseFloat(fuelCost.toFixed(2)),
+            def: parseFloat(defCost.toFixed(2)), recurring: parseFloat(totalRecurringForLoad.toFixed(2)),
+            calculated: true
           }
         });
       }
     });
-  }, [loads, settings, expenses, user, updateLoad]); 
+  }, [loads, settings, expenses, user, updateLoad, isTrialSession]);
 
   const generateAgreement = async (loadData: Load) => {
     if (!user || user.role !== 'admin') return;
@@ -793,64 +816,40 @@ export default function DashDispatchProApp() {
         toast({ variant: "destructive", title: "Client Not Found", description: "Cannot generate agreement without client details." });
         return;
     }
-    setIsSubmitting(true); 
+    setIsSubmitting(true);
     try {
       const pdfDoc = await PDFDocument.create();
-      let page = pdfDoc.addPage([600, 850]); 
+      let page = pdfDoc.addPage([600, 850]);
       const { width, height } = page.getSize();
-      
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-
-      const fontSize = 10;
-      const titleFontSize = 16;
-      const subTitleFontSize = 12;
-      const smallFontSize = 8;
-      const lineSpacing = 15; 
-      const sectionSpacing = 25;
-      const margin = 50;
+      const fontSize = 10, titleFontSize = 16, subTitleFontSize = 12, smallFontSize = 8, lineSpacing = 15, sectionSpacing = 25, margin = 50;
       let yPos = height - margin;
 
       const drawTextLine = (text: string, fontToUse: any, size: number, x: number, y: number, color = rgb(0,0,0)) => {
-        if (y < margin + size) { 
-            page = pdfDoc.addPage([600, 850]);
-            y = height - margin;
-        }
+        if (y < margin + size) { page = pdfDoc.addPage([600, 850]); y = height - margin; }
         page.drawText(text, { x, y, font: fontToUse, size, color });
-        return y - size - (size > 10 ? 5 : 3); 
+        return y - size - (size > 10 ? 5 : 3);
       };
-      
-      const drawBoldTextLine = (text: string, x: number, y: number) => {
-        return drawTextLine(text, boldFont, fontSize, x, y);
-      };
-
-      const drawRegularTextLine = (text: string, x: number, y: number) => {
-        return drawTextLine(text, font, fontSize, x, y);
-      };
-      
+      const drawBoldTextLine = (text: string, x: number, y: number) => drawTextLine(text, boldFont, fontSize, x, y);
+      const drawRegularTextLine = (text: string, x: number, y: number) => drawTextLine(text, font, fontSize, x, y);
       const drawLine = (x1: number, y1: number, x2: number, y2: number, thickness = 0.5) => {
-        if (y1 < margin) { 
-            page = pdfDoc.addPage([600, 850]);
-            y1 = height - margin; 
-        }
+        if (y1 < margin) { page = pdfDoc.addPage([600, 850]); y1 = height - margin; }
         page.drawLine({start: {x: x1, y: y1}, end: {x: x2, y: y2}, thickness, color: rgb(0.7,0.7,0.7) });
-      }
+      };
 
       yPos = drawTextLine('Hotshot Trucking Agreement', boldFont, titleFontSize, margin, yPos, rgb(0.1, 0.1, 0.1));
       if (loadData.loadNumber) {
         const tempYPos = yPos;
-        yPos = drawTextLine(`Load ID: ${loadData.loadNumber}`, boldFont, subTitleFontSize - 2, width - margin - 100, tempYPos + titleFontSize + 2); 
-        yPos = tempYPos; 
+        yPos = drawTextLine(`Load ID: ${loadData.loadNumber}`, boldFont, subTitleFontSize - 2, width - margin - 100, tempYPos + titleFontSize + 2);
+        yPos = tempYPos;
       }
       yPos -= lineSpacing / 2;
-
-      const agreementDate = new Date().toLocaleDateString();
-      yPos = drawRegularTextLine(`Date of Agreement: ${agreementDate}`, margin, yPos);
+      yPos = drawRegularTextLine(`Date of Agreement: ${new Date().toLocaleDateString()}`, margin, yPos);
       yPos -= sectionSpacing;
 
       yPos = drawTextLine('PARTIES', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
-      
       yPos = drawBoldTextLine('Carrier:', margin, yPos);
       yPos = drawRegularTextLine(settings.carrierName || 'N/A', margin + 10, yPos);
       yPos = drawRegularTextLine(settings.carrierAddress || 'N/A', margin + 10, yPos);
@@ -858,71 +857,41 @@ export default function DashDispatchProApp() {
       yPos = drawRegularTextLine(`Contact: ${settings.carrierContactName || 'N/A'} (${settings.carrierContactPhone || 'N/A'})`, margin + 10, yPos);
       yPos = drawRegularTextLine(`Email: ${settings.carrierContactEmail || 'N/A'}`, margin + 10, yPos);
       yPos -= lineSpacing;
-
       yPos = drawBoldTextLine('Customer:', margin, yPos);
       yPos = drawRegularTextLine(client.companyName || 'N/A', margin + 10, yPos);
-      if (client.address) {
-        yPos = drawRegularTextLine(client.address, margin + 10, yPos);
-      }
+      if (client.address) yPos = drawRegularTextLine(client.address, margin + 10, yPos);
       yPos = drawRegularTextLine(`Contact: ${client.contactName || 'N/A'}`, margin + 10, yPos);
       yPos = drawRegularTextLine(`Phone: ${client.contactPhone || 'N/A'}`, margin + 10, yPos);
       yPos = drawRegularTextLine(`Email: ${client.contactEmail || 'N/A'}`, margin + 10, yPos);
       yPos -= sectionSpacing;
-      
-      drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2)); 
+      drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
       yPos = drawTextLine('LOAD DETAILS', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       yPos = drawBoldTextLine('Description:', margin, yPos);
       yPos = drawRegularTextLine(loadData.cargoDescription || 'N/A', margin + 10, yPos);
-      if(loadData.cargoDimensions){
-        yPos = drawBoldTextLine('Dimensions:', margin, yPos);
-        yPos = drawRegularTextLine(loadData.cargoDimensions, margin + 10, yPos);
-      }
-      if(loadData.cargoWeight){
-        yPos = drawBoldTextLine('Weight:', margin, yPos);
-        yPos = drawRegularTextLine(loadData.cargoWeight, margin + 10, yPos);
-      }
-      
+      if(loadData.cargoDimensions) { yPos = drawBoldTextLine('Dimensions:', margin, yPos); yPos = drawRegularTextLine(loadData.cargoDimensions, margin + 10, yPos); }
+      if(loadData.cargoWeight) { yPos = drawBoldTextLine('Weight:', margin, yPos); yPos = drawRegularTextLine(loadData.cargoWeight, margin + 10, yPos); }
       yPos = drawBoldTextLine('Pickup Location:', margin, yPos);
       yPos = drawRegularTextLine(loadData.origin, margin + 10, yPos);
-      if (loadData.pickupDateTime) {
-        yPos = drawRegularTextLine(`Scheduled Pickup: ${formatDate(parseISO(loadData.pickupDateTime), 'PPP p')}`, margin + 10, yPos);
-      }
-
+      if (loadData.pickupDateTime) yPos = drawRegularTextLine(`Scheduled Pickup: ${formatDate(parseISO(loadData.pickupDateTime), 'PPP p')}`, margin + 10, yPos);
       yPos = drawBoldTextLine('Delivery Location:', margin, yPos);
       yPos = drawRegularTextLine(loadData.destination, margin + 10, yPos);
-       if (loadData.deliveryDateTime) {
-        yPos = drawRegularTextLine(`Scheduled Delivery: ${formatDate(parseISO(loadData.deliveryDateTime), 'PPP p')}`, margin + 10, yPos);
-      }
-
-      if (loadData.estimatedDriveTimeHours && loadData.estimatedDriveTimeHours > 0) {
-        yPos = drawBoldTextLine('Estimated Drive Time:', margin, yPos);
-        yPos = drawRegularTextLine(`${loadData.estimatedDriveTimeHours.toFixed(1)} hours`, margin + 10, yPos);
-      }
-
+      if (loadData.deliveryDateTime) yPos = drawRegularTextLine(`Scheduled Delivery: ${formatDate(parseISO(loadData.deliveryDateTime), 'PPP p')}`, margin + 10, yPos);
+      if (loadData.estimatedDriveTimeHours && loadData.estimatedDriveTimeHours > 0) { yPos = drawBoldTextLine('Estimated Drive Time:', margin, yPos); yPos = drawRegularTextLine(`${loadData.estimatedDriveTimeHours.toFixed(1)} hours`, margin + 10, yPos); }
       yPos -= sectionSpacing;
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
       yPos = drawTextLine('RATES & FEES', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
-      
       yPos = drawBoldTextLine('Rate per Mile:', margin, yPos);
       yPos = drawRegularTextLine(`$${loadData.ratePerMile.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 10, yPos);
       yPos = drawBoldTextLine('Estimated Distance:', margin, yPos);
       yPos = drawRegularTextLine(`${loadData.distance} miles`, margin + 10, yPos);
-
-      if (loadData.requiresTarping && loadData.tarpingFee && loadData.tarpingFee > 0) {
-        yPos = drawBoldTextLine('Tarping Fee:', margin, yPos);
-        yPos = drawRegularTextLine(`$${loadData.tarpingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Tarping Required)`, margin + 10, yPos);
-      } else if (loadData.requiresTarping) {
-        yPos = drawBoldTextLine('Tarping:', margin, yPos);
-        yPos = drawRegularTextLine('Required (Fee included or N/A)', margin + 10, yPos);
-      }
-
+      if (loadData.requiresTarping && loadData.tarpingFee && loadData.tarpingFee > 0) { yPos = drawBoldTextLine('Tarping Fee:', margin, yPos); yPos = drawRegularTextLine(`$${loadData.tarpingFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Tarping Required)`, margin + 10, yPos); }
+      else if (loadData.requiresTarping) { yPos = drawBoldTextLine('Tarping:', margin, yPos); yPos = drawRegularTextLine('Required (Fee included or N/A)', margin + 10, yPos); }
       yPos = drawBoldTextLine('Total Agreed Rate for Service:', margin, yPos);
       yPos = drawRegularTextLine(`$${loadData.totalAgreedRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 10, yPos);
-
       yPos = drawBoldTextLine('Loading/Unloading Fee:', margin, yPos);
       yPos = drawRegularTextLine(settings.loadingFee !== undefined ? `$${settings.loadingFee.toFixed(2)}` : "[As agreed / See Special Terms]", margin + 10, yPos);
       yPos = drawBoldTextLine('Detention Fee:', margin, yPos);
@@ -932,85 +901,47 @@ export default function DashDispatchProApp() {
 
       yPos = drawTextLine('SPECIAL TERMS & CONDITIONS', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
-      const specialTermsText = loadData.specialTerms || settings.defaultSpecialTerms || "Standard carrier terms apply. Full terms available upon request. Payment due upon delivery unless otherwise agreed in writing. Late payments may incur additional charges.";
-      const termsLines = [];
-      const maxCharsPerLine = 85; 
-      let currentLine = "";
-      specialTermsText.split(' ').forEach(word => {
-          if ((currentLine + word).length > maxCharsPerLine) {
-              termsLines.push(currentLine.trim());
-              currentLine = word + " ";
-          } else {
-              currentLine += word + " ";
-          }
-      });
+      const specialTermsText = loadData.specialTerms || settings.defaultSpecialTerms || "Standard carrier terms apply...";
+      const termsLines = []; const maxCharsPerLine = 85; let currentLine = "";
+      specialTermsText.split(' ').forEach(word => { if ((currentLine + word).length > maxCharsPerLine) { termsLines.push(currentLine.trim()); currentLine = word + " "; } else { currentLine += word + " "; } });
       termsLines.push(currentLine.trim());
-
       for (const line of termsLines) {
-          if (yPos < margin + 100) { 
-              page = pdfDoc.addPage([600, 850]);
-              yPos = height - margin;
-              yPos = drawTextLine('SPECIAL TERMS & CONDITIONS (Continued)', boldFont, subTitleFontSize, margin, yPos);
-              yPos -= lineSpacing * 0.75;
-          }
+          if (yPos < margin + 100) { page = pdfDoc.addPage([600, 850]); yPos = height - margin; yPos = drawTextLine('SPECIAL TERMS & CONDITIONS (Continued)', boldFont, subTitleFontSize, margin, yPos); yPos -= lineSpacing * 0.75; }
           yPos = drawRegularTextLine(line, margin, yPos);
       }
       yPos -= sectionSpacing;
-      
-
-      if (yPos < margin + 150) { 
-        page = pdfDoc.addPage([600, 850]);
-        yPos = height - margin;
-      }
+      if (yPos < margin + 150) { page = pdfDoc.addPage([600, 850]); yPos = height - margin; }
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
-
       yPos = drawTextLine('SIGNATURES', boldFont, subTitleFontSize, margin, yPos);
-      yPos -= lineSpacing * 2; 
-
-      const signatureBoxWidth = (width - (margin * 3)) / 2; 
-      const signatureBoxHeight = 60;
-      const signatureYPos = yPos - signatureBoxHeight;
-
+      yPos -= lineSpacing * 2;
+      const signatureBoxWidth = (width - (margin * 3)) / 2; const signatureBoxHeight = 60; const signatureYPos = yPos - signatureBoxHeight;
       drawRegularTextLine('Carrier Representative:', margin, yPos);
       page.drawRectangle({ x: margin, y: signatureYPos, width: signatureBoxWidth, height: signatureBoxHeight, borderColor: rgb(0,0,0), borderWidth: 1 });
       drawRegularTextLine('Date:', margin, signatureYPos - lineSpacing);
-      drawLine(margin + 40, signatureYPos - lineSpacing + 3, margin + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1); 
-
-
+      drawLine(margin + 40, signatureYPos - lineSpacing + 3, margin + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1);
       const customerSigX = margin + signatureBoxWidth + margin;
       drawRegularTextLine('Customer Representative:', customerSigX, yPos);
       page.drawRectangle({ x: customerSigX, y: signatureYPos, width: signatureBoxWidth, height: signatureBoxHeight, borderColor: rgb(0,0,0), borderWidth: 1 });
       drawRegularTextLine('Date:', customerSigX, signatureYPos - lineSpacing);
-      drawLine(customerSigX + 40, signatureYPos - lineSpacing + 3, customerSigX + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1); 
-      
-      yPos = signatureYPos - lineSpacing * 2; 
-
-      if (yPos < margin + 50) { 
-        page = pdfDoc.addPage([600, 850]);
-        yPos = height - margin;
-      }
+      drawLine(customerSigX + 40, signatureYPos - lineSpacing + 3, customerSigX + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1);
+      yPos = signatureYPos - lineSpacing * 2;
+      if (yPos < margin + 50) { page = pdfDoc.addPage([600, 850]); yPos = height - margin; }
       const footerText1 = "This agreement constitutes the entire understanding between the parties named herein.";
-      const footerText2 = `Carrier's liability for cargo loss or damage is limited to $100,000 unless otherwise agreed in writing and specified in Special Terms.`;
+      const footerText2 = `Carrier's liability for cargo loss or damage is limited to $100,000 unless otherwise agreed...`;
       yPos = drawTextLine(footerText1, font, smallFontSize, margin, yPos, rgb(0.3,0.3,0.3));
       yPos = drawTextLine(footerText2, font, smallFontSize, margin, yPos, rgb(0.3,0.3,0.3));
-
 
       const pdfBytes = await pdfDoc.save();
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = `agreement-${loadData.loadNumber || loadData.id || 'newLoad'}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(link.href); 
+      document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(link.href);
       toast({ title: "Agreement Generated", description: "PDF has been downloaded." });
     } catch (error: any) {
       console.error("Error generating PDF:", error);
       toast({ variant: "destructive", title: "PDF Error", description: "Could not generate service agreement." });
-    } finally {
-      setIsSubmitting(false); 
-    }
+    } finally { setIsSubmitting(false); }
   };
 
 
@@ -1022,10 +953,7 @@ export default function DashDispatchProApp() {
     { id: 'settings', label: 'Settings', icon: Cog },
   ];
 
-  const isLoading = appLoading || (user === null && !IS_ADMIN_REVIEW_MODE) || (user !== null && userRole === undefined && !IS_ADMIN_REVIEW_MODE) || (IS_ADMIN_REVIEW_MODE && !user);
-
-
-  if (isLoading) {
+  if (appDisplayState === 'loading' || (IS_ADMIN_REVIEW_MODE && !user && !isTrialSession)) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -1034,7 +962,7 @@ export default function DashDispatchProApp() {
     );
   }
 
-  if (!user && !IS_ADMIN_REVIEW_MODE) {
+  if (appDisplayState === 'auth') {
     return <AuthPage
               email={email}
               setEmail={setEmail}
@@ -1045,11 +973,18 @@ export default function DashDispatchProApp() {
             />;
   }
   
-  if (user && userRole === 'client') {
-    return <ClientPortalPage user={user} onSignOut={handleSignOut} />;
+  if (appDisplayState === 'subscription_choice' && user) {
+      return <SubscriptionPage 
+                userDisplayName={user.displayName || user.email || "New User"}
+                onStartTrial={handleStartTrial} 
+             />;
   }
 
-  if (user && userRole === 'admin') {
+  if (appDisplayState === 'client_portal' && user && userRole === 'client') {
+    return <ClientPortalPage user={user} onSignOut={handleSignOut} isTrialSession={isTrialSession} />;
+  }
+
+  if (appDisplayState === 'admin_dashboard' && user && userRole === 'admin') {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <AppHeader userEmail={user.email} onSignOut={handleSignOut} />
@@ -1073,12 +1008,12 @@ export default function DashDispatchProApp() {
                                         generateAgreement={generateAgreement}
                                         approveClientLoadRequest={approveClientLoadRequest}
                                         isSubmittingLoad={isSubmitting}
-                                        isUpdatingStatus={isSubmitting} 
+                                        isUpdatingStatus={isSubmitting}
                                       />}
           {activeTab === 'expenses' && <ExpensesPage
                                           expenses={expenses}
                                           loads={loads}
-                                          settings={settings} 
+                                          settings={settings}
                                           expenseForm={expenseForm}
                                           setExpenseForm={setExpenseForm}
                                           addExpense={addExpense}
@@ -1092,7 +1027,7 @@ export default function DashDispatchProApp() {
                                         setActiveTab={setActiveTab}
                                         setLoadFormClientId={(clientId) => {
                                           setLoadForm(prev => ({ ...initialLoadFormData, clientId }));
-                                          setEditingLoadId(null); 
+                                          setEditingLoadId(null);
                                         }}
                                         isSubmittingClient={isSubmitting}
                                        />}
@@ -1101,19 +1036,19 @@ export default function DashDispatchProApp() {
                                           setSettingsForm={setSettingsForm}
                                           updateSettings={updateSettings}
                                           isSavingSettings={isSubmitting}
-                                          initialSettings={initialSettings} 
+                                          initialSettings={initialSettings}
                                         />}
         </main>
-
         <AppFooter />
       </div>
     );
   }
-  
+
+  // Fallback / unexpected state
   return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="mt-4 text-muted-foreground">Finalizing session...</p>
+        <p className="mt-4 text-muted-foreground">Initializing...</p>
       </div>
     );
 }

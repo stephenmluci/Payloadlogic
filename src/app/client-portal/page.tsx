@@ -16,16 +16,16 @@ import { formatISO, addHours } from 'date-fns';
 type ClientPortalPageProps = {
   user: User | null;
   onSignOut: () => Promise<void>;
+  isTrialSession?: boolean; // Added prop
 };
 
-// Helper to format date to YYYY-MM-DDTHH:mm for datetime-local input
 const toDateTimeLocalInput = (date: Date): string => {
   const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return localDate.toISOString().slice(0, 16);
 };
 
 
-export default function ClientPortalPage({ user, onSignOut }: ClientPortalPageProps) {
+export default function ClientPortalPage({ user, onSignOut, isTrialSession = false }: ClientPortalPageProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,7 +33,7 @@ export default function ClientPortalPage({ user, onSignOut }: ClientPortalPagePr
   const getInitialRequestFormState = (): Omit<ClientLoadRequest, 'id' | 'requestedByClientUid' | 'requestedByClientName' | 'submissionTimestamp' | 'status'> => {
     const now = new Date();
     const pickupDateTime = toDateTimeLocalInput(now);
-    const deliveryDateTime = toDateTimeLocalInput(addHours(now, 24)); // Default to 24 hours later
+    const deliveryDateTime = toDateTimeLocalInput(addHours(now, 24));
 
     return {
       origin: '',
@@ -50,15 +50,14 @@ export default function ClientPortalPage({ user, onSignOut }: ClientPortalPagePr
   const [requestForm, setRequestForm] = useState(getInitialRequestFormState());
 
   useEffect(() => {
-    // Re-initialize form if user changes (e.g., after login) to prefill contact details
     if (auth.currentUser) {
        setRequestForm(prev => ({
-           ...prev, // Keep existing form data like origin/destination if any
+           ...prev,
            requestContactName: auth.currentUser?.displayName || prev.requestContactName || '',
            requestContactEmail: auth.currentUser?.email || prev.requestContactEmail || '',
        }));
     }
-  }, [user]); // Depend on user object, which changes on auth state change
+  }, [user]);
 
 
   if (!user || user.role !== 'client') {
@@ -84,11 +83,16 @@ export default function ClientPortalPage({ user, onSignOut }: ClientPortalPagePr
     }
 
     setIsSubmitting(true);
+
+    if (isTrialSession) {
+      toast({ title: "Trial Mode", description: "Load request submitted (not saved in trial mode)." });
+      setRequestForm(getInitialRequestFormState());
+      setIsSubmitting(false);
+      return;
+    }
+    
     const newRequest: Omit<ClientLoadRequest, 'id'> = {
       ...requestForm,
-      // Convert local datetime string to full ISO string for storage if needed,
-      // or ensure backend/Firestore handles string conversion appropriately.
-      // For Firestore, string format 'YYYY-MM-DDTHH:MM' is fine for querying/sorting.
       requestedPickupDateTime: new Date(requestForm.requestedPickupDateTime).toISOString(),
       requestedDeliveryDateTime: new Date(requestForm.requestedDeliveryDateTime).toISOString(),
       requestedByClientUid: auth.currentUser.uid,
@@ -100,7 +104,7 @@ export default function ClientPortalPage({ user, onSignOut }: ClientPortalPagePr
     try {
       await addDoc(collection(db, 'clientLoadRequests'), newRequest);
       toast({ title: "Request Submitted", description: "Your load request has been sent successfully." });
-      setRequestForm(getInitialRequestFormState()); // Reset form to initial state with defaults
+      setRequestForm(getInitialRequestFormState());
     } catch (error: any) {
       console.error("Error submitting load request:", error);
       toast({ variant: "destructive", title: "Submission Error", description: error.message });
@@ -120,7 +124,7 @@ export default function ClientPortalPage({ user, onSignOut }: ClientPortalPagePr
           </div>
           {user && (
             <div className="flex items-center space-x-4">
-              <span className="text-sm hidden md:inline">Welcome, {user.displayName || user.email}</span>
+              <span className="text-sm hidden md:inline">Welcome, {user.displayName || user.email} {isTrialSession ? "(Trial Mode)" : ""}</span>
               <Button variant="ghost" size="icon" onClick={onSignOut} aria-label="Sign Out">
                 <LogOut className="h-5 w-5" />
               </Button>

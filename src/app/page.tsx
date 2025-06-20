@@ -9,6 +9,7 @@ import { db, auth } from '@/lib/firebase';
 import type { User, Load, Expense, Client, Settings, UserProfile, ClientLoadRequest } from '@/types';
 import { useToast } from "@/hooks/use-toast";
 import { format as formatDate, differenceInCalendarDays, parseISO } from 'date-fns';
+import { sendNotificationEmail, type SendNotificationEmailInput } from '@/ai/flows/send-notification-email';
 
 
 // Page Components
@@ -470,17 +471,19 @@ export default function DashDispatchProApp() {
     };
 
     if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
+        let newLoadDataForTrial: Load;
         if (editingLoadId) {
+            newLoadDataForTrial = { ...loads.find(l=>l.id===editingLoadId)!, ...dataWithCalculations, id: editingLoadId } as Load;
             setLoads(prevLoads => prevLoads.map(l =>
               l.id === editingLoadId
-                ? { ...l, ...dataWithCalculations, id: editingLoadId } as Load
+                ? newLoadDataForTrial
                 : l
             ));
             toast({ title: "Trial/Review: Load Updated", description: `Load ${dataToUse.loadNumber || editingLoadId} updated locally.` });
         } else {
             const nextLoadNumeric = loads.length + 1;
             const newLoadNumber = formatLoadNumber(nextLoadNumeric);
-            const newLoadData: Load = {
+            newLoadDataForTrial = {
                 loadNumber: newLoadNumber,
                 clientId: dataWithCalculations.clientId!,
                 origin: dataWithCalculations.origin!,
@@ -504,23 +507,36 @@ export default function DashDispatchProApp() {
                 expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false },
                 id: `mock-load-${Date.now()}`
             };
-            setLoads(prev => [...prev, newLoadData]);
+            setLoads(prev => [...prev, newLoadDataForTrial]);
             toast({ title: "Trial/Review: Load Added", description: `Load ${newLoadNumber} added locally.` });
         }
+        // Simulate notification for newly approved client request in trial/review
+        if (!editingLoadId && newLoadDataForTrial.status === 'client-request-approved' && newLoadDataForTrial.originalClientRequestId) {
+            const client = clients.find(c => c.id === newLoadDataForTrial.clientId);
+            if (client && client.contactEmail) {
+                 console.log(`TRIAL/REVIEW: Would send approval email for load ${newLoadDataForTrial.loadNumber} to ${client.contactEmail}`);
+                 toast({ title: "Trial/Review: Client Notification", description: `Simulated approval notification for load ${newLoadDataForTrial.loadNumber}.` });
+            }
+        }
+
     } else { // Firestore logic
+        let finalSavedLoadData: Load;
         if (editingLoadId) {
             try {
               const loadRef = doc(db, `users/${user.uid}/loads`, editingLoadId);
               await updateDoc(loadRef, dataWithCalculations);
+              finalSavedLoadData = { ...loads.find(l=>l.id === editingLoadId)!, ...dataWithCalculations, id: editingLoadId } as Load;
               setLoads(prevLoads => prevLoads.map(l =>
                 l.id === editingLoadId
-                  ? { ...l, ...dataWithCalculations, id: editingLoadId } as Load
+                  ? finalSavedLoadData
                   : l
               ));
               toast({ title: "Load Updated", description: `Load ${dataToUse.loadNumber || editingLoadId} has been successfully updated.` });
             } catch (error: any) {
               console.error('Error updating load:', error);
               toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
+              setIsSubmitting(false);
+              return;
             }
         } else {
             let nextLoadNumeric = 1;
@@ -544,7 +560,7 @@ export default function DashDispatchProApp() {
                 nextLoadNumeric = (await getDocs(loadsCollectionRef)).size + 1;
             }
             const newLoadNumber = formatLoadNumber(nextLoadNumeric);
-            const newLoadData: Omit<Load, 'id'> = { /* ... as before ... */
+            const newLoadDataForFirestore: Omit<Load, 'id'> = { 
                 loadNumber: newLoadNumber,
                 clientId: dataWithCalculations.clientId!,
                 origin: dataWithCalculations.origin!,
@@ -553,7 +569,7 @@ export default function DashDispatchProApp() {
                 deliveryDateTime: dataWithCalculations.deliveryDateTime!,
                 ratePerMile: dataWithCalculations.ratePerMile || 0,
                 distance: dataWithCalculations.distance || 0,
-                totalAgreedRate: dataWithCalculations.totalAgreedRate,
+                totalAgreedRate: dataWithCalculations.totalAgreedRate!,
                 status: dataWithCalculations.status || 'pending',
                 cargoDescription: dataWithCalculations.cargoDescription,
                 cargoDimensions: dataWithCalculations.cargoDimensions,
@@ -568,12 +584,40 @@ export default function DashDispatchProApp() {
                 expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
             };
             try {
-              const docRef = await addDoc(collection(db, `users/${user.uid}/loads`), newLoadData);
-              setLoads(prev => [...prev, { ...newLoadData, id: docRef.id } as Load]);
+              const docRef = await addDoc(collection(db, `users/${user.uid}/loads`), newLoadDataForFirestore);
+              finalSavedLoadData = { ...newLoadDataForFirestore, id: docRef.id } as Load;
+              setLoads(prev => [...prev, finalSavedLoadData]);
               toast({ title: "Load Added", description: `New load ${newLoadNumber} has been successfully created.` });
+
+              // Send notification for newly approved client request (non-trial)
+              if (finalSavedLoadData.status === 'client-request-approved' && finalSavedLoadData.originalClientRequestId) {
+                const client = clients.find(c => c.id === finalSavedLoadData.clientId);
+                if (client && client.contactEmail) {
+                    const loadIdentifier = `${finalSavedLoadData.loadNumber || finalSavedLoadData.id} (${finalSavedLoadData.origin} to ${finalSavedLoadData.destination})`;
+                    const emailSubject = `Load Request Approved: ${finalSavedLoadData.loadNumber || finalSavedLoadData.id}`;
+                    const emailBody = `Dear ${client.contactName || client.companyName},<br><br>Your load request for ${loadIdentifier} has been approved and is now being processed. Your Load ID is ${finalSavedLoadData.loadNumber || finalSavedLoadData.id}.<br><br>Thank you,<br>Dash Dispatch Pro`;
+                    try {
+                        const notificationInput: SendNotificationEmailInput = { recipientEmail: client.contactEmail, subject: emailSubject, body: emailBody };
+                        const notificationResult = await sendNotificationEmail(notificationInput);
+                        if (notificationResult.success) {
+                            toast({ title: "Client Notification", description: `Simulated approval notification sent for new load ${finalSavedLoadData.loadNumber}.` });
+                        } else {
+                            toast({ variant: "destructive", title: "Notification Error", description: `Failed to simulate client notification: ${notificationResult.message}` });
+                        }
+                    } catch (notificationError: any) {
+                        console.error("Error sending notification email for new load:", notificationError);
+                        toast({ variant: "destructive", title: "Notification System Error", description: "An error occurred trying to send client notification for new load." });
+                    }
+                } else {
+                     console.warn(`Could not send approval notification for new load ${finalSavedLoadData.id}: Client or client email not found.`);
+                }
+              }
+
             } catch (error: any) {
               console.error('Error adding load:', error);
               toast({ variant: "destructive", title: "Error Adding Load", description: error.message });
+              setIsSubmitting(false);
+              return;
             }
         }
     }
@@ -584,46 +628,112 @@ export default function DashDispatchProApp() {
   const updateLoad = useCallback(async (id: string, updates: Partial<Load>) => {
     if (!user || user.role !== 'admin') return;
 
-    let finalUpdates = { ...updates };
     const currentLoad = loads.find(l => l.id === id);
-
-    if (currentLoad) {
-        if (updates.distance !== undefined || updates.ratePerMile !== undefined || updates.tarpingFee !== undefined) {
-            const newDistance = updates.distance !== undefined ? updates.distance : currentLoad.distance;
-            const newRatePerMile = updates.ratePerMile !== undefined ? updates.ratePerMile : currentLoad.ratePerMile;
-            const newTarpingFee = updates.tarpingFee !== undefined ? updates.tarpingFee : (currentLoad.tarpingFee || 0);
-            finalUpdates.totalAgreedRate = (newDistance * newRatePerMile) + newTarpingFee;
-        }
-        if (updates.distance !== undefined && settings.truckAverageSpeed > 0) {
-            finalUpdates.estimatedDriveTimeHours = updates.distance / settings.truckAverageSpeed;
-        } else if (updates.distance !== undefined) {
-            finalUpdates.estimatedDriveTimeHours = undefined;
-        }
-        if (updates.expenses && currentLoad.expenses) {
-            finalUpdates.expenses = { ...currentLoad.expenses, ...updates.expenses };
-        }
+    if (!currentLoad) {
+        toast({ variant: "destructive", title: "Error", description: "Load not found for update."});
+        return;
     }
+    
+    let finalUpdates = { ...updates };
+    if (updates.distance !== undefined || updates.ratePerMile !== undefined || updates.tarpingFee !== undefined) {
+        const newDistance = updates.distance !== undefined ? updates.distance : currentLoad.distance;
+        const newRatePerMile = updates.ratePerMile !== undefined ? updates.ratePerMile : currentLoad.ratePerMile;
+        const newTarpingFee = updates.tarpingFee !== undefined ? updates.tarpingFee : (currentLoad.tarpingFee || 0);
+        finalUpdates.totalAgreedRate = (newDistance * newRatePerMile) + newTarpingFee;
+    }
+    if (updates.distance !== undefined && settings.truckAverageSpeed > 0) {
+        finalUpdates.estimatedDriveTimeHours = updates.distance / settings.truckAverageSpeed;
+    } else if (updates.distance !== undefined) {
+        finalUpdates.estimatedDriveTimeHours = undefined;
+    }
+    if (updates.expenses && currentLoad.expenses) {
+        finalUpdates.expenses = { ...currentLoad.expenses, ...updates.expenses };
+    }
+
 
     if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
         setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...finalUpdates } as Load : l));
         let description = "Trial/Review: Load details updated locally.";
-        if (updates.status) description = `Trial/Review: Load status changed to ${updates.status} locally.`;
+        if (updates.status && updates.status !== currentLoad.status) {
+            description = `Trial/Review: Load status changed to ${updates.status} locally.`;
+            const client = clients.find(c => c.id === currentLoad.clientId);
+            if (client && client.contactEmail) {
+                const subject = `Load Update: ${currentLoad.loadNumber || id} - Status: ${updates.status}`;
+                const body = `Dear ${client.contactName || client.companyName},<br><br>The status of your load (${currentLoad.origin} to ${currentLoad.destination}, ID: ${currentLoad.loadNumber || id}) has been updated to: <strong>${updates.status.toUpperCase()}</strong>.<br><br>Thank you,<br>Dash Dispatch Pro`;
+                console.log(`TRIAL/REVIEW: Would send email to ${client.contactEmail} - Subject: ${subject}`);
+                toast({ title: "Trial/Review: Client Notification", description: `Simulated notification for status: ${updates.status}.` });
+            }
+        }
         else if (updates.expenses?.calculated) description = "Trial/Review: Load expenses calculated locally.";
         toast({ title: "Trial/Review: Load Updated", description });
         return;
     }
 
     try {
-      await updateDoc(doc(db, `users/${user.uid}/loads`, id), finalUpdates);
-      setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...finalUpdates } as Load : l));
-      if (updates.status) toast({ title: "Load Updated", description: `Load status changed to ${updates.status}.` });
-      else if (updates.expenses?.calculated) toast({ title: "Load Updated", description: "Load expenses calculated and saved." });
-      else toast({ title: "Load Updated", description: "Load details saved." });
+      const loadRef = doc(db, `users/${user.uid}/loads`, id);
+      await updateDoc(loadRef, finalUpdates);
+      
+      const updatedLoadsState = loads.map(l => l.id === id ? { ...l, ...finalUpdates } as Load : l);
+      setLoads(updatedLoadsState);
+
+      let toastMessage = "Load details saved.";
+      if (updates.status && updates.status !== currentLoad.status) toastMessage = `Load status changed to ${updates.status}.`;
+      else if (updates.expenses?.calculated) toastMessage = "Load expenses calculated and saved.";
+      toast({ title: "Load Updated", description: toastMessage });
+
+      // Send notification if status changed for a real load
+      if (updates.status && updates.status !== currentLoad.status) {
+        const client = clients.find(c => c.id === currentLoad.clientId);
+        if (client && client.contactEmail) {
+          let emailSubject = '';
+          let emailBody = '';
+          const loadIdentifier = `${currentLoad.loadNumber || id} (${currentLoad.origin} to ${currentLoad.destination})`;
+
+          switch (updates.status) {
+            case 'client-request-approved':
+              // This status is typically set on new load creation from request, handled in handleSaveLoad.
+              // If manually changed to this, it might imply a re-approval or correction.
+              emailSubject = `Load Update: ${currentLoad.loadNumber || id} - Request Approved`;
+              emailBody = `Dear ${client.contactName || client.companyName},<br><br>An update regarding your load request for ${loadIdentifier}: it has been (re)approved. Load ID: ${currentLoad.loadNumber || id}.<br><br>Thank you,<br>Dash Dispatch Pro`;
+              break;
+            case 'in-transit':
+              emailSubject = `Load In Transit: ${currentLoad.loadNumber || id}`;
+              emailBody = `Dear ${client.contactName || client.companyName},<br><br>Your load ${loadIdentifier} is now in transit.<br><br>Thank you,<br>Dash Dispatch Pro`;
+              break;
+            case 'delivered':
+              emailSubject = `Load Delivered: ${currentLoad.loadNumber || id}`;
+              emailBody = `Dear ${client.contactName || client.companyName},<br><br>Your load ${loadIdentifier} has been successfully delivered.<br><br>Thank you,<br>Dash Dispatch Pro`;
+              break;
+            // No notification for 'pending' by default, or you can add one if changing *to* pending.
+          }
+
+          if (emailSubject && emailBody) {
+            try {
+              const notificationInput: SendNotificationEmailInput = {
+                recipientEmail: client.contactEmail,
+                subject: emailSubject,
+                body: emailBody,
+              };
+              const notificationResult = await sendNotificationEmail(notificationInput);
+              if (notificationResult.success) {
+                toast({ title: "Client Notification", description: `Simulated notification sent for status: ${updates.status}.` });
+              } else {
+                toast({ variant: "destructive", title: "Notification Error", description: `Failed to simulate client notification: ${notificationResult.message}` });
+              }
+            } catch (notificationError: any) {
+              console.error("Error sending notification email:", notificationError);
+              toast({ variant: "destructive", title: "Notification System Error", description: "An error occurred while trying to send the client notification." });
+            }
+          }
+        } else if (updates.status) {
+            console.warn(`Could not send notification for load ${id} status update: Client or client email not found.`);
+        }
+      }
     } catch (error: any) {
       console.error('Error updating load:', error);
       toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
     }
-  }, [user, toast, loads, settings, isTrialSession]);
+  }, [user, toast, loads, settings, isTrialSession, clients]);
 
   const handleDeleteLoad = async (loadId: string) => {
     if (!user || user.role !== 'admin') return;
@@ -758,9 +868,7 @@ export default function DashDispatchProApp() {
 
   useEffect(() => {
     if (user?.role !== 'admin') return;
-    // This effect is complex and might need adjustment for trial mode if its output (updated loads)
-    // should also be purely local during a trial.
-    // For now, it will use the `updateLoad` function which is already trial-aware.
+
     const allCurrentLoads = [...loads];
     loads.forEach(load => {
       if (load.status === 'delivered' && !load.expenses.calculated && load.id) {

@@ -101,13 +101,11 @@ const toDateTimeLocalInput = (isoString?: string): string => {
         const localDateFromDateOnly = new Date(new Date(withTime).getTime() - new Date().getTimezoneOffset() * 60000);
         return localDateFromDateOnly.toISOString().slice(0,16);
       }
-      // If still invalid, return current local time
       return new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     }
     const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
     return localDate.toISOString().slice(0, 16);
   } catch (e) {
-    // Fallback on any error during parsing
     return new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   }
 };
@@ -202,9 +200,14 @@ export default function DashDispatchProApp() {
     if (isTrialSession) {
       const trialUserProfileRef = doc(db, `users/${currentUser.uid}/profile`);
       const trialProfileSnap = await getDoc(trialUserProfileRef);
-      let currentTrialRole: 'admin' | 'client' = 'admin';
+      let currentTrialRole: 'admin' | 'client' = 'admin'; // Default role for trial if no profile
       if (trialProfileSnap.exists()) {
         currentTrialRole = (trialProfileSnap.data() as UserProfile).role;
+      } else {
+        // If a new user starts a trial immediately after sign up, they might not have a profile yet.
+        // We'll use the role determined at sign up, or default.
+        // The `user` state set during signup (which includes role) might be more reliable here.
+        // For simplicity, we can default or enhance this if needed. Let's assume 'admin' for now if profile is missing.
       }
       setUser({ ...(currentUser as FirebaseUser), role: currentTrialRole });
       setUserRole(currentTrialRole);
@@ -214,8 +217,7 @@ export default function DashDispatchProApp() {
       return;
     }
   
-    // Regular user flow (not admin review, not trial session)
-    let fetchedRole: 'admin' | 'client' = 'admin'; // Default role
+    let fetchedRole: 'admin' | 'client' = 'admin'; 
     let shouldGoToSubscriptionChoice = false;
   
     try {
@@ -225,16 +227,13 @@ export default function DashDispatchProApp() {
       if (profileSnap.exists()) {
         const userProfile = profileSnap.data() as UserProfile;
         fetchedRole = userProfile.role;
-        // Assume if profile exists, they've passed subscription choice for now
       } else {
-        // No profile exists - this user is new or profile creation failed.
-        // They need to go to subscription choice.
         shouldGoToSubscriptionChoice = true;
       }
     } catch (error) {
       console.error("Error fetching user profile:", error);
       toast({ variant: "destructive", title: "Profile Error", description: "Could not fetch user profile." });
-      setAppDisplayState('auth'); // Fallback to auth on error
+      setAppDisplayState('auth'); 
       return;
     }
     
@@ -248,13 +247,9 @@ export default function DashDispatchProApp() {
   
     if (fetchedRole === 'client') {
       setAppDisplayState('client_portal');
-      // Fetch client-specific data if any (e.g., their past requests)
-      // For now, client portal is self-contained.
       return;
     }
   
-    // Admin user, fetch all data
-    // setAppDisplayState('loading'); // No longer setting to 'loading' here to avoid intermediate state flicker
     try {
       const collectionsToFetch = [
         { name: 'loads', setter: setLoads },
@@ -287,9 +282,9 @@ export default function DashDispatchProApp() {
     } catch (error: any) {
       console.error('Error fetching admin data:', error);
       toast({ variant: "destructive", title: "Fetch Error", description: error.message });
-      setAppDisplayState('auth'); // Fallback on error
+      setAppDisplayState('auth'); 
     }
-  }, [toast, isTrialSession]); // Removed appDisplayState from deps
+  }, [toast, isTrialSession]); 
 
 
   useEffect(() => {
@@ -301,22 +296,16 @@ export default function DashDispatchProApp() {
 
       if (authUser) {
         if (isTrialSession) {
-            // If it's a trial session, data is mock. Ensure user object/role are correct.
-            const trialUserRole = userRole || 'admin'; 
-            setUser({ ...(authUser as FirebaseUser), role: trialUserRole });
-            setUserRole(trialUserRole);
-            setAppDisplayState(trialUserRole === 'client' ? 'client_portal' : 'admin_dashboard');
+            fetchUserProfileAndData(authUser); // Handles trial data mocking and state setting
         } else if (appDisplayState === 'subscription_choice') {
-            // User is on subscription page, authUser just confirmed.
-            // Update user object if needed but keep them on subscription_choice.
             setUser(prev => ({ ...(authUser as FirebaseUser), role: prev?.role || 'admin' }));
-            // userRole will be set by fetchUserProfileAndData if they proceed from subscription
         } else {
-            // Normal authenticated user, not in trial, not on subscription page. Fetch their data/profile.
-            fetchUserProfileAndData(authUser);
+            // Only call fetchUserProfileAndData if the user state isn't set for this authUser or role is unknown
+            if (!user || user.uid !== authUser.uid || !userRole) {
+                 fetchUserProfileAndData(authUser);
+            }
         }
       } else {
-        // No user / signed out
         setUser(null);
         setUserRole(undefined);
         setIsTrialSession(false);
@@ -326,7 +315,7 @@ export default function DashDispatchProApp() {
       }
     });
     return () => unsubscribe();
-  }, [fetchUserProfileAndData, isTrialSession, appDisplayState, userRole]); // appDisplayState needed here to gate calls to fetchUserProfileAndData
+  }, [fetchUserProfileAndData, isTrialSession, appDisplayState, userRole, user]);
 
 
   const handleSignUp = async (role: 'admin' | 'client' = 'admin') => {
@@ -338,16 +327,16 @@ export default function DashDispatchProApp() {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const profileRef = doc(db, `users/${userCredential.user.uid}/profile`);
-      await setDoc(profileRef, { role }); // Store role
+      await setDoc(profileRef, { role }); 
 
       setUser({ ...userCredential.user, role: role });
-      setUserRole(role); // Set role immediately
+      setUserRole(role); 
       setAppDisplayState('subscription_choice'); 
       toast({ title: "Account Created", description: `Welcome! Please choose your subscription.` });
     } catch (error: any) {
       console.error('Sign up error:', error);
       toast({ variant: "destructive", title: "Sign Up Error", description: error.message });
-      setAppDisplayState('auth'); // Stay on auth if signup fails
+      setAppDisplayState('auth'); 
     } finally {
       setIsSubmitting(false);
     }
@@ -355,19 +344,17 @@ export default function DashDispatchProApp() {
 
   const handleSignIn = async () => {
     if (IS_ADMIN_REVIEW_MODE && !isTrialSession && email === mockReviewUser.email) {
-      fetchUserProfileAndData(mockReviewUser); // This will set appDisplayState
+      fetchUserProfileAndData(mockReviewUser); 
       toast({ title: "Admin Review Mode", description: "Review session refreshed." });
       return;
     }
     setIsSubmitting(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will call fetchUserProfileAndData, which sets appDisplayState
       toast({ title: "Signed In", description: "Welcome back!" });
     } catch (error: any) {
       console.error('Sign in error:', error);
       toast({ variant: "destructive", title: "Sign In Error", description: error.message });
-      // Don't change appDisplayState here, onAuthStateChanged handles transitions
     } finally {
       setIsSubmitting(false);
     }
@@ -379,34 +366,22 @@ export default function DashDispatchProApp() {
         toast({variant: "destructive", title: "Error", description: "User not found for trial."});
         return;
     }
-    setIsTrialSession(true);
-    // user.role should be set from signup or default.
-    // fetchUserProfileAndData will use this user.role and isTrialSession=true
-    // to set up the trial environment.
-    fetchUserProfileAndData(user); 
+    setIsTrialSession(true); // This will trigger the useEffect, which calls fetchUserProfileAndData for trial.
     toast({ title: "Free Trial Started", description: "Enjoy your free trial! Data will not be saved." });
   };
 
 
   const handleSignOut = async () => {
     if (IS_ADMIN_REVIEW_MODE && !isTrialSession) {
-      setUser(null); // Clear local mock user
+      setUser(null); 
       setUserRole(undefined);
-      // Let onAuthStateChanged handle the transition, which might re-init admin review mode if configured.
-      // Forcing to auth and then letting it re-evaluate.
       setAppDisplayState('auth'); 
-      // If auth.signOut() is not called, onAuthStateChanged might not fire as expected for this flow.
-      // Consider simply calling fetchUserProfileAndData(mockReviewUser) if admin review should persist across "sign-outs".
-      // For now, this will effectively end the explicit mockReviewUser session.
       toast({ title: "Admin Review Mode", description: "Exited review session." });
-      // To re-enter admin review, one might need to "sign in" as mockReviewUser again.
-      // Or, the initial useEffect can reinstate it if no other authUser is present.
       return;
     }
     setIsSubmitting(true);
     try {
       await signOut(auth);
-      // onAuthStateChanged will set user to null and appDisplayState to 'auth'
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
     } catch (error: any) {
       console.error('Sign out error:', error);
@@ -494,7 +469,6 @@ export default function DashDispatchProApp() {
             setLoads(prev => [...prev, newLoadDataForTrial]);
             toast({ title: "Trial/Review: Load Added", description: `Load ${newLoadNumber} added locally.` });
         }
-        // Simulate notification for newly approved client request in trial/review
         if (!editingLoadId && newLoadDataForTrial.status === 'client-request-approved' && newLoadDataForTrial.originalClientRequestId) {
             const client = clients.find(c => c.id === newLoadDataForTrial.clientId);
             if (client && client.contactEmail) {
@@ -503,7 +477,7 @@ export default function DashDispatchProApp() {
             }
         }
 
-    } else { // Firestore logic
+    } else { 
         let finalSavedLoadData: Load;
         if (editingLoadId) {
             try {
@@ -563,7 +537,7 @@ export default function DashDispatchProApp() {
                 tarpingFee: dataWithCalculations.tarpingFee || 0,
                 originalClientRequestId: dataWithCalculations.originalClientRequestId,
                 requestedByClientName: dataWithCalculations.requestedByClientName,
-                requestedByAuthUid: dataWithCalculations.requestedByAuthUid,
+                requestedByAuthUid: dataWithCalculations.requestedByClientUid,
                 estimatedDriveTimeHours: dataWithCalculations.estimatedDriveTimeHours,
                 expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, calculated: false }
             };
@@ -573,7 +547,6 @@ export default function DashDispatchProApp() {
               setLoads(prev => [...prev, finalSavedLoadData]);
               toast({ title: "Load Added", description: `New load ${newLoadNumber} has been successfully created.` });
 
-              // Send notification for newly approved client request (non-trial)
               if (finalSavedLoadData.status === 'client-request-approved' && finalSavedLoadData.originalClientRequestId) {
                 const client = clients.find(c => c.id === finalSavedLoadData.clientId);
                 if (client && client.contactEmail) {
@@ -627,7 +600,7 @@ export default function DashDispatchProApp() {
     }
     if (updates.distance !== undefined && settings.truckAverageSpeed > 0) {
         finalUpdates.estimatedDriveTimeHours = updates.distance / settings.truckAverageSpeed;
-    } else if (updates.distance !== undefined) { // if distance is updated but speed is 0
+    } else if (updates.distance !== undefined) { 
         finalUpdates.estimatedDriveTimeHours = undefined;
     }
     if (updates.expenses && currentLoad.expenses) {
@@ -665,7 +638,6 @@ export default function DashDispatchProApp() {
       else if (updates.expenses?.calculated) toastMessage = "Load expenses calculated and saved.";
       toast({ title: "Load Updated", description: toastMessage });
 
-      // Send notification if status changed for a real load
       if (updates.status && updates.status !== currentLoad.status) {
         const client = clients.find(c => c.id === currentLoad.clientId);
         if (client && client.contactEmail) {
@@ -675,8 +647,6 @@ export default function DashDispatchProApp() {
 
           switch (updates.status) {
             case 'client-request-approved':
-              // This status is typically set on new load creation from request, handled in handleSaveLoad.
-              // If manually changed to this, it might imply a re-approval or correction.
               emailSubject = `Load Update: ${currentLoad.loadNumber || id} - Request Approved`;
               emailBody = `Dear ${client.contactName || client.companyName},<br><br>An update regarding your load request for ${loadIdentifier}: it has been (re)approved. Load ID: ${currentLoad.loadNumber || id}.<br><br>Thank you,<br>Dash Dispatch Pro`;
               break;
@@ -688,7 +658,6 @@ export default function DashDispatchProApp() {
               emailSubject = `Load Delivered: ${currentLoad.loadNumber || id}`;
               emailBody = `Dear ${client.contactName || client.companyName},<br><br>Your load ${loadIdentifier} has been successfully delivered.<br><br>Thank you,<br>Dash Dispatch Pro`;
               break;
-            // No notification for 'pending' by default, or you can add one if changing *to* pending.
           }
 
           if (emailSubject && emailBody) {
@@ -709,7 +678,7 @@ export default function DashDispatchProApp() {
               toast({ variant: "destructive", title: "Notification System Error", description: "An error occurred while trying to send the client notification." });
             }
           }
-        } else if (updates.status) { // This means status was updated but client/email was not found
+        } else if (updates.status) { 
             console.warn(`Could not send notification for load ${id} status update: Client or client email not found.`);
         }
       }
@@ -717,7 +686,7 @@ export default function DashDispatchProApp() {
       console.error('Error updating load:', error);
       toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
     }
-  }, [user, toast, loads, settings, isTrialSession, clients]); // Added clients dependency
+  }, [user, toast, loads, settings, isTrialSession, clients]); 
 
   const handleDeleteLoad = async (loadId: string) => {
     if (!user || user.role !== 'admin') return;
@@ -752,34 +721,33 @@ export default function DashDispatchProApp() {
         (c.contactEmail || "").toLowerCase() === (request.requestContactEmail || "").toLowerCase()
     );
     const loadDataFromRequest: Partial<Load> = {
-      clientId: existingClient?.id || '', // Use found client ID or empty string
+      clientId: existingClient?.id || '', 
       origin: request.origin,
       destination: request.destination,
-      pickupDateTime: toDateTimeLocalInput(request.requestedPickupDateTime), // Convert ISO to datetime-local string
-      deliveryDateTime: toDateTimeLocalInput(request.requestedDeliveryDateTime), // Convert ISO to datetime-local string
-      ratePerMile: 0, // Default to 0, admin needs to set this
-      distance: 0, // Default to 0, admin needs to set this
-      status: 'client-request-approved', // Set status
+      pickupDateTime: toDateTimeLocalInput(request.requestedPickupDateTime), 
+      deliveryDateTime: toDateTimeLocalInput(request.requestedDeliveryDateTime), 
+      ratePerMile: 0, 
+      distance: 0, 
+      status: 'client-request-approved', 
       cargoDescription: request.cargoDescription,
-      requiresTarping: false, // Default
-      tarpingFee: 0, // Default
+      requiresTarping: false, 
+      tarpingFee: 0, 
       originalClientRequestId: request.id,
       requestedByClientName: request.requestedByClientName,
       requestedByAuthUid: request.requestedByClientUid,
-      estimatedDriveTimeHours: undefined, // Will be calculated on save if distance/speed available
+      estimatedDriveTimeHours: undefined, 
     };
     setLoadForm(loadDataFromRequest);
-    setEditingLoadId(null); // Ensure it's treated as a new load to be added, not an edit
-    setActiveTab('loads'); // Switch to loads tab where the form is
+    setEditingLoadId(null); 
+    setActiveTab('loads'); 
 
-    // Update client request status to 'viewed' or similar
     if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
         setClientLoadRequests(prev => prev.map(r => r.id === request.id ? {...r, status: 'viewed'} : r));
         toast({ title: "Trial/Review: Client Request Processed", description: "Load form pre-filled locally. Request status 'viewed'." });
     } else {
         try {
             const requestRef = doc(db, 'clientLoadRequests', request.id!);
-            await updateDoc(requestRef, { status: 'viewed' }); // Or 'processing', 'accepted-pending-details'
+            await updateDoc(requestRef, { status: 'viewed' }); 
             setClientLoadRequests(prev => prev.map(r => r.id === request.id ? {...r, status: 'viewed'} : r));
             toast({ title: "Process Client Request", description: "Load form pre-filled. Please complete and save the load." });
         } catch (error: any) {
@@ -857,10 +825,9 @@ export default function DashDispatchProApp() {
   useEffect(() => {
     if (user?.role !== 'admin') return;
 
-    const allCurrentLoads = [...loads]; // Create a copy to ensure up-to-date data for idle day calculation
+    const allCurrentLoads = [...loads]; 
     loads.forEach(load => {
       if (load.status === 'delivered' && !load.expenses.calculated && load.id) {
-        // Calculate direct expenses for THIS load
         const loadSpecificExpenses = expenses.filter(exp => exp.loadId === load.id);
         const manualFuelExpense = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'fuel');
         const fuelCost = manualFuelExpense ? manualFuelExpense.amount
@@ -869,26 +836,23 @@ export default function DashDispatchProApp() {
         
         const manualDefExpense = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def');
         const defCost = manualDefExpense ? manualDefExpense.amount
-            : (load.distance > 0 && settings.defCostPerGallon > 0) // Assuming DEF usage is ~1 gallon per 250 miles
-            ? (load.distance / 250) * settings.defCostPerGallon : 0; // Simple DEF calculation
+            : (load.distance > 0 && settings.defCostPerGallon > 0) 
+            ? (load.distance / 250) * settings.defCostPerGallon : 0; 
         
         const payroll = load.totalAgreedRate * (settings.payrollPercentage / 100);
 
-        // Calculate recurring expenses portion for THIS load
         const dailyRecurringSum = settings.recurringExpenses.reduce((sum, expense) => sum + (expense.amount / 30), 0);
         
-        // Calculate duration for the current load
-        let durationInDaysForCurrentLoad = 1; // Default to 1 day
+        let durationInDaysForCurrentLoad = 1; 
         try {
             const pickupDate = parseISO(load.pickupDateTime);
             const deliveryDate = parseISO(load.deliveryDateTime);
             if (!isNaN(pickupDate.getTime()) && !isNaN(deliveryDate.getTime()) && deliveryDate >= pickupDate) {
-                durationInDaysForCurrentLoad = differenceInCalendarDays(deliveryDate, pickupDate) + 1; // Inclusive days
+                durationInDaysForCurrentLoad = differenceInCalendarDays(deliveryDate, pickupDate) + 1; 
             }
         } catch (e) { console.warn("Error calculating duration for current load, defaulting to 1 day:", load.id, e); }
-        durationInDaysForCurrentLoad = Math.max(1, durationInDaysForCurrentLoad); // Ensure at least 1 day
+        durationInDaysForCurrentLoad = Math.max(1, durationInDaysForCurrentLoad); 
 
-        // Calculate idle days BEFORE this load
         let idleDaysBeforeThisLoad = 0;
         const previouslyDeliveredLoads = allCurrentLoads.filter(
           l => l.id !== load.id && l.status === 'delivered' && l.deliveryDateTime && parseISO(l.deliveryDateTime) < parseISO(load.pickupDateTime)
@@ -899,9 +863,9 @@ export default function DashDispatchProApp() {
           const latestPreviousDeliveryDate = parseISO(previouslyDeliveredLoads[0].deliveryDateTime!);
           const currentLoadPickupDate = parseISO(load.pickupDateTime);
           if (!isNaN(latestPreviousDeliveryDate.getTime()) && !isNaN(currentLoadPickupDate.getTime()) && currentLoadPickupDate > latestPreviousDeliveryDate) {
-            idleDaysBeforeThisLoad = differenceInCalendarDays(currentLoadPickupDate, latestPreviousDeliveryDate) -1; // -1 because we don't count the delivery day of prev or pickup day of current
+            idleDaysBeforeThisLoad = differenceInCalendarDays(currentLoadPickupDate, latestPreviousDeliveryDate) -1; 
           }
-          idleDaysBeforeThisLoad = Math.max(0, idleDaysBeforeThisLoad); // Ensure no negative days
+          idleDaysBeforeThisLoad = Math.max(0, idleDaysBeforeThisLoad); 
         }
         
         const totalDaysToAccountForRecurring = durationInDaysForCurrentLoad + idleDaysBeforeThisLoad;
@@ -916,7 +880,7 @@ export default function DashDispatchProApp() {
         });
       }
     });
-  }, [loads, settings, expenses, user, updateLoad, isTrialSession]); // isTrialSession added as it affects updateLoad behavior
+  }, [loads, settings, expenses, user, updateLoad, isTrialSession]); 
 
   const generateAgreement = async (loadData: Load) => {
     if (!user || user.role !== 'admin') return;
@@ -928,44 +892,40 @@ export default function DashDispatchProApp() {
     setIsSubmitting(true);
     try {
       const pdfDoc = await PDFDocument.create();
-      let page = pdfDoc.addPage([600, 850]); // Adjusted page height for more content
+      let page = pdfDoc.addPage([600, 850]); 
       const { width, height } = page.getSize();
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
       const fontSize = 10, titleFontSize = 16, subTitleFontSize = 12, smallFontSize = 8, lineSpacing = 15, sectionSpacing = 25, margin = 50;
       let yPos = height - margin;
 
-      // Helper function to draw text and handle page breaks
       const drawTextLine = (text: string, fontToUse: any, size: number, x: number, y: number, color = rgb(0,0,0)) => {
-        if (y < margin + size) { // Check if new page is needed
+        if (y < margin + size) { 
           page = pdfDoc.addPage([600, 850]);
-          y = height - margin; // Reset yPos for new page
+          y = height - margin; 
         }
         page.drawText(text, { x, y, font: fontToUse, size, color });
-        return y - size - (size > 10 ? 5 : 3); // Adjust spacing based on font size
+        return y - size - (size > 10 ? 5 : 3); 
       };
       const drawBoldTextLine = (text: string, x: number, y: number) => drawTextLine(text, boldFont, fontSize, x, y);
       const drawRegularTextLine = (text: string, x: number, y: number) => drawTextLine(text, font, fontSize, x, y);
       const drawLine = (x1: number, y1: number, x2: number, y2: number, thickness = 0.5) => {
-        if (y1 < margin) { // Check if new page is needed (less likely for lines but good practice)
+        if (y1 < margin) { 
            page = pdfDoc.addPage([600, 850]); y1 = height - margin; 
         }
         page.drawLine({start: {x: x1, y: y1}, end: {x: x2, y: y2}, thickness, color: rgb(0.7,0.7,0.7) });
       };
 
-      // Header
       yPos = drawTextLine('Hotshot Trucking Agreement', boldFont, titleFontSize, margin, yPos, rgb(0.1, 0.1, 0.1));
       if (loadData.loadNumber) {
-        // Draw Load ID to the right of the title or slightly below
-        const tempYPos = yPos; // Store yPos before title might wrap
-        yPos = drawTextLine(`Load ID: ${loadData.loadNumber}`, boldFont, subTitleFontSize - 2, width - margin - 100, tempYPos + titleFontSize + 2); // Adjust x for right alignment
-        yPos = tempYPos; // Restore yPos
+        const tempYPos = yPos; 
+        yPos = drawTextLine(`Load ID: ${loadData.loadNumber}`, boldFont, subTitleFontSize - 2, width - margin - 100, tempYPos + titleFontSize + 2); 
+        yPos = tempYPos; 
       }
       yPos -= lineSpacing / 2;
       yPos = drawRegularTextLine(`Date of Agreement: ${new Date().toLocaleDateString()}`, margin, yPos);
       yPos -= sectionSpacing;
 
-      // Parties
       yPos = drawTextLine('PARTIES', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       yPos = drawBoldTextLine('Carrier:', margin, yPos);
@@ -984,7 +944,6 @@ export default function DashDispatchProApp() {
       yPos -= sectionSpacing;
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
-      // Load Details
       yPos = drawTextLine('LOAD DETAILS', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       yPos = drawBoldTextLine('Description:', margin, yPos);
@@ -1001,7 +960,6 @@ export default function DashDispatchProApp() {
       yPos -= sectionSpacing;
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
 
-      // Rates & Fees
       yPos = drawTextLine('RATES & FEES', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       yPos = drawBoldTextLine('Rate per Mile:', margin, yPos);
@@ -1019,11 +977,10 @@ export default function DashDispatchProApp() {
       yPos -= sectionSpacing;
       drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2));
       
-      // Special Terms
       yPos = drawTextLine('SPECIAL TERMS & CONDITIONS', boldFont, subTitleFontSize, margin, yPos);
       yPos -= lineSpacing * 0.75;
       const specialTermsText = loadData.specialTerms || settings.defaultSpecialTerms || "Standard carrier terms apply...";
-      const termsLines = []; const maxCharsPerLine = 85; // Approximate characters per line
+      const termsLines = []; const maxCharsPerLine = 85; 
       let currentLine = "";
       specialTermsText.split(' ').forEach(word => {
           if ((currentLine + word).length > maxCharsPerLine) {
@@ -1033,10 +990,10 @@ export default function DashDispatchProApp() {
               currentLine += word + " ";
           }
       });
-      termsLines.push(currentLine.trim()); // Add the last line
+      termsLines.push(currentLine.trim()); 
 
       for (const line of termsLines) {
-          if (yPos < margin + 100) { // Check for space before drawing terms, add new page if needed
+          if (yPos < margin + 100) { 
               page = pdfDoc.addPage([600, 850]); yPos = height - margin;
               yPos = drawTextLine('SPECIAL TERMS & CONDITIONS (Continued)', boldFont, subTitleFontSize, margin, yPos);
               yPos -= lineSpacing * 0.75;
@@ -1045,37 +1002,34 @@ export default function DashDispatchProApp() {
       }
       yPos -= sectionSpacing;
       
-      // Signatures - Ensure enough space or start on new page
-      if (yPos < margin + 150) { // Estimate space needed for signatures section
+      if (yPos < margin + 150) { 
            page = pdfDoc.addPage([600, 850]); yPos = height - margin;
       }
-      drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2)); // Line before signatures
+      drawLine(margin, yPos + (sectionSpacing / 2), width - margin, yPos + (sectionSpacing / 2)); 
       yPos = drawTextLine('SIGNATURES', boldFont, subTitleFontSize, margin, yPos);
-      yPos -= lineSpacing * 2; // More space before signature boxes
+      yPos -= lineSpacing * 2; 
       
-      const signatureBoxWidth = (width - (margin * 3)) / 2; // Width for each signature box
+      const signatureBoxWidth = (width - (margin * 3)) / 2; 
       const signatureBoxHeight = 60;
       const signatureYPos = yPos - signatureBoxHeight;
 
       drawRegularTextLine('Carrier Representative:', margin, yPos);
       page.drawRectangle({ x: margin, y: signatureYPos, width: signatureBoxWidth, height: signatureBoxHeight, borderColor: rgb(0,0,0), borderWidth: 1 });
       drawRegularTextLine('Date:', margin, signatureYPos - lineSpacing);
-      drawLine(margin + 40, signatureYPos - lineSpacing + 3, margin + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1); // Line for date
+      drawLine(margin + 40, signatureYPos - lineSpacing + 3, margin + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1); 
 
-      const customerSigX = margin + signatureBoxWidth + margin; // X position for customer signature
+      const customerSigX = margin + signatureBoxWidth + margin; 
       drawRegularTextLine('Customer Representative:', customerSigX, yPos);
       page.drawRectangle({ x: customerSigX, y: signatureYPos, width: signatureBoxWidth, height: signatureBoxHeight, borderColor: rgb(0,0,0), borderWidth: 1 });
       drawRegularTextLine('Date:', customerSigX, signatureYPos - lineSpacing);
-      drawLine(customerSigX + 40, signatureYPos - lineSpacing + 3, customerSigX + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1); // Line for date
+      drawLine(customerSigX + 40, signatureYPos - lineSpacing + 3, customerSigX + signatureBoxWidth, signatureYPos - lineSpacing + 3, 1); 
 
-      yPos = signatureYPos - lineSpacing * 2; // Update yPos after signatures
+      yPos = signatureYPos - lineSpacing * 2; 
 
-      // Footer text - ensure it's on the page
        if (yPos < margin + 50) {
            page = pdfDoc.addPage([600, 850]); yPos = height - margin;
        }
       const footerText1 = "This agreement constitutes the entire understanding between the parties named herein.";
-      // Simplified footer text for brevity, can be expanded.
       const footerText2 = `Carrier's liability for cargo loss or damage is limited to $100,000 unless otherwise agreed...`; 
       yPos = drawTextLine(footerText1, font, smallFontSize, margin, yPos, rgb(0.3,0.3,0.3));
       yPos = drawTextLine(footerText2, font, smallFontSize, margin, yPos, rgb(0.3,0.3,0.3));
@@ -1158,7 +1112,7 @@ export default function DashDispatchProApp() {
                                         generateAgreement={generateAgreement}
                                         approveClientLoadRequest={approveClientLoadRequest}
                                         isSubmittingLoad={isSubmitting}
-                                        isUpdatingStatus={isSubmitting} // Can be the same as isSubmittingLoad if operations are mutually exclusive
+                                        isUpdatingStatus={isSubmitting} 
                                       />}
           {activeTab === 'expenses' && <ExpensesPage
                                           expenses={expenses}
@@ -1186,7 +1140,7 @@ export default function DashDispatchProApp() {
                                           setSettingsForm={setSettingsForm}
                                           updateSettings={updateSettings}
                                           isSavingSettings={isSubmitting}
-                                          initialSettings={initialSettings} // Pass initialSettings
+                                          initialSettings={initialSettings} 
                                         />}
         </main>
         <AppFooter />
@@ -1194,7 +1148,6 @@ export default function DashDispatchProApp() {
     );
   }
 
-  // Fallback / unexpected state
   return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />

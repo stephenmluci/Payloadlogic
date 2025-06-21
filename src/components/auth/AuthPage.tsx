@@ -1,6 +1,7 @@
 
 'use client';
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -123,6 +124,17 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
           <Button variant="link" onClick={toggleFormMode} className="text-sm">
             {isSigningUp ? "Already have an account? Sign In" : "Don't have an account? Sign Up"}
           </Button>
+           <div className="text-center text-xs text-muted-foreground pt-4">
+            By continuing, you agree to our{' '}
+            <Link href="/terms-of-service" className="underline hover:text-primary">
+              Terms of Service
+            </Link>{' '}
+            and{' '}
+            <Link href="/privacy-policy" className="underline hover:text-primary">
+              Privacy Policy
+            </Link>
+            .
+          </div>
         </CardFooter>
       </Card>
     </div>

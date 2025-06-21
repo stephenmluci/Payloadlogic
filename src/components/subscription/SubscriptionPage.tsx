@@ -2,6 +2,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { CheckCircle, Zap, ShieldCheck } from 'lucide-react';
@@ -101,7 +102,15 @@ export function SubscriptionPage({ userDisplayName, onStartTrial }: Subscription
         </CardContent>
          <CardFooter className="text-center justify-center p-4 bg-muted/30">
             <p className="text-xs text-muted-foreground">
-                By choosing a plan, you agree to our Terms of Service and Privacy Policy.
+                By choosing a plan, you agree to our{' '}
+                <Link href="/terms-of-service" className="underline hover:text-primary">
+                  Terms of Service
+                </Link>{' '}
+                and{' '}
+                <Link href="/privacy-policy" className="underline hover:text-primary">
+                  Privacy Policy
+                </Link>
+                .
             </p>
         </CardFooter>
       </Card>

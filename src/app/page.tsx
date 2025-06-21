@@ -343,15 +343,23 @@ export default function DashDispatchProApp() {
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(authUser => {
       if (IS_ADMIN_REVIEW_MODE && !isTrialSession) {
+        if (user?.uid === mockReviewUser.uid) return; // Guard against loop
         fetchUserProfileAndData(mockReviewUser);
         return;
       }
 
       if (authUser) {
-        if (!user || user.uid !== authUser.uid || !user.role) {
-             fetchUserProfileAndData(authUser);
+        if (isTrialSession) {
+          if (user?.uid === authUser.uid) return; // Guard against loop for trial
+          fetchUserProfileAndData(authUser);
+        } else {
+          // Regular user flow
+          if (!user || user.uid !== authUser.uid || !user.role) {
+            fetchUserProfileAndData(authUser);
+          }
         }
       } else {
+        // Logged out
         setUser(null);
         setIsTrialSession(false);
         setLoads([]); setExpenses([]); setClients([]); setClientLoadRequests([]);
@@ -1237,3 +1245,5 @@ export default function DashDispatchProApp() {
       </div>
     );
 }
+
+    

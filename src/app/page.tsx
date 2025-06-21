@@ -189,7 +189,26 @@ const parseDimensionString = (dimStr: string | undefined): { length: number | nu
   return { length, width, height };
 };
 
-const MAX_CARGO_HEIGHT_FEET = 101 / 12; // 8 feet 5 inches
+const parseSingleDimensionToFeet = (dimStr: string | undefined): number | null => {
+  if (!dimStr || typeof dimStr !== 'string') return null;
+  // Regex to capture a number (including decimals) and an optional unit (ft, ', in, ")
+  const match = dimStr.trim().match(/^(\d+(?:\.\d+)?)\s*(ft|'|in|"|)/i);
+  
+  if (match) {
+    const num = parseFloat(match[1]);
+    const unit = match[2]?.toLowerCase();
+    if (unit === 'in' || unit === '"') {
+      return num / 12;
+    }
+    return num; // Assumes feet for 'ft', "'", or no matched unit
+  }
+  
+  // Fallback for unitless number
+  const num = parseFloat(dimStr);
+  return isNaN(num) ? null : num;
+};
+
+const MAX_TOTAL_HEIGHT_FEET = 13.5; // 13 feet 6 inches
 
 
 export default function DashDispatchProApp() {
@@ -484,14 +503,21 @@ export default function DashDispatchProApp() {
     if (dataWithCalculations.cargoDimensions) {
       const parsedTrailerDims = parseDimensionString(settings.trailerDimensions);
       const parsedCargoDims = parseDimensionString(dataWithCalculations.cargoDimensions);
+      const trailerDeckHeightFeet = parseSingleDimensionToFeet(settings.trailerDeckHeight);
 
       let validationFailed = false;
       const messages: string[] = [];
 
-      if (parsedCargoDims.height !== null && parsedCargoDims.height > MAX_CARGO_HEIGHT_FEET) {
-        messages.push(`Height (${parsedCargoDims.height.toFixed(2)}ft) exceeds max ${MAX_CARGO_HEIGHT_FEET.toFixed(2)}ft (8'5").`);
-        validationFailed = true;
+      if (parsedCargoDims.height !== null && trailerDeckHeightFeet !== null) {
+        const totalHeight = parsedCargoDims.height + trailerDeckHeightFeet;
+        if (totalHeight > MAX_TOTAL_HEIGHT_FEET) {
+          messages.push(`Total height (Deck ${trailerDeckHeightFeet.toFixed(2)}ft + Cargo ${parsedCargoDims.height.toFixed(2)}ft = ${totalHeight.toFixed(2)}ft) exceeds max legal height of ${MAX_TOTAL_HEIGHT_FEET}ft (13'6").`);
+          validationFailed = true;
+        }
+      } else if (parsedCargoDims.height !== null && trailerDeckHeightFeet === null) {
+        messages.push(`Trailer Deck Height is not defined in settings; could not validate total height.`);
       }
+
 
       if (parsedTrailerDims.length !== null && parsedCargoDims.length !== null && parsedCargoDims.length > parsedTrailerDims.length) {
         messages.push(`Length (${parsedCargoDims.length.toFixed(2)}ft) exceeds trailer length (${parsedTrailerDims.length.toFixed(2)}ft).`);

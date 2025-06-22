@@ -55,7 +55,15 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
     return sum;
   }, 0);
 
-  const totalOtherManualExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  // Only sum up manual expenses that are NOT associated with a load.
+  // Load-associated manual expenses are already accounted for in the load.expenses object.
+  const totalOtherManualExpenses = expenses.reduce((sum, expense) => {
+    if (!expense.loadId) {
+      return sum + expense.amount;
+    }
+    return sum;
+  }, 0);
+
   const totalCalculatedExpenses = totalLoadRelatedExpensesFromLoads + totalOtherManualExpenses;
   
   const netProfit = totalIncome - totalCalculatedExpenses;
@@ -72,9 +80,10 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
       }
     }
   });
-
+  
+  // Subtract general (non-load) expenses from weekly profit
   expenses.forEach(expense => {
-    if (expense.date) {
+    if (!expense.loadId && expense.date) {
       const weekKey = getWeekKey(expense.date);
       if (weekKey) {
         weeklyProfitAccumulator[weekKey] = (weeklyProfitAccumulator[weekKey] || 0) - expense.amount;
@@ -116,8 +125,9 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
     }
   });
 
+  // Only process manual expenses that are NOT associated with a load, as the others are already accounted for.
   expenses.forEach(expense => {
-    if (expense.date && expense.amount > 0) {
+    if (!expense.loadId && expense.date && expense.amount > 0) {
       const weekKey = getWeekKey(expense.date);
       if (weekKey) {
         addExpenseToAggregator(weekKey, `Manual: ${expense.category}`, expense.amount);

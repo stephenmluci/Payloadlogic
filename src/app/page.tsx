@@ -390,10 +390,8 @@ export default function DashDispatchProApp() {
     }
     
     if (authUser) {
-      if (isTrialSession && (!user || appDisplayState !== 'admin_dashboard' && appDisplayState !== 'client_portal')) {
-        fetchUserProfileAndData(authUser);
-      } else if (!isTrialSession && (!user || user.uid !== authUser.uid || !user.role)) {
-        fetchUserProfileAndData(authUser);
+      if (!user || user.uid !== authUser.uid || (isTrialSession && !user.isAnonymous)) {
+          fetchUserProfileAndData(authUser);
       }
     } else {
       if (user) {
@@ -719,53 +717,70 @@ export default function DashDispatchProApp() {
   const updateLoad = useCallback(async (id: string, updates: Partial<Load>) => {
     if (!user || user.role !== 'admin') return;
 
-    const currentLoad = loads.find(l => l.id === id);
-    if (!currentLoad) {
-        toast({ variant: "destructive", title: "Error", description: "Load not found for update."});
-        return;
-    }
-    
-    let finalUpdates = { ...updates };
-    if (updates.distance !== undefined || updates.ratePerMile !== undefined || updates.tarpingFee !== undefined) {
-        const newDistance = updates.distance !== undefined ? updates.distance : currentLoad.distance;
-        const newRatePerMile = updates.ratePerMile !== undefined ? updates.ratePerMile : currentLoad.ratePerMile;
-        const newTarpingFee = updates.tarpingFee !== undefined ? updates.tarpingFee : (currentLoad.tarpingFee || 0);
-        finalUpdates.totalAgreedRate = (newDistance * newRatePerMile) + newTarpingFee;
-    }
-    if (updates.distance !== undefined && settings.truckAverageSpeed > 0) {
-        finalUpdates.estimatedDriveTimeHours = updates.distance / settings.truckAverageSpeed;
-    } else if (updates.distance !== undefined) { 
-        finalUpdates.estimatedDriveTimeHours = undefined;
-    }
-    if (updates.expenses && currentLoad.expenses) {
-        finalUpdates.expenses = { ...currentLoad.expenses, ...updates.expenses };
-    }
-
+    const calculateFinalUpdates = (currentLoad: Load): Partial<Load> => {
+        let finalUpdates = { ...updates };
+        if (updates.distance !== undefined || updates.ratePerMile !== undefined || updates.tarpingFee !== undefined) {
+            const newDistance = updates.distance !== undefined ? updates.distance : currentLoad.distance;
+            const newRatePerMile = updates.ratePerMile !== undefined ? updates.ratePerMile : currentLoad.ratePerMile;
+            const newTarpingFee = updates.tarpingFee !== undefined ? updates.tarpingFee : (currentLoad.tarpingFee || 0);
+            finalUpdates.totalAgreedRate = (newDistance * newRatePerMile) + newTarpingFee;
+        }
+        if (updates.distance !== undefined && settings.truckAverageSpeed > 0) {
+            finalUpdates.estimatedDriveTimeHours = updates.distance / settings.truckAverageSpeed;
+        } else if (updates.distance !== undefined) {
+            finalUpdates.estimatedDriveTimeHours = undefined;
+        }
+        if (updates.expenses && currentLoad.expenses) {
+            finalUpdates.expenses = { ...currentLoad.expenses, ...updates.expenses };
+        }
+        return finalUpdates;
+    };
 
     if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
-        setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...l, ...finalUpdates } as Load : l));
-        let description = "Trial/Review: Load details updated locally.";
-        if (updates.status && updates.status !== currentLoad.status) {
-            description = `Trial/Review: Load status changed to ${updates.status} locally.`;
-            const client = clients.find(c => c.id === currentLoad.clientId);
-            if (client && client.contactEmail) {
-                const subject = `Load Update: ${currentLoad.loadNumber || id} - Status: ${updates.status}`;
-                const body = `Dear ${client.contactName || client.companyName},<br><br>The status of your load (${currentLoad.origin} to ${currentLoad.destination}, ID: ${currentLoad.loadNumber || id}) has been updated to: <strong>${updates.status.toUpperCase()}</strong>.<br><br>Thank you,<br>Dash Dispatch Pro`;
-                console.log(`TRIAL/REVIEW: Would send email to ${client.contactEmail} - Subject: ${subject}`);
-                toast({ title: "Trial/Review: Client Notification", description: `Simulated notification for status: ${updates.status}.` });
+        let originalLoad: Load | undefined;
+        setLoads(prevLoads => {
+            const newLoads = prevLoads.map(l => {
+                if (l.id === id) {
+                    originalLoad = l;
+                    const finalUpdates = calculateFinalUpdates(l);
+                    return { ...l, ...finalUpdates } as Load;
+                }
+                return l;
+            });
+            return newLoads;
+        });
+
+        if (originalLoad) {
+            let description = "Trial/Review: Load details updated locally.";
+            if (updates.status && updates.status !== originalLoad.status) {
+                description = `Trial/Review: Load status changed to ${updates.status} locally.`;
+                const client = clients.find(c => c.id === originalLoad!.clientId);
+                if (client && client.contactEmail) {
+                    const subject = `Load Update: ${originalLoad.loadNumber || id} - Status: ${updates.status}`;
+                    const body = `Dear ${client.contactName || client.companyName},<br><br>The status of your load (${originalLoad.origin} to ${originalLoad.destination}, ID: ${originalLoad.loadNumber || id}) has been updated to: <strong>${updates.status.toUpperCase()}</strong>.<br><br>Thank you,<br>Dash Dispatch Pro`;
+                    console.log(`TRIAL/REVIEW: Would send email to ${client.contactEmail} - Subject: ${subject}`);
+                    toast({ title: "Trial/Review: Client Notification", description: `Simulated notification for status: ${updates.status}.` });
+                }
             }
+            else if (updates.expenses?.calculated) description = "Trial/Review: Load expenses calculated locally.";
+            toast({ title: "Trial/Review: Load Updated", description });
         }
-        else if (updates.expenses?.calculated) description = "Trial/Review: Load expenses calculated locally.";
-        toast({ title: "Trial/Review: Load Updated", description });
         return;
     }
 
     try {
       const loadRef = doc(db, `users/${user.uid}/loads`, id);
+      const docSnap = await getDoc(loadRef);
+      if (!docSnap.exists()) {
+          toast({ variant: "destructive", title: "Error", description: "Load not found for update."});
+          return;
+      }
+      const currentLoad = { id: docSnap.id, ...docSnap.data() } as Load;
+      const finalUpdates = calculateFinalUpdates(currentLoad);
+
       await updateDoc(loadRef, finalUpdates);
       
-      const updatedLoadsState = loads.map(l => l.id === id ? { ...l, ...finalUpdates } as Load : l);
-      setLoads(updatedLoadsState);
+      setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...currentLoad, ...finalUpdates } as Load : l));
 
       let toastMessage = "Load details saved.";
       if (updates.status && updates.status !== currentLoad.status) toastMessage = `Load status changed to ${updates.status}.`;
@@ -820,7 +835,7 @@ export default function DashDispatchProApp() {
       console.error('Error updating load:', error);
       toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
     }
-  }, [user, toast, loads, settings, isTrialSession, clients]); 
+  }, [user, toast, settings, isTrialSession, clients]); 
 
   const handleDeleteLoad = async (loadId: string) => {
     if (!user || user.role !== 'admin') return;

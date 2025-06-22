@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, query, orderBy, limit } from 'firebase/firestore';
 import type { User as FirebaseUser } from 'firebase/auth'; // Renamed to avoid conflict with local User type
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { db, auth } from '@/lib/firebase';
 import type { User, Load, Expense, Client, Settings, UserProfile, ClientLoadRequest } from '@/types';
@@ -214,6 +214,7 @@ const MAX_TOTAL_HEIGHT_FEET = 13.5; // 13 feet 6 inches
 export default function DashDispatchProApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [user, setUser] = useState<User | null>(null);
+  const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
   
   const [appDisplayState, setAppDisplayState] = useState<AppDisplayState>('loading');
   const [isTrialSession, setIsTrialSession] = useState(false);
@@ -258,14 +259,7 @@ export default function DashDispatchProApp() {
     }
   }, [activeTab]);
 
-  const fetchUserProfileAndData = useCallback(async (currentUser: FirebaseUser | User | null) => {
-    if (!currentUser) {
-      setUser(null);
-      setIsTrialSession(false); 
-      setAppDisplayState('auth');
-      return;
-    }
-  
+  const fetchUserProfileAndData = useCallback(async (currentUser: FirebaseUser | User) => {
     if (IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) {
       setUser(mockReviewUser);
       setLoads([]); setExpenses([]); setClients([]); setClientLoadRequests([]);
@@ -359,35 +353,36 @@ export default function DashDispatchProApp() {
   }, [toast, isTrialSession]); 
 
 
+  // Effect 1: Handles Firebase auth state changes ONLY
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(authUser => {
-      if (IS_ADMIN_REVIEW_MODE && !isTrialSession) {
-        if (user?.uid === mockReviewUser.uid) return; // Guard against loop
-        fetchUserProfileAndData(mockReviewUser);
-        return;
-      }
-
-      if (authUser) {
-        if (isTrialSession) {
-          if (user?.uid === authUser.uid) return; // Guard against loop for trial
-          fetchUserProfileAndData(authUser);
-        } else {
-          // Regular user flow
-          if (!user || user.uid !== authUser.uid || !user.role) {
-            fetchUserProfileAndData(authUser);
-          }
-        }
-      } else {
-        // Logged out
-        setUser(null);
-        setIsTrialSession(false);
-        setLoads([]); setExpenses([]); setClients([]); setClientLoadRequests([]);
-        setSettings(initialSettings); setSettingsForm(initialSettings);
-        setAppDisplayState('auth');
-      }
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setAuthUser(user);
     });
     return () => unsubscribe();
-  }, [fetchUserProfileAndData, isTrialSession, user]);
+  }, []);
+
+  // Effect 2: Reacts to authUser changes to fetch data or reset state
+  useEffect(() => {
+    const handleLogoutState = () => {
+      setUser(null);
+      setIsTrialSession(false);
+      setLoads([]);
+      setExpenses([]);
+      setClients([]);
+      setClientLoadRequests([]);
+      setSettings(initialSettings);
+      setSettingsForm(initialSettings);
+      setAppDisplayState('auth');
+    };
+
+    if (IS_ADMIN_REVIEW_MODE && !isTrialSession) {
+      fetchUserProfileAndData(mockReviewUser);
+    } else if (authUser) {
+      fetchUserProfileAndData(authUser);
+    } else {
+      handleLogoutState();
+    }
+  }, [authUser, isTrialSession, fetchUserProfileAndData]);
 
 
   const handleSignUp = async (role: 'admin' | 'client' = 'admin') => {
@@ -401,8 +396,8 @@ export default function DashDispatchProApp() {
       const profileRef = doc(db, `users/${userCredential.user.uid}/profile`);
       await setDoc(profileRef, { role }); 
 
-      setUser({ ...userCredential.user, role: role });
-      setAppDisplayState('subscription_choice'); 
+      // No need to call setUser or setAppDisplayState here.
+      // The onAuthStateChanged listener will pick up the new user and trigger the data fetching effect.
       toast({ title: "Account Created", description: `Welcome! Please choose your subscription.` });
     } catch (error: any) {
       console.error('Sign up error:', error);
@@ -423,6 +418,7 @@ export default function DashDispatchProApp() {
     try {
       await signInWithEmailAndPassword(auth, email, password);
       toast({ title: "Signed In", description: "Welcome back!" });
+      // onAuthStateChanged listener will handle the rest.
     } catch (error: any) {
       console.error('Sign in error:', error);
       toast({ variant: "destructive", title: "Sign In Error", description: error.message });
@@ -432,13 +428,13 @@ export default function DashDispatchProApp() {
   };
   
   const handleStartTrial = () => {
-    if (!user) { 
+    if (!authUser) { 
         setAppDisplayState('auth');
         toast({variant: "destructive", title: "Error", description: "User not found for trial."});
         return;
     }
     setIsTrialSession(true); 
-    fetchUserProfileAndData(user);
+    // The useEffect hook will now re-run with isTrialSession=true and handle the state change.
     toast({ title: "Free Trial Started", description: "Enjoy your free trial! Data will not be saved." });
   };
 
@@ -446,6 +442,7 @@ export default function DashDispatchProApp() {
   const handleSignOut = async () => {
     if (IS_ADMIN_REVIEW_MODE && !isTrialSession) {
       setUser(null); 
+      setAuthUser(null);
       setAppDisplayState('auth'); 
       toast({ title: "Admin Review Mode", description: "Exited review session." });
       return;
@@ -453,6 +450,7 @@ export default function DashDispatchProApp() {
     setIsSubmitting(true);
     try {
       await signOut(auth);
+      // onAuthStateChanged listener will handle resetting state.
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
     } catch (error: any) {
       console.error('Sign out error:', error);

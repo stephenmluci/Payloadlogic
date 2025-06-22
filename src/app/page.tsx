@@ -1,7 +1,7 @@
 
 'use client';
 import React, { useState, useEffect, useCallback } from 'react';
-import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, query, orderBy, limit } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, getDoc, query, orderBy, limit, writeBatch } from 'firebase/firestore';
 import type { User as FirebaseUser } from 'firebase/auth'; // Renamed to avoid conflict with local User type
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
@@ -268,6 +268,7 @@ export default function DashDispatchProApp() {
 
   const fetchUserProfileAndData = useCallback(async (currentUser: FirebaseUser | User) => {
     if (IS_ADMIN_REVIEW_MODE && currentUser.uid === mockReviewUser.uid) {
+      if (user?.uid === mockReviewUser.uid) return; // Guard against re-fetch
       setUser(mockReviewUser);
       setLoads([]); setExpenses([]); setClients([]); setClientLoadRequests([]);
       const reviewSettings = { ...initialSettings };
@@ -357,7 +358,7 @@ export default function DashDispatchProApp() {
       toast({ variant: "destructive", title: "Fetch Error", description: error.message });
       setAppDisplayState('auth'); 
     }
-  }, [toast, isTrialSession]); 
+  }, [toast, isTrialSession, user?.uid]); 
 
 
   // Effect 1: Handles Firebase auth state changes ONLY
@@ -382,7 +383,7 @@ export default function DashDispatchProApp() {
       setAppDisplayState('auth');
     };
 
-    if (IS_ADMIN_REVIEW_MODE && !isTrialSession && (!user || user.uid !== mockReviewUser.uid)) {
+    if (IS_ADMIN_REVIEW_MODE && !isTrialSession) {
       if (appDisplayState === 'loading' || user?.uid !== mockReviewUser.uid) {
         fetchUserProfileAndData(mockReviewUser);
       }
@@ -428,7 +429,7 @@ export default function DashDispatchProApp() {
 
   const handleSignIn = async () => {
     if (IS_ADMIN_REVIEW_MODE && !isTrialSession && email === mockReviewUser.email) {
-      fetchUserProfileAndData(mockReviewUser); 
+      if(user?.uid !== mockReviewUser.uid) fetchUserProfileAndData(mockReviewUser); 
       toast({ title: "Admin Review Mode", description: "Review session refreshed." });
       return;
     }
@@ -972,10 +973,12 @@ export default function DashDispatchProApp() {
   };
 
   useEffect(() => {
-    if (user?.role !== 'admin') return;
+    if (user?.role !== 'admin' || !loads.length) return;
 
-    const allCurrentLoads = [...loads]; 
-    loads.forEach(load => {
+    const updatesToApply = new Map<string, Partial<Load>>();
+    const allCurrentLoads = [...loads];
+
+    allCurrentLoads.forEach(load => {
       if (load.status === 'delivered' && load.id) {
         const loadSpecificExpenses = expenses.filter(exp => exp.loadId === load.id);
         const manualFuelExpense = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'fuel');
@@ -1036,11 +1039,44 @@ export default function DashDispatchProApp() {
           existingExpenses.def !== newExpensesPayload.def ||
           existingExpenses.recurring !== newExpensesPayload.recurring
         ) {
-          updateLoad(load.id, { expenses: newExpensesPayload });
+          updatesToApply.set(load.id, { expenses: newExpensesPayload });
         }
       }
     });
-  }, [loads, settings, expenses, user, updateLoad, isTrialSession]); 
+    
+    if (updatesToApply.size > 0) {
+      if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
+        setLoads(prevLoads =>
+          prevLoads.map(load =>
+            load.id && updatesToApply.has(load.id)
+              ? { ...load, ...updatesToApply.get(load.id) }
+              : load
+          )
+        );
+        return;
+      }
+      
+      const batch = writeBatch(db);
+      updatesToApply.forEach((updates, id) => {
+        const loadRef = doc(db, `users/${user.uid}/loads`, id);
+        batch.update(loadRef, updates);
+      });
+
+      batch.commit().then(() => {
+        setLoads(prevLoads =>
+          prevLoads.map(load =>
+            load.id && updatesToApply.has(load.id)
+              ? { ...load, ...updatesToApply.get(load.id) }
+              : load
+          )
+        );
+      }).catch(error => {
+        console.error("Error batch updating load expenses:", error);
+        toast({ variant: "destructive", title: "Error Calculating Expenses", description: "Could not save all calculated load expenses." });
+      });
+    }
+
+  }, [loads, settings, expenses, user, toast, isTrialSession]);
 
   const generateAgreement = async (loadData: Load) => {
     if (!user || user.role !== 'admin') return;

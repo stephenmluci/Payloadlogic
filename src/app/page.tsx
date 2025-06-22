@@ -355,8 +355,8 @@ export default function DashDispatchProApp() {
 
   // Effect 1: Handles Firebase auth state changes ONLY
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setAuthUser(user);
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+        setAuthUser(firebaseUser);
     });
     return () => unsubscribe();
   }, []);
@@ -375,14 +375,19 @@ export default function DashDispatchProApp() {
       setAppDisplayState('auth');
     };
 
-    if (IS_ADMIN_REVIEW_MODE && !isTrialSession) {
+    if (IS_ADMIN_REVIEW_MODE && !isTrialSession && (!user || user.uid !== mockReviewUser.uid)) {
       fetchUserProfileAndData(mockReviewUser);
     } else if (authUser) {
-      fetchUserProfileAndData(authUser);
+      if (!user || user.uid !== authUser.uid) {
+         fetchUserProfileAndData(authUser);
+      } else if (isTrialSession && appDisplayState !== 'admin_dashboard' && appDisplayState !== 'client_portal') {
+         fetchUserProfileAndData(authUser);
+      }
     } else {
-      handleLogoutState();
+      if (user) handleLogoutState();
+      else if (appDisplayState !== 'auth') setAppDisplayState('auth');
     }
-  }, [authUser, isTrialSession, fetchUserProfileAndData]);
+  }, [authUser, isTrialSession, fetchUserProfileAndData, user, appDisplayState]);
 
 
   const handleSignUp = async (role: 'admin' | 'client' = 'admin') => {
@@ -941,7 +946,7 @@ export default function DashDispatchProApp() {
 
     const allCurrentLoads = [...loads]; 
     loads.forEach(load => {
-      if (load.status === 'delivered' && !load.expenses.calculated && load.id) {
+      if (load.status === 'delivered' && load.id) {
         const loadSpecificExpenses = expenses.filter(exp => exp.loadId === load.id);
         const manualFuelExpense = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'fuel');
         const fuelCost = manualFuelExpense ? manualFuelExpense.amount
@@ -985,13 +990,24 @@ export default function DashDispatchProApp() {
         const totalDaysToAccountForRecurring = durationInDaysForCurrentLoad + idleDaysBeforeThisLoad;
         const totalRecurringForLoad = dailyRecurringSum * totalDaysToAccountForRecurring;
 
-        updateLoad(load.id, {
-          expenses: {
-            payroll: parseFloat(payroll.toFixed(2)), fuel: parseFloat(fuelCost.toFixed(2)),
-            def: parseFloat(defCost.toFixed(2)), recurring: parseFloat(totalRecurringForLoad.toFixed(2)),
-            calculated: true
-          }
-        });
+        const newExpensesPayload = {
+          payroll: parseFloat(payroll.toFixed(2)),
+          fuel: parseFloat(fuelCost.toFixed(2)),
+          def: parseFloat(defCost.toFixed(2)),
+          recurring: parseFloat(totalRecurringForLoad.toFixed(2)),
+          calculated: true
+        };
+
+        const existingExpenses = load.expenses;
+        if (
+          !existingExpenses.calculated ||
+          existingExpenses.payroll !== newExpensesPayload.payroll ||
+          existingExpenses.fuel !== newExpensesPayload.fuel ||
+          existingExpenses.def !== newExpensesPayload.def ||
+          existingExpenses.recurring !== newExpensesPayload.recurring
+        ) {
+          updateLoad(load.id, { expenses: newExpensesPayload });
+        }
       }
     });
   }, [loads, settings, expenses, user, updateLoad, isTrialSession]); 

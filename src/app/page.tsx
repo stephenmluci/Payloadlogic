@@ -210,6 +210,13 @@ const parseSingleDimensionToFeet = (dimStr: string | undefined): number | null =
 
 const MAX_TOTAL_HEIGHT_FEET = 13.5; // 13 feet 6 inches
 
+const navTabs = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'loads', label: 'Loads', icon: Package },
+    { id: 'expenses', label: 'Expenses', icon: DollarSign },
+    { id: 'clients', label: 'Clients', icon: Users },
+    { id: 'settings', label: 'Settings', icon: Cog },
+];
 
 export default function DashDispatchProApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -376,16 +383,24 @@ export default function DashDispatchProApp() {
     };
 
     if (IS_ADMIN_REVIEW_MODE && !isTrialSession && (!user || user.uid !== mockReviewUser.uid)) {
-      fetchUserProfileAndData(mockReviewUser);
-    } else if (authUser) {
-      if (!user || user.uid !== authUser.uid) {
-         fetchUserProfileAndData(authUser);
-      } else if (isTrialSession && appDisplayState !== 'admin_dashboard' && appDisplayState !== 'client_portal') {
-         fetchUserProfileAndData(authUser);
+      if (appDisplayState === 'loading' || user?.uid !== mockReviewUser.uid) {
+        fetchUserProfileAndData(mockReviewUser);
+      }
+      return; 
+    }
+    
+    if (authUser) {
+      if (isTrialSession && (!user || appDisplayState !== 'admin_dashboard' && appDisplayState !== 'client_portal')) {
+        fetchUserProfileAndData(authUser);
+      } else if (!isTrialSession && (!user || user.uid !== authUser.uid || !user.role)) {
+        fetchUserProfileAndData(authUser);
       }
     } else {
-      if (user) handleLogoutState();
-      else if (appDisplayState !== 'auth') setAppDisplayState('auth');
+      if (user) {
+        handleLogoutState();
+      } else if (appDisplayState !== 'auth') {
+        setAppDisplayState('auth');
+      }
     }
   }, [authUser, isTrialSession, fetchUserProfileAndData, user, appDisplayState]);
 
@@ -1178,15 +1193,6 @@ export default function DashDispatchProApp() {
     } finally { setIsSubmitting(false); }
   };
 
-
-  const navTabs = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'loads', label: 'Loads', icon: Package },
-    { id: 'expenses', label: 'Expenses', icon: DollarSign },
-    { id: 'clients', label: 'Clients', icon: Users },
-    { id: 'settings', label: 'Settings', icon: Cog },
-  ];
-
   if (appDisplayState === 'loading' || (IS_ADMIN_REVIEW_MODE && !user && !isTrialSession)) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background">
@@ -1285,5 +1291,3 @@ export default function DashDispatchProApp() {
       </div>
     );
 }
-
-    

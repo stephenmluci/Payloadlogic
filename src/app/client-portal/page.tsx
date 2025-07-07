@@ -8,26 +8,21 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useToast } from '@/hooks/use-toast';
 import { db, auth } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import type { User, ClientLoadRequest } from '@/types';
+import type { ClientLoadRequest } from '@/types';
 import { ClientLoadRequestForm } from '@/components/client-portal/ClientLoadRequestForm';
 import { LogOut, Truck, Loader2 } from 'lucide-react';
-import { formatISO, addHours } from 'date-fns';
-
-type ClientPortalPageProps = {
-  user: User | null;
-  onSignOut: () => Promise<void>;
-  isTrialSession?: boolean; // Added prop
-};
+import { addHours } from 'date-fns';
+import { useApp } from '@/context/AppContext';
 
 const toDateTimeLocalInput = (date: Date): string => {
   const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return localDate.toISOString().slice(0, 16);
 };
 
-
-export default function ClientPortalPage({ user, onSignOut, isTrialSession = false }: ClientPortalPageProps) {
+export default function ClientPortalPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { user, handleSignOut, isTrialSession } = useApp();
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const getInitialRequestFormState = (): Omit<ClientLoadRequest, 'id' | 'requestedByClientUid' | 'requestedByClientName' | 'submissionTimestamp' | 'status'> => {
@@ -41,8 +36,8 @@ export default function ClientPortalPage({ user, onSignOut, isTrialSession = fal
       cargoDescription: '',
       requestedPickupDateTime: pickupDateTime,
       requestedDeliveryDateTime: deliveryDateTime,
-      requestContactName: auth.currentUser?.displayName || '',
-      requestContactEmail: auth.currentUser?.email || '',
+      requestContactName: user?.displayName || '',
+      requestContactEmail: user?.email || '',
       requestContactPhone: '',
     };
   };
@@ -50,15 +45,14 @@ export default function ClientPortalPage({ user, onSignOut, isTrialSession = fal
   const [requestForm, setRequestForm] = useState(getInitialRequestFormState());
 
   useEffect(() => {
-    if (auth.currentUser) {
+    if (user) {
        setRequestForm(prev => ({
            ...prev,
-           requestContactName: auth.currentUser?.displayName || prev.requestContactName || '',
-           requestContactEmail: auth.currentUser?.email || prev.requestContactEmail || '',
+           requestContactName: user.displayName || prev.requestContactName || '',
+           requestContactEmail: user.email || prev.requestContactEmail || '',
        }));
     }
   }, [user]);
-
 
   if (!user || user.role !== 'client') {
     if (typeof window !== 'undefined') router.push('/');
@@ -125,7 +119,7 @@ export default function ClientPortalPage({ user, onSignOut, isTrialSession = fal
           {user && (
             <div className="flex items-center space-x-4">
               <span className="text-sm hidden md:inline">Welcome, {user.displayName || user.email} {isTrialSession ? "(Trial Mode)" : ""}</span>
-              <Button variant="ghost" size="icon" onClick={onSignOut} aria-label="Sign Out">
+              <Button variant="ghost" size="icon" onClick={handleSignOut} aria-label="Sign Out">
                 <LogOut className="h-5 w-5" />
               </Button>
             </div>

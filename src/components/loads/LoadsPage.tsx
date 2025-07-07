@@ -1,54 +1,36 @@
 
 import React from 'react';
-import type { Load, Client, ClientLoadRequest, Settings } from '@/types';
+import type { Client } from '@/types';
 import { LoadForm } from './LoadForm';
 import { LoadCard } from './LoadCard';
 import { ClientLoadRequestCard } from './ClientLoadRequestCard'; 
 import { PackageOpen, FileInput } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useApp } from '@/context/AppContext';
 
-type LoadsPageProps = {
-  loads: Load[];
-  clients: Client[]; 
-  clientLoadRequests: ClientLoadRequest[];
-  settings: Settings; // Added settings
-  loadForm: Partial<Load>; 
-  setLoadForm: React.Dispatch<React.SetStateAction<Partial<Load>>>;
-  editingLoadId: string | null;
-  onSaveLoad: (loadData?: Partial<Load>) => Promise<void>; 
-  onEditLoad: (load: Load) => void;
-  onDeleteLoad: (loadId: string) => Promise<void>;
-  onCancelEditLoad: () => void;
-  updateLoadStatus: (id: string, status: Load['status']) => Promise<void>;
-  generateAgreement: (load: Load) => Promise<void>;
-  approveClientLoadRequest: (request: ClientLoadRequest) => Promise<void>;
-  isSubmittingLoad: boolean;
-  isUpdatingStatus: boolean;
-};
-
-export function LoadsPage({ 
-  loads, 
-  clients, 
-  clientLoadRequests,
-  settings, // Destructure settings
-  loadForm, 
-  setLoadForm, 
-  editingLoadId,
-  onSaveLoad,
-  onEditLoad,
-  onDeleteLoad,
-  onCancelEditLoad,
-  updateLoadStatus, 
-  generateAgreement,
-  approveClientLoadRequest,
-  isSubmittingLoad,
-  isUpdatingStatus
-}: LoadsPageProps) {
+export function LoadsPage() {
+  const {
+    loads, 
+    clients, 
+    clientLoadRequests,
+    settings,
+    loadForm, 
+    setLoadForm, 
+    editingLoadId,
+    handleSaveLoad,
+    handleStartEditLoad,
+    handleDeleteLoad,
+    handleCancelEditLoad,
+    updateLoad, 
+    generateAgreement,
+    approveClientLoadRequest,
+    isSubmitting: isSubmittingLoad,
+  } = useApp();
   
   const handleLoadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await onSaveLoad(); 
+    await handleSaveLoad(); 
   };
 
   const activeLoads = loads.filter(load => load.status !== 'delivered');
@@ -56,22 +38,17 @@ export function LoadsPage({
   const newClientRequests = clientLoadRequests.filter(req => req.status === 'new');
   const processedClientRequests = clientLoadRequests.filter(req => req.status !== 'new');
 
-  const getClientForLoad = (load: Load): Client | undefined => {
+  const getClientForLoad = (load: any): Client | undefined => {
     return clients.find(c => c.id === load.clientId);
   };
 
-  // Determine active tab for the inner Tabs component
   const [innerActiveTab, setInnerActiveTab] = React.useState(editingLoadId ? "createLoad" : "createLoad");
 
   React.useEffect(() => {
-    // If editingLoadId changes, and it's set, switch to the form tab
     if (editingLoadId) {
       setInnerActiveTab("createLoad");
     }
-    // If editingLoadId is cleared (e.g., after save/cancel), could switch or stay.
-    // Current behavior: stays on createLoad tab.
   }, [editingLoadId]);
-
 
   return (
     <div className="p-4 md:p-6 space-y-8">
@@ -91,7 +68,7 @@ export function LoadsPage({
             setLoadForm={setLoadForm}
             clients={clients}
             onSubmit={handleLoadSubmit}
-            onCancelEdit={onCancelEditLoad}
+            onCancelEdit={handleCancelEditLoad}
             isSubmitting={isSubmittingLoad}
             editingLoadId={editingLoadId}
           />
@@ -108,7 +85,7 @@ export function LoadsPage({
                       request={request}
                       onApprove={(req) => {
                         approveClientLoadRequest(req);
-                        setInnerActiveTab("createLoad"); // Switch to form when approving
+                        setInnerActiveTab("createLoad");
                       }}
                     />
                   ))}
@@ -150,13 +127,12 @@ export function LoadsPage({
                 key={load.id}
                 load={load}
                 client={getClientForLoad(load)}
-                settings={settings} // Pass settings
-                onStatusChange={updateLoadStatus}
+                settings={settings}
+                onStatusChange={(id, status) => updateLoad(id, { status })}
                 onGenerateAgreement={generateAgreement}
-                onEdit={onEditLoad}
-                onDelete={onDeleteLoad}
-                isUpdatingStatus={isUpdatingStatus}
-                isDeleting={isSubmittingLoad && load.id === editingLoadId} 
+                onEdit={handleStartEditLoad}
+                onDelete={handleDeleteLoad}
+                isUpdatingStatus={isSubmittingLoad}
               />
             ))}
           </div>
@@ -177,13 +153,12 @@ export function LoadsPage({
                 key={load.id}
                 load={load}
                 client={getClientForLoad(load)}
-                settings={settings} // Pass settings
-                onStatusChange={updateLoadStatus}
+                settings={settings}
+                onStatusChange={(id, status) => updateLoad(id, { status })}
                 onGenerateAgreement={generateAgreement}
-                onEdit={onEditLoad}
-                onDelete={onDeleteLoad}
-                isUpdatingStatus={isUpdatingStatus}
-                isDeleting={isSubmittingLoad && load.id === editingLoadId}
+                onEdit={handleStartEditLoad}
+                onDelete={handleDeleteLoad}
+                isUpdatingStatus={isSubmittingLoad}
               />
             ))}
           </div>

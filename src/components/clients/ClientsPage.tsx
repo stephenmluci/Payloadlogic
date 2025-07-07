@@ -1,28 +1,21 @@
+
 import React from 'react';
-import type { Client, Load } from '@/types';
 import { ClientForm } from './ClientForm';
 import { ClientCard } from './ClientCard';
 import { Users2 } from 'lucide-react';
+import { useApp } from '@/context/AppContext';
 
-type ClientsPageProps = {
-  clients: Client[];
-  clientForm: Omit<Client, 'id'>;
-  setClientForm: React.Dispatch<React.SetStateAction<Omit<Client, 'id'>>>;
-  addClient: () => Promise<void>;
-  setActiveTab: (tab: string) => void;
-  setLoadFormClientId: (clientId: string) => void;
-  isSubmittingClient: boolean;
-};
-
-export function ClientsPage({ 
-  clients, 
-  clientForm, 
-  setClientForm, 
-  addClient, 
-  setActiveTab,
-  setLoadFormClientId,
-  isSubmittingClient 
-}: ClientsPageProps) {
+export function ClientsPage() {
+  const { 
+    clients, 
+    clientForm, 
+    setClientForm, 
+    addClient, 
+    setActiveTab,
+    setLoadForm,
+    isSubmitting: isSubmittingClient,
+    setEditingLoadId
+  } = useApp();
   
   const handleClientSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +23,12 @@ export function ClientsPage({
   };
 
   const handleCreateLoadForClient = (clientId: string) => {
-    setLoadFormClientId(clientId);
+    setLoadForm(prev => ({ 
+      ...prev,
+      clientId: clientId,
+      // Reset other fields to initial state if needed
+    }));
+    setEditingLoadId(null);
     setActiveTab('loads');
   };
 

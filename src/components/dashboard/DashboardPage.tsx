@@ -1,16 +1,11 @@
 
 import React from 'react';
-import type { Load, Expense } from '@/types';
 import { MetricCard } from './MetricCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DollarSign, AlertTriangle, TrendingUp, TrendingDown, ListChecks, BarChart3, Info, Palette } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { startOfWeek, format, parseISO } from 'date-fns';
-
-type DashboardPageProps = {
-  loads: Load[];
-  expenses: Expense[];
-};
+import { useApp } from '@/context/AppContext';
 
 // Helper function to get the start of the week as a formatted string key
 const getWeekKey = (dateString?: string): string | null => {
@@ -39,13 +34,13 @@ const chartColors = [
   'hsl(var(--chart-3))',
   'hsl(var(--chart-4))',
   'hsl(var(--chart-5))',
-  // Add more if needed, or cycle through them
   'hsl(var(--primary))',
   'hsl(var(--accent))',
 ];
 
+export function DashboardPage() {
+  const { loads, expenses } = useApp();
 
-export function DashboardPage({ loads, expenses }: DashboardPageProps) {
   const totalIncome = loads.reduce((sum, load) => sum + load.totalAgreedRate, 0);
 
   const totalLoadRelatedExpensesFromLoads = loads.reduce((sum, load) => {
@@ -55,8 +50,6 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
     return sum;
   }, 0);
 
-  // Only sum up manual expenses that are NOT associated with a load.
-  // Load-associated manual expenses are already accounted for in the load.expenses object.
   const totalOtherManualExpenses = expenses.reduce((sum, expense) => {
     if (!expense.loadId) {
       return sum + expense.amount;
@@ -81,7 +74,6 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
     }
   });
   
-  // Subtract general (non-load) expenses from weekly profit
   expenses.forEach(expense => {
     if (!expense.loadId && expense.date) {
       const weekKey = getWeekKey(expense.date);
@@ -99,7 +91,6 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
     }))
     .sort((a, b) => a.weekKey.localeCompare(b.weekKey)) 
     .map(({ name, value }) => ({ name, profit: value }));
-
 
   // --- Prepare data for Itemized Weekly Expenses chart ---
   const itemizedWeeklyExpenseDataAggregator: Record<string, Record<string, number>> = {};
@@ -125,7 +116,6 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
     }
   });
 
-  // Only process manual expenses that are NOT associated with a load, as the others are already accounted for.
   expenses.forEach(expense => {
     if (!expense.loadId && expense.date && expense.amount > 0) {
       const weekKey = getWeekKey(expense.date);
@@ -153,7 +143,6 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
       return weekData;
     })
     .sort((a, b) => a.weekKey.localeCompare(b.weekKey));
-
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -194,7 +183,7 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Palette className="h-5 w-5" /> {/* Changed icon */}
+              <Palette className="h-5 w-5" />
               Weekly Itemized Expense Breakdown
             </CardTitle>
           </CardHeader>
@@ -216,7 +205,7 @@ export function DashboardPage({ loads, expenses }: DashboardPageProps) {
                       dataKey={category} 
                       stackId="weeklyExpenses" 
                       fill={categoryColorMap[category]} 
-                      name={category} // Used by Legend and Tooltip
+                      name={category}
                       barSize={30}
                     />
                   ))}

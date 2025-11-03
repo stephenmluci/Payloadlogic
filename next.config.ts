@@ -18,8 +18,10 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  watchOptions: {
-    ignored: ['**/.genkit/**'],
+  experimental: {
+    watchOptions: {
+      ignored: ['**/.genkit/**'],
+    },
   },
 };
 

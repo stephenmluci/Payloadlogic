@@ -1,4 +1,3 @@
-
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
@@ -19,9 +18,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  experimental: {
-    serverExternalPackages: ['pdf-lib'],
-  },
+  serverExternalPackages: ['pdf-lib'],
 };
 
 export default nextConfig;

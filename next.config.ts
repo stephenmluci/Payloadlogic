@@ -18,7 +18,14 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  serverExternalPackages: ['pdf-lib'],
+  serverExternalPackages: [
+    'pdf-lib',
+    'genkit',
+    'dotprompt',
+    'handlebars',
+    '@genkit-ai/googleai',
+    '@genkit-ai/google-genai'
+  ],
 };
 
 export default nextConfig;

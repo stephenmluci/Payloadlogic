@@ -29,7 +29,7 @@ const nextConfig: NextConfig = {
     '@genkit-ai/google-genai'
   ],
   experimental: {
-    // Optimize imports for commonly used heavy libraries
+    // Optimize imports for commonly used heavy libraries to reduce chunk size
     optimizePackageImports: [
       'lucide-react',
       'recharts',

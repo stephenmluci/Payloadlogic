@@ -1,3 +1,4 @@
+
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
@@ -18,6 +19,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Ensure heavy AI and PDF libraries are treated as external to speed up compilation
   serverExternalPackages: [
     'pdf-lib',
     'genkit',
@@ -26,6 +28,16 @@ const nextConfig: NextConfig = {
     '@genkit-ai/googleai',
     '@genkit-ai/google-genai'
   ],
+  experimental: {
+    // Optimize imports for commonly used heavy libraries
+    optimizePackageImports: [
+      'lucide-react',
+      'recharts',
+      'date-fns',
+      'clsx',
+      'tailwind-merge'
+    ],
+  }
 };
 
 export default nextConfig;

@@ -2057,9 +2057,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
           const truckId = currentLoad.assignedTruckId;
           const truck = vehicles.find(v => v.id === truckId);
-          const mpg = truck?.mpg ?? settings.truckMpg ?? 10;
-          const fuelCostPerGallon = settings.defaultFuelCostPerGallon ?? 4.0;
-          const defCostPerGallon = settings.defCostPerGallon ?? 4.5;
+          const mpg = (truck?.mpg && truck.mpg > 0) ? truck.mpg : (settings.truckMpg && settings.truckMpg > 0 ? settings.truckMpg : 10);
+          const fuelCostPerGallon = (settings.defaultFuelCostPerGallon && settings.defaultFuelCostPerGallon > 0) ? settings.defaultFuelCostPerGallon : 4.0;
+          const defCostPerGallon = (settings.defCostPerGallon && settings.defCostPerGallon > 0) ? settings.defCostPerGallon : 4.5;
 
           const projFuel = mpg > 0 ? (totalMiles / mpg) * fuelCostPerGallon : 0;
           const projDef = mpg > 0 ? (totalMiles / mpg) * 0.025 * defCostPerGallon : 0;

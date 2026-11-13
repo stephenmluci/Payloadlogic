@@ -79,10 +79,6 @@ export function AdminExpenseDashboard({
     return expenses.filter(exp => Boolean(exp.receiptUrl)).length;
   }, [expenses]);
 
-  const linkedToLoadsCount = useMemo(() => {
-    return expenses.filter(exp => Boolean(exp.loadId)).length;
-  }, [expenses]);
-
   const monthName = now.toLocaleString('default', { month: 'long', year: 'numeric' });
 
   // Unique categories for the filter dropdown

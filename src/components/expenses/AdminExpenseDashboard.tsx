@@ -28,21 +28,9 @@ import {
   Link2
 } from 'lucide-react';
 import { formatAddress } from '@/lib/utils';
+import type { UnifiedExpenseItem } from '@/lib/expenseLedger';
 
-export interface UnifiedExpenseItem {
-  id: string;
-  driverName: string;
-  driverId?: string;
-  category: string;
-  amount: number;
-  notes?: string;
-  date: string;
-  receiptUrl?: string;
-  loadId?: string | null;
-  loadNumber?: string;
-  gallonsPurchased?: number;
-  source: 'driver_actual' | 'manual_ledger' | 'auto_estimated';
-}
+export type { UnifiedExpenseItem };
 
 interface AdminExpenseDashboardProps {
   expenses: UnifiedExpenseItem[];

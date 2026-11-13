@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { ExpenseForm } from './ExpenseForm';
-import { AdminExpenseDashboard, type UnifiedExpenseItem } from './AdminExpenseDashboard';
+import { AdminExpenseDashboard } from './AdminExpenseDashboard';
+import { buildUnifiedExpenses, type UnifiedExpenseItem } from '@/lib/expenseLedger';
 import { useApp } from '@/context/AppContext';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';

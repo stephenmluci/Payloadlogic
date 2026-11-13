@@ -512,24 +512,42 @@ export function SettingsPage() {
             {/* Operating Cost Per Mile & Monthly Maintenance */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
-                <Label htmlFor="defaultOperatingCostPerMile" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                  <Gauge className="h-3.5 w-3.5 text-slate-500" />
-                  Default Operating Cost Per Mile ($/mi)
-                </Label>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <Label htmlFor="defaultOperatingCostPerMile" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                    <Gauge className="h-3.5 w-3.5 text-slate-500" />
+                    Default Operating Cost Per Mile ($/mi)
+                  </Label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSettingsForm(prev => ({ ...prev, defaultOperatingCostPerMile: suggestedOperatingCpm.value }))
+                    }
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-md transition-colors"
+                    title="Apply calculated estimate"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    Suggested: ${suggestedOperatingCpm.value.toFixed(2)}/mi
+                  </button>
+                </div>
                 <div className="relative mt-1">
                   <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                   <Input
                     id="defaultOperatingCostPerMile"
                     name="defaultOperatingCostPerMile"
                     type="number"
+                    inputMode="decimal"
                     step="0.01"
-                    value={settingsForm.defaultOperatingCostPerMile || 0}
+                    min="0"
+                    value={settingsForm.defaultOperatingCostPerMile ?? ''}
+                    placeholder={suggestedOperatingCpm.value.toFixed(2)}
                     onChange={handleInputChange}
                     className="pl-9 h-9 text-xs font-semibold"
                   />
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Baseline variable operating cost per mile (Loaded + Deadhead) for wear-and-tear and preventative maintenance.
+                  {suggestedOperatingCpm.isBaseline
+                    ? 'Pre-filled with an industry baseline estimate ($0.85/mi) — adjust anytime based on your fleet wear-and-tear.'
+                    : 'Estimated from your monthly fleet costs, fuel, and estimated miles — adjust anytime to match your actual CPM.'}
                 </p>
               </div>
 

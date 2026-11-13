@@ -4,6 +4,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { AppProvider } from '@/context/AppContext';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
+import { FloatingHelpWidget } from '@/components/help/FloatingHelpWidget';
 import { ServiceWorkerRegister } from '@/components/common/ServiceWorkerRegister';
 
 export const metadata: Metadata = {
@@ -80,6 +81,7 @@ export default function RootLayout({
           <ErrorBoundary>
             {children}
           </ErrorBoundary>
+          <FloatingHelpWidget />
           <Toaster />
           <ServiceWorkerRegister />
         </AppProvider>

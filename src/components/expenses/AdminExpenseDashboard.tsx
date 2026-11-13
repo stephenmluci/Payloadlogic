@@ -219,28 +219,6 @@ export function AdminExpenseDashboard({
             </div>
           </CardContent>
         </Card>
-
-        {/* Linked to Loads Card */}
-        <Card className="border border-slate-200/80 bg-white shadow-2xs rounded-xl overflow-hidden">
-          <CardContent className="p-4 sm:p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  Linked to Loads
-                </p>
-                <h3 className="text-xl sm:text-2xl font-extrabold text-purple-950 mt-1">
-                  {linkedToLoadsCount}
-                </h3>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-600 flex items-center justify-center font-bold text-lg border border-purple-500/20 shrink-0">
-                <Link2 className="w-5 h-5" />
-              </div>
-            </div>
-            <div className="mt-2.5 flex items-center gap-1.5 text-xs text-purple-700 font-medium">
-              Direct load deductions
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* ── Search, Filters & Sorting Bar ─────────────────────────────── */}

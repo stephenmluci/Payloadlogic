@@ -1,10 +1,10 @@
-
 import React from 'react';
 import type { Expense, Load } from '@/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableCaption } from '@/components/ui/table';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { FileSearch } from 'lucide-react';
+import { formatAddress } from '@/lib/utils';
 
 type ExpensesTableProps = {
   expenses: Expense[];
@@ -42,8 +42,9 @@ export function ExpensesTable({ expenses, loads }: ExpensesTableProps) {
                 let loadIdentifier = 'N/A';
                 if (associatedLoad) {
                   loadIdentifier = associatedLoad.loadNumber 
-                    ? `${associatedLoad.loadNumber}: ${associatedLoad.origin} → ${associatedLoad.destination}`
-                    : `${associatedLoad.origin} → ${associatedLoad.destination}`;
+                    ? `${associatedLoad.loadNumber}: ${formatAddress(associatedLoad.origin, 'short')} → ${formatAddress(associatedLoad.destination, 'short')}`
+                    : `${formatAddress(associatedLoad.origin, 'short')} → ${formatAddress(associatedLoad.destination, 'short')}`
+
                 }
                 return (
                   <TableRow key={expense.id}>

@@ -1,0 +1,251 @@
+﻿                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-4 animate-in fade-in slide-in-from-right-2 duration-300">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="col-span-1 space-y-2">
+                        <Label className="flex items-center gap-1">
+                          Unit # <span className="text-red-500 font-bold">*</span>
+                        </Label>
+                        <Input 
+                          placeholder="A2" 
+                          value={trailerForm.unitNumber}
+                          onChange={(e) => setTrailerForm({...trailerForm, unitNumber: e.target.value})}
+                          className={!trailerForm.unitNumber && trailerForm.name ? "border-red-300 bg-red-50" : ""}
+                        />
+                      </div>
+                      <div className="col-span-2 space-y-2">
+                        <Label className="flex items-center gap-1">
+                          Description <span className="text-red-500 font-bold">*</span>
+                        </Label>
+                        <Input 
+                          placeholder="e.g. 40ft Flatbed" 
+                          value={trailerForm.name}
+                          onChange={(e) => setTrailerForm({...trailerForm, name: e.target.value})}
+                          className={trailerForm.unitNumber && !trailerForm.name ? "border-red-300 bg-red-50" : ""}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <input 
+                        type="checkbox" 
+                        id="tr-paid" 
+                        className="h-4 w-4 rounded border-slate-300 text-slate-600"
+                        checked={trailerForm.isPaidOff}
+                        onChange={(e) => setTrailerForm({...trailerForm, isPaidOff: e.target.checked})}
+                      />
+                      <Label htmlFor="tr-paid" className="text-sm">Trailer is paid off</Label>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 space-y-4">
+                      <h4 className="text-xs font-semibold uppercase text-slate-500">Structural & Safety Dimensions</h4>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Trailer GVWR (lbs) <span className="text-red-500">*</span></Label>
+                          <Input 
+                            type="number" 
+                            placeholder="0"
+                            value={trailerForm.gvwr || ''}
+                            onChange={(e) => setTrailerForm({...trailerForm, gvwr: Number(e.target.value)})}
+                            className="h-10 text-base font-bold"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Empty Wt (lbs) <span className="text-red-500">*</span></Label>
+                          <Input 
+                            type="number" 
+                            placeholder="0"
+                            value={trailerForm.emptyWeight || ''}
+                            onChange={(e) => setTrailerForm({...trailerForm, emptyWeight: Number(e.target.value)})}
+                            className="h-10 text-base font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      {/* FMCSA CDL Info Tag â€” shown when trailer GVWR > 10,000 lbs */}
+                      {(trailerForm.gvwr || 0) > 10_000 && (() => {
+                        const maxTruckGvwr = CDL_THRESHOLD - (trailerForm.gvwr || 0);
+                        return (
+                          <div className="rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2.5 flex items-start gap-2">
+                            <span className="text-amber-500 text-base leading-none mt-0.5">âš ï¸</span>
+                            <div>
+                              <p className="text-[11px] font-black text-amber-800 uppercase tracking-wide">Class A CDL Required if Combined</p>
+                              <p className="text-[11px] text-amber-700 leading-snug mt-0.5">
+                                This trailer's GVWR ({(trailerForm.gvwr || 0).toLocaleString()} lbs) exceeds the 10,000 lb FMCSA towed-unit threshold.
+                                {' '}Pairing with any truck with a GVWR over{' '}
+                                <strong>{Math.max(0, maxTruckGvwr).toLocaleString()} lbs</strong>
+                                {' '}will push the combined GCWR above 26,000 lbs, mandating a Class A CDL (49 CFR Â§ 383.91).
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      <div className="rounded-lg border border-blue-200 bg-blue-50/60 overflow-hidden">
+                        <div className="px-3 py-1.5 bg-blue-100/70 flex items-center justify-between">
+                          <span className="text-[10px] font-black text-blue-700 uppercase tracking-wider">Max Cargo Weight (Payload)</span>
+                          <span className="text-[9px] font-semibold text-blue-500 bg-blue-100 px-1.5 py-0.5 rounded border border-blue-200">Locked Formula</span>
+                        </div>
+                        <div className="px-3 py-2 flex items-center justify-between">
+                          <span className="text-[11px] text-slate-500 font-mono">
+                            {(trailerForm.gvwr || 0).toLocaleString()} âˆ’ {(trailerForm.emptyWeight || 0).toLocaleString()} lbs
+                          </span>
+                          <span className="font-black text-blue-800 text-base">
+                            {Math.max(0, (trailerForm.gvwr || 0) - (trailerForm.emptyWeight || 0)).toLocaleString()} lbs
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-xs">Deck Height (in) <span className="text-red-500">*</span></Label>
+                          <Input 
+                            type="number" 
+                            value={trailerForm.deckHeight || ''}
+                            onChange={(e) => setTrailerForm({...trailerForm, deckHeight: Number(e.target.value)})}
+                            className="h-9"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs">Deck Length (ft) <span className="text-red-500">*</span></Label>
+                          <Input 
+                            type="number" 
+                            value={trailerForm.trailerLength || ''}
+                            onChange={(e) => setTrailerForm({...trailerForm, trailerLength: Number(e.target.value)})}
+                            className="h-9"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs">Deck Width (ft) <span className="text-red-500">*</span></Label>
+                          <Input 
+                            type="number" 
+                            value={trailerForm.trailerWidth || ''}
+                            onChange={(e) => setTrailerForm({...trailerForm, trailerWidth: Number(e.target.value)})}
+                            className="h-9"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs">Axle Configuration</Label>
+                        <Input 
+                          placeholder="e.g. Tandem Dual" 
+                          value={trailerForm.axleConfiguration}
+                          onChange={(e) => setTrailerForm({...trailerForm, axleConfiguration: e.target.value})}
+                          className="h-9"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 space-y-4">
+                      <h4 className="text-xs font-semibold uppercase text-slate-500">Financial Setup</h4>
+                      <div className="grid grid-cols-2 gap-4 pt-2">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Op. Cost / Mile</Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">$</span>
+                          <Input 
+                            type="number" 
+                            step="0.01"
+                            placeholder="0"
+                            value={trailerForm.operatingCostPerMile || ''}
+                            onChange={(e) => setTrailerForm({...trailerForm, operatingCostPerMile: Number(e.target.value)})}
+                            className="pl-6 h-10 text-base font-bold"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Insurance (Mo)</Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">$</span>
+                          <Input 
+                            type="number" 
+                            placeholder="0"
+                            value={trailerForm.monthlyRecurringExpenses.insurance || ''}
+                            onChange={(e) => setTrailerForm({...trailerForm, monthlyRecurringExpenses: {...trailerForm.monthlyRecurringExpenses, insurance: Number(e.target.value)}})}
+                            className="pl-6 h-10 text-base font-bold"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Monthly Payment</Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">$</span>
+                          <Input 
+                            type="number" 
+                            placeholder="0"
+                            value={trailerForm.monthlyRecurringExpenses.payment || ''}
+                            onChange={(e) => setTrailerForm({...trailerForm, monthlyRecurringExpenses: {...trailerForm.monthlyRecurringExpenses, payment: Number(e.target.value)}})}
+                            className="pl-6 h-10 text-base font-bold"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Maint. Fund (Mo)</Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">$</span>
+                          <Input 
+                            type="number" 
+                            placeholder="0"
+                            value={trailerForm.monthlyRecurringExpenses.maintenanceFund || ''}
+                            onChange={(e) => setTrailerForm({...trailerForm, monthlyRecurringExpenses: {...trailerForm.monthlyRecurringExpenses, maintenanceFund: Number(e.target.value)}})}
+                            className="pl-6 h-10 text-base font-bold"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Trailer Recurring Costs</Label>
+                        <Button variant="ghost" size="sm" onClick={() => handleAddRecurringExpense('trailer')} className="h-6 text-slate-600 px-2 text-[10px]">
+                          + ADD COST
+                        </Button>
+                      </div>
+                      <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
+                        {trailerForm.recurringExpenses.map((exp) => (
+                          <div key={exp.id} className="flex gap-2">
+                            <Input 
+                              placeholder="Name" 
+                              className="h-8 text-xs flex-1"
+                              value={exp.name}
+                              onChange={(e) => handleUpdateRecurringExpense('trailer', exp.id, 'name', e.target.value)}
+                            />
+                            <div className="relative w-20">
+                              <span className="absolute left-1.5 top-2 text-[9px] text-slate-400">$</span>
+                              <Input 
+                                type="number" 
+                                className="h-8 pl-4 text-xs"
+                                value={exp.amount}
+                                onChange={(e) => handleUpdateRecurringExpense('trailer', exp.id, 'amount', e.target.value)}
+                              />
+
+                            </div>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-400" onClick={() => handleRemoveRecurringExpense('trailer', exp.id)}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                      </div>
+                    </div>
+                    
+                    <Button 
+                      className="w-full bg-slate-700 hover:bg-slate-800" 
+                      onClick={() => handleSaveAsset('trailer')} 
+                    >
+                      {isSubmitting ? 'Saving Trailer...' : (editingVehicleId ? 'Update Trailer' : 'Save Trailer to Fleet')}
+                    </Button>
+
+                  </div>
+                )}
+                
+                {editingVehicleId && (
+                  <Button variant="outline" className="w-full border-dashed" onClick={() => {
+                    setEditingVehicleId(null);
+                    lsClear(LS_TRUCK, LS_TRAILER);
+                    setTruckForm(defaultTruckForm);

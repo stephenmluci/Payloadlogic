@@ -1,104 +1,125 @@
+"use client";
 
-'use client';
-
-import React from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, FileLock } from 'lucide-react';
-
-const SectionTitle = ({ children }: { children: React.ReactNode }) => (
-  <h2 className="text-xl font-semibold mt-6 mb-2 font-headline">{children}</h2>
-);
-
-const SectionContent = ({ children }: { children: React.ReactNode }) => (
-  <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
-    {children}
-  </div>
-);
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
+import { PRIVACY_EMAIL } from "@/lib/support";
+import { PayloadLogicLogo } from "@/components/brand/PayloadLogicLogo";
 
 export default function PrivacyPolicyPage() {
   const router = useRouter();
-  const [lastUpdated, setLastUpdated] = React.useState('');
-
-  React.useEffect(() => {
-    setLastUpdated(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }));
-  }, []);
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-4">
-      <Card className="w-full max-w-3xl shadow-xl">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <FileLock className="h-8 w-8 text-primary" />
-            <CardTitle className="text-3xl font-headline">Privacy Policy</CardTitle>
-          </div>
-          <CardDescription>
-            Last Updated: {lastUpdated}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="max-h-[60vh] overflow-y-auto pr-4 space-y-4">
-            <SectionContent>
+    <div className="min-h-screen bg-muted/40 p-4 md:p-8">
+      <div className="mx-auto max-w-3xl">
+        <div className="flex items-center justify-between mb-4">
+          <Link href="/" className="hover:opacity-90 transition-opacity">
+            <PayloadLogicLogo variant="compact" iconSize={30} />
+          </Link>
+          <Button variant="ghost" onClick={() => router.back()}>
+            <ArrowLeft className="mr-2 h-4 w-4" /> Go Back
+          </Button>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Privacy Policy</CardTitle>
+            <p className="text-sm text-muted-foreground">Last updated: October 2026</p>
+          </CardHeader>
+          <CardContent className="prose prose-sm max-w-none space-y-6">
+            <section>
+              <h3 className="font-semibold text-lg">1. Introduction</h3>
               <p>
-                Welcome to Dash Dispatch Pro. We are committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our application.
+                This Privacy Policy explains how PayloadLogic (“we”, “us”, or “our”) collects, uses, and shares information when you use our Service.
               </p>
-            </SectionContent>
+            </section>
 
-            <SectionTitle>1. Information We Collect</SectionTitle>
-            <SectionContent>
-              <p>We may collect information about you in a variety of ways. The information we may collect includes:</p>
+            <section>
+              <h3 className="font-semibold text-lg">2. Information We Collect</h3>
+              <p>We collect the following types of information:</p>
               <ul className="list-disc pl-5 space-y-1">
-                <li><strong>Personal Data:</strong> Personally identifiable information, such as your name, email address, and telephone number, that you voluntarily give to us when you register with the application.</li>
-                <li><strong>Business Data:</strong> Information you provide related to your business operations, including client details, load information, and expense records. This data is stored securely and is considered confidential.</li>
-                <li><strong>Usage Data:</strong> We may automatically collect information about your access to and use of the application, such as your IP address, browser type, and operating system.</li>
+                <li><strong>Account Information:</strong> Name, email address, company name, and password when you register.</li>
+                <li><strong>Business Data:</strong> Client information, load details, expenses, vehicle information, and other data you enter into the Service.</li>
+                <li><strong>Usage Data:</strong> Information about how you interact with the Service (pages viewed, features used, etc.).</li>
+                <li><strong>Device & Log Data:</strong> IP address, browser type, and device information.</li>
               </ul>
-            </SectionContent>
+            </section>
 
-            <SectionTitle>2. Use of Your Information</SectionTitle>
-            <SectionContent>
-                <p>Having accurate information about you permits us to provide you with a smooth, efficient, and customized experience. Specifically, we may use information collected about you to:</p>
-                 <ul className="list-disc pl-5 space-y-1">
-                    <li>Create and manage your account.</li>
-                    <li>Process transactions and manage your operational data (loads, expenses, etc.).</li>
-                    <li>Email you regarding your account or order status changes.</li>
-                    <li>Monitor and analyze usage and trends to improve your experience with the application.</li>
-                    <li>Perform other business activities as needed.</li>
-                </ul>
-            </SectionContent>
-
-            <SectionTitle>3. Disclosure of Your Information</SectionTitle>
-            <SectionContent>
-              <p>We do not share your personal or business information with third parties except as described in this Privacy Policy. We may share information we have collected about you in certain situations:</p>
-               <ul className="list-disc pl-5 space-y-1">
-                <li><strong>By Law or to Protect Rights:</strong> If we believe the release of information is necessary to respond to legal process or protect the rights, property, and safety of others, we may share your information as permitted by law.</li>
-                <li><strong>Third-Party Service Providers:</strong> We may share your information with third parties that perform services for us or on our behalf, including data storage (e.g., Firebase), and email delivery.</li>
+            <section>
+              <h3 className="font-semibold text-lg">3. How We Use Information</h3>
+              <p>We use the information we collect to:</p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Provide, maintain, and improve the Service</li>
+                <li>Process transactions and send related information</li>
+                <li>Respond to your requests and provide customer support</li>
+                <li>Monitor and analyze usage and trends</li>
+                <li>Detect, prevent, and address technical issues or fraud</li>
               </ul>
-            </SectionContent>
+            </section>
 
-            <SectionTitle>4. Security of Your Information</SectionTitle>
-            <SectionContent>
-              <p>We use administrative, technical, and physical security measures to help protect your personal information. While we have taken reasonable steps to secure the personal information you provide to us, please be aware that despite our efforts, no security measures are perfect or impenetrable.</p>
-            </SectionContent>
-            
-            <SectionTitle>5. Policy for Children</SectionTitle>
-            <SectionContent>
-              <p>We do not knowingly solicit information from or market to children under the age of 13. If you become aware of any data we have collected from children under age 13, please contact us using the contact information provided below.</p>
-            </SectionContent>
+            <section>
+              <h3 className="font-semibold text-lg">4. How We Share Information</h3>
+              <p>
+                We do not sell your personal information. We may share information with:
+              </p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Service providers who help us operate the Service (for example, Firebase/Google Cloud for hosting and authentication)</li>
+                <li>Professional advisors (lawyers, accountants) when necessary</li>
+                <li>Authorities when required by law or to protect our rights</li>
+              </ul>
+            </section>
 
-            <SectionTitle>6. Contact Us</SectionTitle>
-            <SectionContent>
-                <p>If you have questions or comments about this Privacy Policy, please contact us at: legal@dashdispatchpro.com</p>
-            </SectionContent>
-          </div>
+            <section>
+              <h3 className="font-semibold text-lg">5. Data Storage & Security</h3>
+              <p>
+                Your data is stored on Firebase (Google Cloud) infrastructure. We use industry-standard security measures. However, no method of transmission or storage is 100% secure.
+              </p>
+            </section>
 
-          <div className="mt-8 text-center border-t pt-6">
-            <Button onClick={() => router.back()}>
-              <ArrowLeft className="mr-2 h-4 w-4" /> Go Back
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+            <section>
+              <h3 className="font-semibold text-lg">6. Data Retention</h3>
+              <p>
+                We retain your information for as long as your account is active or as needed to provide the Service. You may request deletion of your account and associated data by contacting us.
+              </p>
+            </section>
+
+            <section>
+              <h3 className="font-semibold text-lg">7. Your Rights</h3>
+              <p>
+                Depending on your location, you may have rights to access, correct, delete, or export your personal information. To exercise these rights, contact us at{' '}
+                <a href={`mailto:${PRIVACY_EMAIL}`} className="text-blue-600 hover:underline">
+                  {PRIVACY_EMAIL}
+                </a>.
+              </p>
+            </section>
+
+            <section>
+              <h3 className="font-semibold text-lg">8. Children’s Privacy</h3>
+              <p>
+                The Service is not directed to individuals under the age of 18. We do not knowingly collect personal information from children.
+              </p>
+            </section>
+
+            <section>
+              <h3 className="font-semibold text-lg">9. Changes to This Policy</h3>
+              <p>
+                We may update this Privacy Policy from time to time. We will post the updated version on this page and update the “Last updated” date.
+              </p>
+            </section>
+
+            <section>
+              <h3 className="font-semibold text-lg">10. Contact Us</h3>
+              <p>
+                If you have questions about this Privacy Policy, contact us at{' '}
+                <a href={`mailto:${PRIVACY_EMAIL}`} className="text-blue-600 hover:underline">
+                  {PRIVACY_EMAIL}
+                </a>.
+              </p>
+            </section>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

@@ -1,0 +1,57 @@
+# Settings to manage and configure a Firebase App Hosting backend.
+# https://firebase.google.com/docs/app-hosting/configure
+
+runConfig:
+  maxInstances: 1
+
+env:
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: "AIzaSyBcQyi5Ebv1HQQxjICbF2yVSd3OenhLMTw"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: "truckin-smart.firebaseapp.com"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: "truckin-smart"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: "truckin-smart.firebasestorage.app"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "447381347977"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "1:447381347977:web:77e04726e9aa3d89767058"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+    value: "AIzaSyAVVDJ6Ex5MoULEYHrknogiKcL6ShTrdRI"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: GEMINI_API_KEY
+    value: "AIzaSyDz9Dr8Uf39gaQxsxbgXSKvXoSvLIxRv4k"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: GOOGLE_GENAI_API_KEY
+    value: "AIzaSyDz9Dr8Uf39gaQxsxbgXSKvXoSvLIxRv4k"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_OWNER_EMAILS
+    value: "owner@payloadlogic.app,admin@payloadlogic.app,steph@payloadlogic.app,steph@example.com"
+    availability:
+      - BUILD
+      - RUNTIME

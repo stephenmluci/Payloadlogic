@@ -1,0 +1,231 @@
+﻿            {/* Driver List */}
+            <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6 content-start">
+              {driverProfiles.map((driver) => {
+                const cdlDaysLeft = driver.cdlExpirationDate ? Math.ceil((new Date(driver.cdlExpirationDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) : null;
+                const medDaysLeft = driver.medicalCardExpirationDate ? Math.ceil((new Date(driver.medicalCardExpirationDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) : null;
+
+                const driverCdlStatus = driver.cdlStatus ?? 'Non-CDL';
+                const isCdl = driverCdlStatus === 'Class A CDL';
+                const isOffDuty = isDriverOffDuty(driver);
+                return (
+                  <Card key={driver.uid} className={`shadow-sm hover:shadow-md transition-all ${isOffDuty ? 'border-slate-300 bg-slate-50/40' : 'border-slate-200'}`}>
+                    <CardHeader className="pb-3">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex items-center gap-3">
+                          <div className={`h-10 w-10 rounded-full flex items-center justify-center text-white font-bold ${ isOffDuty ? 'bg-slate-400' : isCdl ? 'bg-blue-600' : 'bg-emerald-600' }`}>
+                            {driver.name.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <CardTitle className="text-lg">{driver.name}</CardTitle>
+                              {isCdl ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black tracking-wide bg-blue-100 text-blue-700 border border-blue-200 uppercase">
+                                  <ShieldCheck className="h-3 w-3" />
+                                  CDL
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black tracking-wide bg-slate-100 text-slate-500 border border-slate-200 uppercase">
+                                  <ShieldAlert className="h-3 w-3" />
+                                  Non-CDL
+                                </span>
+                              )}
+                              {isOffDuty ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide bg-slate-200 text-slate-700 border border-slate-300 uppercase">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                  Off Duty
+                                </span>
+                              ) : driver.status === 'on-leave' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide bg-amber-100 text-amber-700 border border-amber-200 uppercase">
+                                  On Leave
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                  Active
+                                </span>
+                              )}
+
+                              {/* HOS Badge with Click-to-Edit and Reset */}
+                              {(() => {
+                                const hos = driver.estimatedHosRemaining ?? 11.0;
+                                const isEditing = editingHosDriverUid === driver.uid;
+                                const colorClass = hos > 5
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  : hos >= 2
+                                  ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                  : 'bg-red-100 text-red-800 border-red-300';
+
+                                if (isEditing) {
+                                  return (
+                                    <div className="inline-flex items-center gap-1">
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        min="0"
+                                        max="11"
+                                        autoFocus
+                                        value={editingHosValue}
+                                        onChange={(e) => setEditingHosValue(e.target.value)}
+                                        onKeyDown={async (e) => {
+                                          if (e.key === 'Enter') {
+                                            const val = parseFloat(editingHosValue);
+                                            if (!isNaN(val)) {
+                                              const clamped = Math.max(0, Math.min(11, Math.round(val * 10) / 10));
+                                              await updateDriverProfile(driver.uid, { estimatedHosRemaining: clamped });
+                                              toast({ title: 'HOS Updated', description: `${driver.name}'s HOS set to ${clamped.toFixed(1)} hrs.` });
+                                            }
+                                            setEditingHosDriverUid(null);
+                                          } else if (e.key === 'Escape') {
+                                            setEditingHosDriverUid(null);
+                                          }
+                                        }}
+                                        onBlur={async () => {
+                                          const val = parseFloat(editingHosValue);
+                                          if (!isNaN(val)) {
+                                            const clamped = Math.max(0, Math.min(11, Math.round(val * 10) / 10));
+                                            await updateDriverProfile(driver.uid, { estimatedHosRemaining: clamped });
+                                            toast({ title: 'HOS Updated', description: `${driver.name}'s HOS set to ${clamped.toFixed(1)} hrs.` });
+                                          }
+                                          setEditingHosDriverUid(null);
+                                        }}
+                                        className="h-6 w-16 px-1.5 text-xs font-bold border rounded bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                                      />
+                                      <span className="text-[10px] text-slate-400 font-bold">hrs</span>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div className="inline-flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingHosDriverUid(driver.uid);
+                                        setEditingHosValue(hos.toFixed(1));
+                                      }}
+                                      title="Click to manually edit remaining HOS hours"
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide border cursor-pointer hover:opacity-85 transition-opacity ${colorClass}`}
+                                    >
+                                      <Clock className="h-2.5 w-2.5" />
+                                      HOS: {hos.toFixed(1)} hrs
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        await updateDriverProfile(driver.uid, { estimatedHosRemaining: 11.0 });
+                                        toast({ title: 'HOS Reset', description: `${driver.name}'s HOS reset to 11.0 hrs.` });
+                                      }}
+                                      title="Reset HOS to 11.0 hrs"
+                                      className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors"
+                                    >
+                                      <RotateCcw className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                            <CardDescription>{driver.email}</CardDescription>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <select
+                            value={isOffDuty ? 'off-duty' : driver.status === 'on-leave' ? 'on-leave' : 'active'}
+                            onChange={async (e) => {
+                              const val = e.target.value as 'active' | 'off-duty' | 'on-leave';
+                              try {
+                                await updateDriverProfile(driver.uid, {
+                                  status: val,
+                                  availabilityStatus: val === 'off-duty' ? 'Off Duty' : 'Available',
+                                });
+                                toast({
+                                  title: val === 'off-duty' ? 'Driver Set to Off Duty' : 'Status Updated',
+                                  description: `${driver.name} is now ${val === 'off-duty' ? 'Off Duty' : val}.`,
+                                });
+                              } catch (err: any) {
+                                toast({
+                                  title: 'Update Failed',
+                                  description: err?.message || 'Could not update status.',
+                                  variant: 'destructive',
+                                });
+                              }
+                            }}
+                            className={`h-7 px-2 text-[10px] font-bold rounded-md border transition-colors cursor-pointer ${
+                              isOffDuty
+                                ? 'bg-slate-200 text-slate-700 border-slate-300 hover:bg-slate-300'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                            }`}
+                            title="Quick toggle driver status"
+                          >
+                            <option value="active">Active</option>
+                            <option value="off-duty">Off Duty</option>
+                            <option value="on-leave">On Leave</option>
+                          </select>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => startEditDriver(driver)}>
+                            <Edit2 className="h-4 w-4 text-slate-400" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500" onClick={() => deleteDriverProfile(driver.uid)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div className="p-3 rounded-lg bg-blue-50 border border-blue-100">
+                          <p className="text-[10px] uppercase text-blue-400 font-bold">Truck</p>
+                          <p className="text-sm font-bold text-blue-700">
+                            {driver.assignedTruckId ? 
+                              `#${vehicles.find(v => v.id === driver.assignedTruckId)?.unitNumber || '?'}` : 
+                              'None'}
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                          <p className="text-[10px] uppercase text-slate-400 font-bold">Trailer</p>
+                          <p className="text-sm font-bold text-slate-700">
+                             {driver.assignedTrailerId ? 
+                              `#${vehicles.find(v => v.id === driver.assignedTrailerId)?.unitNumber || '?'}` : 
+                              'None'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3">
+
+                        {/* CDL Status */}
+                        <div className={`p-3 rounded-lg border flex items-center justify-between ${cdlDaysLeft !== null && cdlDaysLeft < 30 ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className={`h-4 w-4 ${cdlDaysLeft !== null && cdlDaysLeft < 30 ? 'text-red-500' : 'text-green-600'}`} />
+                            <span className="text-xs font-medium">CDL License</span>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[10px] uppercase text-slate-400 font-bold">Expires</p>
+                            <p className={`text-xs font-bold ${cdlDaysLeft !== null && cdlDaysLeft < 30 ? 'text-red-600' : 'text-slate-700'}`}>
+                              {(() => { try { const d = new Date(driver.cdlExpirationDate); return driver.cdlExpirationDate && isValid(d) ? format(d, 'MMM d, yyyy') : 'Missing'; } catch { return 'Invalid'; } })()}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Medical Status */}
+                        <div className={`p-3 rounded-lg border flex items-center justify-between ${medDaysLeft !== null && medDaysLeft < 30 ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className={`h-4 w-4 ${medDaysLeft !== null && medDaysLeft < 30 ? 'text-red-500' : 'text-green-600'}`} />
+                            <span className="text-xs font-medium">Medical Card</span>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[10px] uppercase text-slate-400 font-bold">Expires</p>
+                            <p className={`text-xs font-bold ${medDaysLeft !== null && medDaysLeft < 30 ? 'text-red-600' : 'text-slate-700'}`}>
+                              {(() => { try { const d = new Date(driver.medicalCardExpirationDate); return driver.medicalCardExpirationDate && isValid(d) ? format(d, 'MMM d, yyyy') : 'Missing'; } catch { return 'Invalid'; } })()}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+              {driverProfiles.length === 0 && (
+                <div className="col-span-full py-12 text-center bg-slate-50 rounded-lg border-2 border-dashed border-slate-200">
+                  <Users className="h-12 w-12 mx-auto text-slate-300 mb-4" />
+                  <p className="text-slate-500">No driver profiles created yet.</p>
+                </div>

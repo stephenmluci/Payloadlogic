@@ -1,0 +1,137 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwnerEmail() {
+      return isSignedIn() && request.auth.token.email.lower() == 'steph@payloadlogic.app';
+    }
+
+    function getProfile(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)/profile/main).data;
+    }
+
+    function isAdmin(uid) {
+      return getProfile(uid).role in ['admin', 'owner', 'company_admin'];
+    }
+
+    function isDriver(uid) {
+      return getProfile(uid).role == 'driver';
+    }
+
+    function driverOwner(uid) {
+      return getProfile(uid).driverOwnerId;
+    }
+
+    // ── User document & profile ──────────────────────────────────────────────
+    // Private testing lockdown: Only the owner (steph@payloadlogic.app) can write user accounts
+    match /users/{uid} {
+      allow read:  if isSignedIn() && (request.auth.uid == uid || isAdmin(request.auth.uid));
+      allow write: if isSignedIn() && request.auth.uid == uid && isOwnerEmail();
+    }
+
+    // Free-trial records. Written ONLY by the server (Admin SDK bypasses rules); an account
+    // can read its own record so the app can show status. `trialRegistry/{dot}` (the
+    // one-trial-per-DOT ledger) has no rule on purpose, so clients can never read or write it.
+    match /trials/{uid} {
+      allow read:  if isSignedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /users/{uid}/profile/main {
+      allow read:  if isSignedIn() && (request.auth.uid == uid || isAdmin(request.auth.uid));
+      allow write: if isSignedIn() && request.auth.uid == uid && isOwnerEmail();
+    }
+
+    // ── Admin-owned sub-collections ───────────────────────────────────────────
+    // Pattern: users/{adminUid}/{collection}/{docId}
+    match /users/{adminUid}/{collection}/{docId} {
+
+      // Admin: full CRUD on all their own data
+      allow read, write: if isSignedIn()
+                         && request.auth.uid == adminUid
+                         && isAdmin(request.auth.uid);
+
+      // Driver: read-only access to assigned loads, own driver profile, and vehicles
+      // under their owning admin's account
+      allow read: if isSignedIn()
+                  && isDriver(request.auth.uid)
+                  && driverOwner(request.auth.uid) == adminUid
+                  && collection in ['loads', 'driverProfiles', 'vehicles'];
+
+      // Driver: limited write — only update operational status/location/BOL fields on loads
+      // assigned to them (prevents editing rate, cargo, client, etc.)
+      allow update: if isSignedIn()
+                    && isDriver(request.auth.uid)
+                    && driverOwner(request.auth.uid) == adminUid
+                    && collection == 'loads'
+                    && resource.data.assignedDriverId == request.auth.uid
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly([
+                         'driverPhase', 'status', 'currentLat', 'currentLng',
+                         'arrivedAt', 'deliveredAt', 'signedBolUrl', 'signedBolUploadedAt',
+                         'paperworkStatus', 'driverExceptionFlag', 'driverNote',
+                         'driverNoteUpdatedAt', 'expenses', 'manualOverrideAt'
+                       ]);
+    }
+
+    // ── Downtime expenses (no load) ───────────────────────────────────────────
+    // Drivers may create expenses under their owning admin's account, attributed to themselves.
+    match /users/{adminUid}/actualExpenses/{expenseId} {
+      allow create: if isSignedIn()
+                    && isDriver(request.auth.uid)
+                    && driverOwner(request.auth.uid) == adminUid
+                    && request.resource.data.submittedByDriverId == request.auth.uid;
+    }
+
+    // ── e-POD documents ───────────────────────────────────────────────────────
+    // Stored at users/{adminUid}/pods/{loadId}
+    // Drivers write their own PODs; admins read & manage them
+    match /users/{adminUid}/pods/{loadId} {
+      allow write: if isSignedIn()
+                   && (request.auth.uid == adminUid
+                       || isAdmin(request.auth.uid)
+                       || (isDriver(request.auth.uid)
+                           && driverOwner(request.auth.uid) == adminUid));
+      allow read:  if isSignedIn()
+                   && (request.auth.uid == adminUid
+                       || isAdmin(request.auth.uid)
+                       || (isDriver(request.auth.uid)
+                           && driverOwner(request.auth.uid) == adminUid));
+    }
+
+    // ── Global clientLoadRequests collection ─────────────────────────────────
+    // Admins: full access; authenticated clients: create only
+    match /clientLoadRequests/{docId} {
+      allow read, write: if isSignedIn() && isAdmin(request.auth.uid);
+      allow create:      if isSignedIn();
+    }
+
+    // ── Client portal sub-documents ───────────────────────────────────────────
+    match /clientPortal/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        isAdmin(request.auth.uid) ||
+        resource == null ||
+        resource.data.clientId == request.auth.uid ||
+        request.resource.data.clientId == request.auth.uid
+      );
+    }
+
+    // ── In-App Driver Notifications ──────────────────────────────────────────
+    // Drivers read and mark their own notifications as read; admins/dispatchers create them.
+    match /notifications/{notificationId} {
+      allow read, update: if isSignedIn() && (
+        resource == null ||
+        resource.data.driverId == request.auth.uid ||
+        isAdmin(request.auth.uid)
+      );
+      allow create: if isSignedIn();
+    }
+  }
+}

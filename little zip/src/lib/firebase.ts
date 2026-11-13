@@ -4,7 +4,7 @@ import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'AIzaSyBcQyi5Ebv1HQQxjICbF2yVSd3OenhLMTw',
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || 'truckin-smart.firebaseapp.com',
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'truckin-smart',
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'truckin-smart.firebasestorage.app',

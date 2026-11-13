@@ -6,7 +6,7 @@ runConfig:
 
 env:
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
-    value: "AIzaSyBcQyi5Ebv1HQQxjICbF2yVSd3OenhLMTw"
+    secret: NEXT_PUBLIC_FIREBASE_API_KEY
     availability:
       - BUILD
       - RUNTIME
@@ -36,17 +36,17 @@ env:
       - BUILD
       - RUNTIME
   - variable: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
-    value: AIzaSyBcQyi5Ebv1HQQxjICbF2yVSd3OenhLMTw
+    secret: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
     availability:
       - BUILD
       - RUNTIME
   - variable: GEMINI_API_KEY
-    value: "AIzaSyDz9Dr8Uf39gaQxsxbgXSKvXoSvLIxRv4k"
+    secret: GEMINI_API_KEY
     availability:
       - BUILD
       - RUNTIME
   - variable: GOOGLE_GENAI_API_KEY
-    value: "AIzaSyDz9Dr8Uf39gaQxsxbgXSKvXoSvLIxRv4k"
+    secret: GOOGLE_GENAI_API_KEY
     availability:
       - BUILD
       - RUNTIME

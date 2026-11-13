@@ -41,6 +41,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useApp } from '@/context/AppContext';
+import { buildUnifiedExpenses } from '@/lib/expenseLedger';
 import { cn, formatAddress } from '@/lib/utils';
 import { getLoadDisplayId } from '@/lib/displayId';
 

@@ -126,6 +126,24 @@ export function DashboardPage() {
   const currentMonth = { start: startOfMonth(now), end: endOfMonth(now) };
   const lastMonth = { start: startOfMonth(subMonths(now, 1)), end: endOfMonth(subMonths(now, 1)) };
 
+  // Helper: get recorded or mileage-estimated fuel cost for a load
+  const estimateLoadFuel = (l: typeof loads[number]): number => {
+    const loggedFuel = expenses
+      .filter(e => e.loadId === l.id && e.category?.toLowerCase().includes('fuel'))
+      .reduce((s, e) => s + (e.amount || 0), 0);
+    if (loggedFuel > 0) return loggedFuel;
+    const miles = (l.distance || 0) + (l.deadheadMiles || 0);
+    if (miles <= 0) return 0;
+    const truck = l.assignedTruckId ? vehicles.find(v => v.id === l.assignedTruckId) : undefined;
+    const mpg = (truck?.mpg && truck.mpg > 0)
+      ? truck.mpg
+      : (settings.truckMpg && settings.truckMpg > 0 ? settings.truckMpg : 10);
+    const fuelPrice = (settings.defaultFuelCostPerGallon && settings.defaultFuelCostPerGallon > 0)
+      ? settings.defaultFuelCostPerGallon
+      : 4.0;
+    return parseFloat(((miles / mpg) * fuelPrice).toFixed(2));
+  };
+
   const calculateStatsForRange = (range: { start: Date, end: Date }) => {
     const filteredLoads = loads.filter(l => 
       l.deliveryDateTime && isWithinInterval(parseISO(l.deliveryDateTime), range)
@@ -135,16 +153,21 @@ export function DashboardPage() {
 
     // load.expenses.recurring already includes both per-vehicle costs AND prorated
     // fleet overhead (set by AppContext). Don't add vehicle expenses separately.
+    let usedEstimatedFuel = false;
     const loadExpenses = filteredLoads.reduce((sum, l) => {
       if (l.expenses?.calculated) {
+        const fuelVal = (l.expenses.fuel || 0) > 0 ? l.expenses.fuel : estimateLoadFuel(l);
+        if ((l.expenses.fuel || 0) === 0 && fuelVal > 0) usedEstimatedFuel = true;
         return sum + 
           (l.expenses.payroll || 0) + 
-          (l.expenses.fuel || 0) + 
+          fuelVal + 
           (l.expenses.maintenance || 0) +
           (l.expenses.def || 0) + 
           (l.expenses.recurring || 0);
       }
-      return sum;
+      const estFuel = estimateLoadFuel(l);
+      if (estFuel > 0) usedEstimatedFuel = true;
+      return sum + estFuel;
     }, 0);
     
     const directExpenses = expenses.filter(e => 
@@ -152,7 +175,7 @@ export function DashboardPage() {
     ).reduce((sum, e) => sum + e.amount, 0);
     
     const totalExp = loadExpenses + directExpenses;
-    return { revenue, expenses: totalExp, profit: revenue - totalExp };
+    return { revenue, expenses: totalExp, profit: revenue - totalExp, usedEstimatedFuel };
   };
 
 

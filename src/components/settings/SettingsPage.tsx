@@ -279,6 +279,53 @@ export function SettingsPage() {
     return (settingsForm.recurringExpenses || []).reduce((s, e) => s + (e.amount || 0), 0);
   }, [settingsForm.recurringExpenses]);
 
+  // Calculate suggested operating cost per mile from fleet fixed costs, fuel, and estimated miles
+  const suggestedOperatingCpm = useMemo(() => {
+    let vehicleFixedTotal = 0;
+    let totalEstMiles = 0;
+    let truckCount = 0;
+
+    (vehicles || []).forEach((v: any) => {
+      if (v.type === 'truck') truckCount += 1;
+      const fixedArr = Array.isArray(v.monthlyFixedCosts) ? v.monthlyFixedCosts : [];
+      vehicleFixedTotal += fixedArr.reduce((s: number, item: any) => s + (Number(item?.amount) || 0), 0);
+      if (v.monthlyRecurringExpenses) {
+        vehicleFixedTotal +=
+          (Number(v.monthlyRecurringExpenses.insurance) || 0) +
+          (Number(v.monthlyRecurringExpenses.truckPayment) || 0) +
+          (Number(v.monthlyRecurringExpenses.trailerPayment) || 0) +
+          (Number(v.monthlyRecurringExpenses.eldCostPerMonth) || 0);
+      }
+      vehicleFixedTotal += Number(v.eldCostPerMonth) || 0;
+      if (Number(v.estimatedMonthlyMiles) > 0) {
+        totalEstMiles += Number(v.estimatedMonthlyMiles);
+      }
+    });
+
+    const totalMonthlyFixed = recurringGrandTotal + (Number(settingsForm.monthlyMaintenance) || 0) + vehicleFixedTotal;
+    const estMonthlyMiles = totalEstMiles > 0 ? totalEstMiles : Math.max(1, truckCount) * 8000;
+    const fuelPrice = Number(settingsForm.defaultFuelCostPerGallon) || 0;
+    const mpg = Number(settingsForm.truckMpg) > 0 ? Number(settingsForm.truckMpg) : 10;
+    const fuelCpm = fuelPrice > 0 ? fuelPrice / mpg : 0;
+
+    if (totalMonthlyFixed <= 0 && fuelCpm <= 0) {
+      return { value: 0.85, isBaseline: true };
+    }
+    const raw = totalMonthlyFixed / estMonthlyMiles + fuelCpm + 0.12;
+    return { value: Number(Math.max(0.25, raw).toFixed(2)), isBaseline: false };
+  }, [vehicles, recurringGrandTotal, settingsForm.monthlyMaintenance, settingsForm.defaultFuelCostPerGallon, settingsForm.truckMpg]);
+
+  const didAutoFillCpmRef = React.useRef(false);
+  useEffect(() => {
+    if (didAutoFillCpmRef.current) return;
+    if (!settingsForm.defaultOperatingCostPerMile || settingsForm.defaultOperatingCostPerMile <= 0) {
+      didAutoFillCpmRef.current = true;
+      setSettingsForm(prev => ({ ...prev, defaultOperatingCostPerMile: suggestedOperatingCpm.value }));
+    } else {
+      didAutoFillCpmRef.current = true;
+    }
+  }, [settingsForm.defaultOperatingCostPerMile, suggestedOperatingCpm.value, setSettingsForm]);
+
   // Tab definitions
   const TABS = [
     { id: 'financials', label: 'Financials & Rates', icon: DollarSign, desc: 'Profit targets, driver pay, operating CPM' },

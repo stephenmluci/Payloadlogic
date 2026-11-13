@@ -431,8 +431,8 @@ export function DashboardPage() {
               value={`$${currentStats.expenses.toLocaleString()}`}
               icon={<Receipt />}
               variant="expenses"
-              changeText={expenseChange.text}
-              isPositive={expenseChange.positive === null ? null : !expenseChange.positive}
+              changeText={currentStats.usedEstimatedFuel ? 'Includes est. fuel from load miles' : expenseChange.text}
+              isPositive={currentStats.usedEstimatedFuel ? null : (expenseChange.positive === null ? null : !expenseChange.positive)}
               onClick={() => setActiveTab('expenses')}
               actionLabel={noExpenses ? 'Log an expense' : 'View expenses'}
               isEmpty={noExpenses}

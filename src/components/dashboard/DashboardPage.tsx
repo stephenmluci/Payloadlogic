@@ -87,7 +87,7 @@ const formatWeekDisplay = (weekKey: string): string => {
 
 export function DashboardPage() {
   const { 
-    loads, expenses, trips, settings, clients, vehicles, getFuelOptimizationProfit, generateAgreement, generateInvoice,
+    loads, expenses, trips, settings, clients, vehicles, driverProfiles, getFuelOptimizationProfit, generateAgreement, generateInvoice,
     handleStartEditLoad, setActiveTab, openHelpTopic,
   } = useApp();
 

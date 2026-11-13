@@ -1077,12 +1077,12 @@ export function SettingsPage() {
       {/* ── TAB 5: Recurring Fleet Overhead ─────────────────────────── */}
       {activeAssetType === 'global' && activeTab === 'recurring' && (
         <Card className="border border-slate-200 shadow-sm bg-white rounded-xl">
-          <CardHeader className="pb-4 border-b border-slate-100 flex flex-row items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
+          <CardHeader className="pb-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+              <div className="h-9 w-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 shrink-0">
                 <Repeat className="h-5 w-5" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <CardTitle className="text-lg font-bold text-slate-900">Fleet-Level Recurring Overhead</CardTitle>
                 <CardDescription className="text-xs text-slate-500">
                   Fixed company-wide expenses (yard rent, software, legal, insurance) factored into fleet break-even calculations.
@@ -1095,7 +1095,7 @@ export function SettingsPage() {
               variant="outline" 
               size="sm" 
               onClick={addRecurringExpense} 
-              className="h-8 text-xs font-semibold bg-white border-slate-300 text-slate-700 hover:bg-slate-50 gap-1.5"
+              className="h-8 text-xs font-semibold bg-white border-slate-300 text-slate-700 hover:bg-slate-50 gap-1.5 self-start sm:self-auto shrink-0"
             >
               <PlusCircle className="h-3.5 w-3.5 text-emerald-600" />
               Add Expense Line
@@ -1163,36 +1163,52 @@ export function SettingsPage() {
                         </div>
                         <div className="divide-y divide-slate-100 bg-white">
                           {entries.map(({ item, index }) => (
-                            <div key={index} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50/70 transition-colors">
-                              <select
-                                value={item.category || ''}
-                                onChange={(e) => updateRecurringExpense(index, 'category', e.target.value)}
-                                className="text-[11px] border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 shrink-0 w-36 h-8 font-medium"
-                              >
-                                {CATEGORY_ORDER.map(c => <option key={c} value={c}>{c}</option>)}
-                                <option value="">Uncategorized</option>
-                              </select>
-                              <Input
-                                value={item.name}
-                                onChange={(e) => updateRecurringExpense(index, 'name', e.target.value)}
-                                placeholder="Expense description (e.g. Yard Lease)"
-                                className="flex-grow h-8 text-xs"
-                              />
-                              <div className="relative shrink-0 w-32">
-                                <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                            <div key={index} className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-2.5 hover:bg-slate-50/70 transition-colors">
+                              <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
+                                <select
+                                  value={item.category || ''}
+                                  onChange={(e) => updateRecurringExpense(index, 'category', e.target.value)}
+                                  className="text-[11px] border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 flex-1 min-w-0 sm:flex-none sm:w-36 h-9 sm:h-8 font-medium"
+                                >
+                                  {CATEGORY_ORDER.map(c => <option key={c} value={c}>{c}</option>)}
+                                  <option value="">Uncategorized</option>
+                                </select>
+                                <Button 
+                                  type="button"
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-9 w-9 sm:hidden shrink-0 text-slate-400 hover:text-red-600 hover:bg-red-50" 
+                                  onClick={() => removeRecurringExpense(index)} 
+                                  title="Remove Line"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                              <div className="flex items-center gap-2 w-full sm:flex-1 sm:min-w-0">
                                 <Input
-                                  type="number"
-                                  value={item.amount === 0 ? '' : item.amount}
-                                  onChange={(e) => updateRecurringExpense(index, 'amount', e.target.value)}
-                                  placeholder="0.00"
-                                  className="pl-7 h-8 text-xs font-semibold"
+                                  value={item.name}
+                                  onChange={(e) => updateRecurringExpense(index, 'name', e.target.value)}
+                                  placeholder="Expense description (e.g. Yard Lease)"
+                                  className="flex-1 min-w-0 h-9 sm:h-8 text-xs"
                                 />
+                                <div className="relative shrink-0 w-28 sm:w-32">
+                                  <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                                  <Input
+                                    type="number"
+                                    inputMode="decimal"
+                                    step="any"
+                                    value={item.amount === 0 ? '' : item.amount}
+                                    onChange={(e) => updateRecurringExpense(index, 'amount', e.target.value)}
+                                    placeholder="0.00"
+                                    className="pl-7 h-9 sm:h-8 text-xs font-semibold"
+                                  />
+                                </div>
                               </div>
                               <Button 
                                 type="button"
                                 variant="ghost" 
                                 size="icon" 
-                                className="h-8 w-8 shrink-0 text-slate-400 hover:text-red-600 hover:bg-red-50" 
+                                className="hidden sm:inline-flex h-8 w-8 shrink-0 text-slate-400 hover:text-red-600 hover:bg-red-50" 
                                 onClick={() => removeRecurringExpense(index)} 
                                 title="Remove Line"
                               >

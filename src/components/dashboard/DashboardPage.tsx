@@ -395,10 +395,10 @@ export function DashboardPage() {
             />
             <MetricCard
               title="This Month Expenses"
-              value={`$${currentStats.expenses.toLocaleString()}`}
+              value={`$${currentStats.expenses.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
               icon={<Receipt />}
               variant="expenses"
-              changeText={currentStats.usedEstimatedFuel ? 'Includes est. fuel from load miles' : expenseChange.text}
+              changeText={currentStats.usedEstimatedFuel ? 'Includes est. fuel, payroll & reserve' : expenseChange.text}
               isPositive={currentStats.usedEstimatedFuel ? null : (expenseChange.positive === null ? null : !expenseChange.positive)}
               onClick={() => setActiveTab('expenses')}
               actionLabel={noExpenses ? 'Log an expense' : 'View expenses'}
@@ -407,7 +407,7 @@ export function DashboardPage() {
             />
             <MetricCard
               title="This Month Profit"
-              value={`$${totalProfit.toLocaleString()}`}
+              value={`$${totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
               icon={<TrendingUp />}
               variant="profit"
               emphasis

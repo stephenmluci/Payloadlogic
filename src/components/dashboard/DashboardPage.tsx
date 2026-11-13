@@ -189,24 +189,16 @@ export function DashboardPage() {
       if (weekKey) {
         if (!weeklyAccumulator[weekKey]) weeklyAccumulator[weekKey] = { revenue: 0, expenses: 0, profit: 0 };
         weeklyAccumulator[weekKey].revenue += load.totalAgreedRate;
-        if (load.expenses?.calculated) {
-          const loadExp =
-            (load.expenses.payroll || 0) +
-            (load.expenses.fuel || 0) +
-            (load.expenses.maintenance || 0) +
-            (load.expenses.def || 0) +
-            (load.expenses.recurring || 0);
-          weeklyAccumulator[weekKey].expenses += loadExp;
-        }
       }
     }
   });
 
-  expenses.forEach(expense => {
-    if (!expense.loadId && expense.date) {
+  unifiedExpenses.forEach(expense => {
+    if (expense.date) {
       const weekKey = getWeekKey(expense.date);
-      if (weekKey && weeklyAccumulator[weekKey]) {
-        weeklyAccumulator[weekKey].expenses += expense.amount;
+      if (weekKey) {
+        if (!weeklyAccumulator[weekKey]) weeklyAccumulator[weekKey] = { revenue: 0, expenses: 0, profit: 0 };
+        weeklyAccumulator[weekKey].expenses += expense.amount || 0;
       }
     }
   });
@@ -222,22 +214,18 @@ export function DashboardPage() {
     .sort((a, b) => a.weekKey!.localeCompare(b.weekKey!));
 
 
-  // Pie Chart: Expense Breakdown — aggregated from live load and expense data
+  // Pie Chart: Expense Breakdown — aggregated from current month's unified ledger expenses
   const categoryTotals: Record<string, number> = {};
-  loads.forEach(load => {
-    if (load.expenses?.calculated) {
-      categoryTotals['Payroll']     = (categoryTotals['Payroll']     || 0) + load.expenses.payroll;
-      categoryTotals['Fuel']        = (categoryTotals['Fuel']        || 0) + load.expenses.fuel;
-      categoryTotals['Maintenance'] = (categoryTotals['Maintenance'] || 0) + (load.expenses.maintenance || 0);
-      categoryTotals['Recurring']   = (categoryTotals['Recurring']   || 0) + load.expenses.recurring;
-    }
-  });
-  expenses.forEach(expense => {
-    if (!expense.loadId) {
-      categoryTotals[expense.category] = (categoryTotals[expense.category] || 0) + expense.amount;
-    }
-  });
-  const pieData: { name: string; value: number }[] = Object.entries(categoryTotals).map(([name, value]) => ({ name, value }));
+  unifiedExpenses
+    .filter(exp => isInRange(exp.date, currentMonth))
+    .forEach(expense => {
+      const cat = expense.category || 'Other';
+      categoryTotals[cat] = parseFloat(((categoryTotals[cat] || 0) + (expense.amount || 0)).toFixed(2));
+    });
+  const pieData: { name: string; value: number }[] = Object.entries(categoryTotals)
+    .filter(([, value]) => value > 0)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
 
   const COLORS = ['#2563eb', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#94a3b8'];
 

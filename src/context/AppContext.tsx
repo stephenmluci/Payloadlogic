@@ -1826,11 +1826,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                 nextLoadNumeric = (await getDocs(loadsCollectionRef)).size + 1;
             }
             const newLoadNumber = formatLoadDisplayId(new Date(), nextLoadNumeric);
+            const assignedTruckForEst = dataWithCalculations.assignedTruckId
+              ? vehicles.find(v => v.id === dataWithCalculations.assignedTruckId)
+              : undefined;
+            const estMpg = (assignedTruckForEst?.mpg && assignedTruckForEst.mpg > 0)
+              ? assignedTruckForEst.mpg
+              : (settings.truckMpg && settings.truckMpg > 0 ? settings.truckMpg : 10);
+            const estFuelPrice = (settings.defaultFuelCostPerGallon && settings.defaultFuelCostPerGallon > 0)
+              ? settings.defaultFuelCostPerGallon
+              : 4.0;
+            const estMiles = (dataWithCalculations.distance || 0) + (dataWithCalculations.deadheadMiles || 0);
+            const estFuelCost = estMiles > 0 ? parseFloat(((estMiles / estMpg) * estFuelPrice).toFixed(2)) : 0;
+
             const newLoadDataForFirestore = { 
               ...dataWithCalculations, 
               status: dataWithCalculations.status || 'pending_approval',
               loadNumber: newLoadNumber, 
-              expenses: { payroll: 0, fuel: 0, def: 0, recurring: 0, maintenance: 0, calculated: false } 
+              expenses: { payroll: 0, fuel: estFuelCost, def: 0, recurring: 0, maintenance: 0, calculated: estFuelCost > 0 } 
             } as Omit<Load, 'id'>;
 
             const safeLoadData = sanitizeForFirestore(newLoadDataForFirestore);

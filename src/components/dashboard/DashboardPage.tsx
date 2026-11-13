@@ -498,11 +498,16 @@ export function DashboardPage() {
                 />
               </PieChart>
             </ResponsiveContainer>
-            <div className="grid grid-cols-2 gap-4 mt-4 w-full">
-               {pieData.slice(0, 4).map((entry, index) => (
-                 <div key={entry.name} className="flex items-center gap-2">
-                   <div className="w-3 h-3 rounded-full" style={{backgroundColor: COLORS[index % COLORS.length]}}></div>
-                   <span className="text-xs text-slate-500 font-medium truncate">{entry.name}</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 mt-4 w-full">
+               {pieData.map((entry, index) => (
+                 <div key={entry.name} className="flex items-center justify-between gap-2 text-xs">
+                   <div className="flex items-center gap-2 min-w-0">
+                     <div className="w-3 h-3 rounded-full shrink-0" style={{backgroundColor: COLORS[index % COLORS.length]}}></div>
+                     <span className="text-slate-600 font-medium truncate">{entry.name}</span>
+                   </div>
+                   <span className="font-semibold text-slate-800 shrink-0">
+                     ${entry.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                   </span>
                  </div>
                ))}
             </div>

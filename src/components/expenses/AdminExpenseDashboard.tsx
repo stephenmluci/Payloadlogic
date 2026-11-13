@@ -153,7 +153,7 @@ export function AdminExpenseDashboard({
   return (
     <div className="space-y-6">
       {/* ── Monthly Summary & Financial KPI Cards ─────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         {/* Current Month Total Card */}
         <Card className="border border-slate-200/80 bg-white shadow-2xs rounded-xl overflow-hidden">
           <CardContent className="p-4 sm:p-5">

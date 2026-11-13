@@ -440,6 +440,48 @@ export function FinancialSetupReminders({
         </div>
       </div>
 
+      {/* 5-Item Profit Inputs Overview Checklist (always shows all 5 and highlights what is missing) */}
+      <div className="px-4 sm:px-5 py-3 bg-white/80 border-b border-amber-200/60">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+          {items.map((item) => {
+            const isDeferred = !item.isComplete && deferredIds.includes(item.id);
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={item.onNavigate}
+                title={item.isComplete ? `${item.shortLabel}: ${item.completedSummary}` : `Click to configure ${item.shortLabel}`}
+                className={cn(
+                  'flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border text-left transition-all',
+                  item.isComplete
+                    ? 'bg-emerald-50/70 border-emerald-200/80 text-emerald-950 hover:bg-emerald-100/70'
+                    : 'bg-amber-50 border-amber-300 text-amber-950 hover:bg-amber-100/80 shadow-2xs ring-1 ring-amber-300/60'
+                )}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  {item.isComplete ? (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                  )}
+                  <span className="text-xs font-semibold truncate">{item.shortLabel}</span>
+                </div>
+                <span
+                  className={cn(
+                    'text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0',
+                    item.isComplete
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-amber-200/90 text-amber-950'
+                  )}
+                >
+                  {item.isComplete ? 'Done' : isDeferred ? 'Missing (Later)' : 'Missing'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Active Missing Reminders List */}
       {activeMissingItems.length > 0 ? (
         <div className="p-4 sm:p-5 divide-y divide-slate-100">

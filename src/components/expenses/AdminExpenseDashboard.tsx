@@ -41,7 +41,7 @@ export interface UnifiedExpenseItem {
   loadId?: string | null;
   loadNumber?: string;
   gallonsPurchased?: number;
-  source: 'driver_actual' | 'manual_ledger';
+  source: 'driver_actual' | 'manual_ledger' | 'auto_estimated';
 }
 
 interface AdminExpenseDashboardProps {

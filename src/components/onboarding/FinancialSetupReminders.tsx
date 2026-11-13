@@ -444,7 +444,7 @@ export function FinancialSetupReminders({
       <div className="px-4 sm:px-5 py-3 bg-white/80 border-b border-amber-200/60">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
           {items.map((item) => {
-            const isDeferred = !item.isComplete && deferredIds.includes(item.id);
+            const isDeferred = !item.isComplete && deferredMissingItems.some((d) => d.id === item.id);
             return (
               <button
                 key={item.id}

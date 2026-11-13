@@ -316,7 +316,7 @@ export function SettingsPage() {
   }, [vehicles, recurringGrandTotal, settingsForm.monthlyMaintenance, settingsForm.defaultFuelCostPerGallon, settingsForm.truckMpg]);
 
   const didAutoFillCpmRef = React.useRef(false);
-  useEffect(() => {
+  React.useEffect(() => {
     if (didAutoFillCpmRef.current) return;
     if (!settingsForm.defaultOperatingCostPerMile || settingsForm.defaultOperatingCostPerMile <= 0) {
       didAutoFillCpmRef.current = true;

@@ -100,23 +100,24 @@ export function DashboardPage() {
 
 
 
-  // Total expenses across all delivered loads:
-  //   load.expenses.recurring already contains both per-vehicle asset costs AND
-  //   prorated fleet-level overhead (calculated in AppContext). We do NOT add
-  //   vehicle.recurringExpenses again here to avoid double-counting.
+  // Unified expense ledger (matches Expense Tracking & Ledger page)
+  const unifiedExpenses = React.useMemo(
+    () =>
+      buildUnifiedExpenses({
+        loads,
+        expenses,
+        vehicles,
+        settings,
+        driverProfiles,
+      }),
+    [loads, expenses, vehicles, settings, driverProfiles]
+  );
+
   const totalIncome = loads.reduce((sum, load) => sum + load.totalAgreedRate, 0);
-  const totalCalculatedExpenses = loads.reduce((sum, load) => {
-    if (load.status === 'delivered' && load.expenses?.calculated) {
-      return sum + 
-        (load.expenses.payroll || 0) + 
-        (load.expenses.fuel || 0) + 
-        (load.expenses.maintenance || 0) +
-        (load.expenses.def || 0) + 
-        (load.expenses.recurring || 0);
-    }
-    return sum;
-  }, 0) + 
-  expenses.reduce((sum, expense) => !expense.loadId ? sum + expense.amount : sum, 0);
+  const totalCalculatedExpenses = unifiedExpenses.reduce(
+    (sum, exp) => sum + (exp.amount || 0),
+    0
+  );
 
   // Note: netProfit computed here for reference but currentStats.profit is used in the UI
   const netProfit = totalIncome - totalCalculatedExpenses;
@@ -127,22 +128,10 @@ export function DashboardPage() {
   const currentMonth = { start: startOfMonth(now), end: endOfMonth(now) };
   const lastMonth = { start: startOfMonth(subMonths(now, 1)), end: endOfMonth(subMonths(now, 1)) };
 
-  // Helper: get recorded or mileage-estimated fuel cost for a load
-  const estimateLoadFuel = (l: typeof loads[number]): number => {
-    const loggedFuel = expenses
-      .filter(e => e.loadId === l.id && e.category?.toLowerCase().includes('fuel'))
-      .reduce((s, e) => s + (e.amount || 0), 0);
-    if (loggedFuel > 0) return loggedFuel;
-    const miles = (l.distance || 0) + (l.deadheadMiles || 0);
-    if (miles <= 0) return 0;
-    const truck = l.assignedTruckId ? vehicles.find(v => v.id === l.assignedTruckId) : undefined;
-    const mpg = (truck?.mpg && truck.mpg > 0)
-      ? truck.mpg
-      : (settings.truckMpg && settings.truckMpg > 0 ? settings.truckMpg : 10);
-    const fuelPrice = (settings.defaultFuelCostPerGallon && settings.defaultFuelCostPerGallon > 0)
-      ? settings.defaultFuelCostPerGallon
-      : 4.0;
-    return parseFloat(((miles / mpg) * fuelPrice).toFixed(2));
+  const isInRange = (dateStr: string | undefined, range: { start: Date; end: Date }) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    return !isNaN(d.getTime()) && d >= range.start && d <= range.end;
   };
 
   const calculateStatsForRange = (range: { start: Date, end: Date }) => {
@@ -152,31 +141,20 @@ export function DashboardPage() {
     
     const revenue = filteredLoads.reduce((sum, l) => sum + l.totalAgreedRate, 0);
 
-    // load.expenses.recurring already includes both per-vehicle costs AND prorated
-    // fleet overhead (set by AppContext). Don't add vehicle expenses separately.
-    let usedEstimatedFuel = false;
-    const loadExpenses = filteredLoads.reduce((sum, l) => {
-      if (l.expenses?.calculated) {
-        const fuelVal = (l.expenses.fuel || 0) > 0 ? l.expenses.fuel : estimateLoadFuel(l);
-        if ((l.expenses.fuel || 0) === 0 && fuelVal > 0) usedEstimatedFuel = true;
-        return sum + 
-          (l.expenses.payroll || 0) + 
-          fuelVal + 
-          (l.expenses.maintenance || 0) +
-          (l.expenses.def || 0) + 
-          (l.expenses.recurring || 0);
-      }
-      const estFuel = estimateLoadFuel(l);
-      if (estFuel > 0) usedEstimatedFuel = true;
-      return sum + estFuel;
-    }, 0);
-    
-    const directExpenses = expenses.filter(e => 
-      !e.loadId && e.date && isWithinInterval(parseISO(e.date), range)
-    ).reduce((sum, e) => sum + e.amount, 0);
-    
-    const totalExp = loadExpenses + directExpenses;
-    return { revenue, expenses: totalExp, profit: revenue - totalExp, usedEstimatedFuel };
+    const rangeExpenses = unifiedExpenses.filter(e => isInRange(e.date, range));
+    const totalExp = parseFloat(
+      rangeExpenses.reduce((sum, e) => sum + (e.amount || 0), 0).toFixed(2)
+    );
+    const usedEstimatedFuel = rangeExpenses.some(
+      e => e.source === 'auto_estimated' && e.category === 'Fuel'
+    );
+
+    return {
+      revenue,
+      expenses: totalExp,
+      profit: parseFloat((revenue - totalExp).toFixed(2)),
+      usedEstimatedFuel,
+    };
   };
 
 

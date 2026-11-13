@@ -349,7 +349,7 @@ export function DashboardPage() {
       {/* Stats Grid */}
       {(() => {
         const fuelOptProfit = getFuelOptimizationProfit();
-        const totalProfit = currentStats.profit + fuelOptProfit;
+        const totalProfit = currentStats.profit;
         const hasAnyLoads = loads.length > 0;
         const noRevenue = currentStats.revenue === 0;
         const noExpenses = currentStats.expenses === 0;

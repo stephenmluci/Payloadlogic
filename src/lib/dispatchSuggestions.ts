@@ -74,11 +74,12 @@ export function findCandidateNextLoads({
       anchorCoords = resolveCoordinates(dest.city, dest.state);
     }
 
-    // Free timestamp is delivery ETA + 45 min unloading buffer
+    // Free timestamp is delivery ETA + 45 min unloading buffer, or configured facility free time
     if (driverEstArrivalMs && driverEstArrivalMs > currentTimeMs) {
       driverFreeTimestamp = driverEstArrivalMs + 45 * 60 * 1000;
     } else {
-      driverFreeTimestamp = currentTimeMs + 90 * 60 * 1000; // Estimated 1.5 hr buffer
+      const freeTimeMs = getDetentionFreeTimeMinutes(settings) * 60 * 1000;
+      driverFreeTimestamp = currentTimeMs + freeTimeMs;
     }
   } else {
     // Driver is available or between loads: anchor point is current staging, GPS, or last known location

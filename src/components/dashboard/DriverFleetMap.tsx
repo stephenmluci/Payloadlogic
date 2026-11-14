@@ -488,6 +488,7 @@ export function DriverFleetMap({
 }: DriverFleetMapProps) {
   const [viewMode, setViewMode] = useState<'map' | 'corridor' | 'timelines'>('map');
   const [statusFilter, setStatusFilter] = useState<'All' | DriverFleetStatus>('All');
+  const [flyToTrigger, setFlyToTrigger] = useState(0);
 
   // Filtered drivers based on selected filter pill
   const filteredDrivers = useMemo(() => {

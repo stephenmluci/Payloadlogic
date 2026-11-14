@@ -1447,15 +1447,44 @@ export function LoadForm({
 
     let calculatedRate: number | null = null;
     if (isFinancialProfileComplete && loadedMiles > 0) {
-      const isPercentagePay = assignedDriver && assignedDriver.payType !== 'per-mile' && assignedDriver.payType !== 'hourly';
+      const isAssignedPercentagePay =
+        Boolean(assignedDriver) &&
+        assignedDriver!.payType !== 'per-mile' &&
+        assignedDriver!.payType !== 'hourly';
+      const isUnassignedPercentagePay =
+        !assignedDriver &&
+        settings?.defaultDriverPayType !== 'hourly' &&
+        !financialProfile?.targetDriverCPM;
+      const isPercentagePay = isAssignedPercentagePay || isUnassignedPercentagePay;
+
+      const targetDailyProfit =
+        (settings?.targetDailyBusinessProfit || 0) * effectiveOverheadDays * share;
 
       if (isPercentagePay) {
-        const payPct = (assignedDriver.payPercentageOfGross ?? assignedDriver.payrollPercentage ?? 0) / 100;
-        const netEffectiveRate = 1 - payPct - marginRatio;
+        const payPct =
+          (assignedDriver
+            ? (assignedDriver.payPercentageOfGross ??
+                assignedDriver.payrollPercentage ??
+                settings?.payrollPercentage ??
+                0)
+            : (settings?.payrollPercentage ?? 0)) / 100;
+
+        const maxSafeMargin = Math.max(0, 0.99 - payPct);
+        const effectiveMargin = Math.min(marginRatio, maxSafeMargin);
+        const netEffectiveRate = 1 - payPct - effectiveMargin;
+
+        let rawRate = 0;
         if (netEffectiveRate > 0) {
           const numerator = totalExpenses - tarpingFee * netEffectiveRate;
-          calculatedRate = Math.ceil((numerator / (loadedMiles * netEffectiveRate)) * 100) / 100 + 0.01;
+          rawRate = Math.max(rawRate, numerator / (loadedMiles * netEffectiveRate));
         }
+        if (1 - payPct > 0) {
+          const grossForDailyTarget = (totalExpenses + targetDailyProfit) / (1 - payPct);
+          rawRate = Math.max(rawRate, (grossForDailyTarget - tarpingFee) / loadedMiles);
+          const breakEvenGross = totalExpenses / (1 - payPct);
+          rawRate = Math.max(rawRate, (breakEvenGross - tarpingFee) / loadedMiles);
+        }
+        calculatedRate = Math.max(0, Math.ceil(rawRate * 100) / 100);
       } else {
         let fixedDriverPay = driverPay;
         if (!assignedDriver && financialProfile?.targetDriverCPM) {
@@ -1463,9 +1492,35 @@ export function LoadForm({
         }
 
         const totalBaseCost = totalExpenses + fixedDriverPay;
-        const grossRevNeeded = marginRatio < 1 ? totalBaseCost / (1 - marginRatio) : totalBaseCost;
-        const needed = grossRevNeeded - tarpingFee;
-        calculatedRate = Math.ceil((needed / loadedMiles) * 100) / 100 + 0.01;
+        const grossRevForMargin = marginRatio < 1 ? totalBaseCost / (1 - marginRatio) : totalBaseCost;
+        const grossRevForDailyTarget = totalBaseCost + targetDailyProfit;
+        const grossRevNeeded = Math.max(grossRevForMargin, grossRevForDailyTarget);
+        const needed = Math.max(0, grossRevNeeded - tarpingFee);
+        calculatedRate = Math.ceil((needed / loadedMiles) * 100) / 100;
+      }
+
+      // Safety guard: guarantee projected profit at the suggested rate is never negative
+      if (calculatedRate !== null) {
+        const payPctForGuard = isPercentagePay
+          ? (assignedDriver
+              ? (assignedDriver.payPercentageOfGross ??
+                  assignedDriver.payrollPercentage ??
+                  settings?.payrollPercentage ??
+                  0)
+              : (settings?.payrollPercentage ?? 0)) / 100
+          : 0;
+        const revAtSuggested = loadedMiles * calculatedRate + tarpingFee;
+        const payAtSuggested = isPercentagePay
+          ? revAtSuggested * payPctForGuard
+          : (!assignedDriver && financialProfile?.targetDriverCPM
+              ? totalMiles * financialProfile.targetDriverCPM * share
+              : driverPay);
+        const profitAtSuggested = revAtSuggested - (totalExpenses + payAtSuggested);
+        if (profitAtSuggested < 0) {
+          const denom = loadedMiles * Math.max(0.01, 1 - payPctForGuard);
+          const bump = Math.ceil((Math.abs(profitAtSuggested) / denom) * 100) / 100;
+          calculatedRate = parseFloat((calculatedRate + bump).toFixed(2));
+        }
       }
     }
 

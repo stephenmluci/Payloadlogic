@@ -1342,21 +1342,27 @@ export function LoadForm({
       share = 1.0;
     }
 
-    // ── Trip Time & Short-Trip Scaling ─────────────────────────────────────
+    // ── Trip Time & Proportional Daily Overhead Scaling ─────────────────────
     const avgSpeed = settings?.truckAverageSpeed || 55;
-    const driveHrs = totalMiles > 0 ? totalMiles / avgSpeed : 0;
-    const loadUnloadHrs = totalMiles > 0 ? 1.0 : 0; // ~30 min load + ~30 min unload
-    const totalHrs = driveHrs + loadUnloadHrs;
-    const isShortTrip = totalMiles > 0 && effectiveTripDays <= 1 && (totalMiles < 100 || totalHrs < 2);
-    const timeScale = isShortTrip ? Math.min(1, Math.max(0.125, totalHrs / 8)) : 1;
+    const transitCalendarDays = effectiveTripDays > 0 ? effectiveTripDays : 1;
+    const {
+      driveHrs,
+      loadUnloadHrs,
+      totalHrs,
+      isTimeProrated: isShortTrip,
+      timeScale,
+      effectiveOverheadDays,
+    } = calculateTimeProratedOverheadDays({
+      totalMiles,
+      averageSpeedMph: avgSpeed,
+      operationalDays: transitCalendarDays,
+    });
 
     // ── Global Overhead Rule ────────────────────────────────────────────────
     // 1. Deck Percentage: (Load Linear Feet / Trailer Max Length) uses effectiveDeckPercentageRatio computed above
 
-    // 2. Gross Overhead: (Daily Truck Overhead * Transit Calendar Days, time-scaled for short local trips)
+    // 2. Gross Overhead: (Daily Truck Overhead * Prorated Operating Days)
     const dailyTruckOverhead = totalMonthlyForOverhead / 30;
-    const transitCalendarDays = effectiveTripDays > 0 ? effectiveTripDays : 1;
-    const effectiveOverheadDays = isShortTrip ? timeScale : transitCalendarDays;
     const grossOverhead = dailyTruckOverhead * effectiveOverheadDays;
 
     // 3. Prorated Allocation: (Gross Overhead * Deck Percentage)

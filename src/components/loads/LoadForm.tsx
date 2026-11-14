@@ -4,6 +4,7 @@ import { calculateTripMetrics, computeCargoLinearFootprint, calculateTimeProrate
 import { getDriverProfileId } from '@/lib/driverAssignment';
 import { vehicleToEngineTruck, vehicleToEngineTrailer, loadToCargoItem } from '@/lib/logisticsAdapters';
 import { calculateHOSTransit } from '@/lib/hosEngine';
+import { isVehicleCargo, calculateVehicleMarketReference } from '@/lib/vehicleMarketRates';
 import { computeCompliance } from '@/lib/complianceEngine';
 import { HOSWarningBanner } from './HOSWarningBanner';
 import { HOSPlanningPanel } from './HOSPlanningPanel';

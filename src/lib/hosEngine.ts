@@ -1,39 +1,56 @@
 /**
  * HOS (Hours of Service) Transit-Time Engine
- * Calculates realistic transit times under FMCSA HOS rules for hotshot/non-CDL operations.
+ * Estimates transit times based on distance ÷ average speed and driver HOS availability.
  *
  * Spec constants:
- *   - Average highway speed : 55 mph
- *   - Max daily drive window : 11 hrs  (~605 miles/day max)
- *   - Mandatory rest break   : 10 hrs  (after each 11-hr drive window, trips > 605 mi)
- *   - Pickup dwell           : 1.5 hrs
- *   - Delivery dwell         : 1.5 hrs
+ *   - Default average speed  : 55 mph (overridden by Settings.truckAverageSpeed)
+ *   - Daily drive window     : 11 hrs
+ *   - Rest break             : 10 hrs (when trip exceeds available driving hours)
+ *   - Cycle limit            : 70 hrs (triggers estimated 72-hr reset when exceeded)
+ *   - Note: Shipper/receiver dwell and detention are tracked separately and never added here.
  */
 
 export const HOS_AVG_SPEED_MPH        = 55;
 export const HOS_MAX_DRIVE_HOURS      = 11;
 export const HOS_REST_BREAK_HOURS     = 10;
-export const HOS_DWELL_PICKUP_HOURS   = 1.5;
-export const HOS_DWELL_DELIVERY_HOURS = 1.5;
+export const HOS_CYCLE_HOURS          = 70;
+export const HOS_RESET_HOURS          = 72;
 export const HOS_REST_THRESHOLD_MILES = HOS_AVG_SPEED_MPH * HOS_MAX_DRIVE_HOURS; // 605
 export const HOS_MAX_MILES_PER_DAY    = HOS_REST_THRESHOLD_MILES;
+
+export type HOSTransitOptions = {
+  /** Average truck speed in mph (defaults to 55) */
+  averageSpeedMph?: number;
+  /** Driver's available driving hours (defaults to 11) */
+  availableHosHours?: number;
+  /** Optional driver on-duty hours in the current 8-day cycle */
+  recentOnDutyHours?: number;
+};
 
 export type HOSResult = {
   /** Loaded + deadhead combined */
   totalMiles: number;
-  /** totalMiles / avg speed */
+  /** Average speed used for the estimate (mph) */
+  averageSpeedMph: number;
+  /** Estimated driving hours (totalMiles ÷ averageSpeedMph) */
   totalDriveHours: number;
-  /** Number of mandatory 10-hr rest breaks (0 when totalMiles ≤ 605) */
+  /** Driver's available HOS hours used in this check */
+  availableHosHours: number;
+  /** True when estimated driving hours exceed driver's available hours */
+  exceedsAvailableHours: boolean;
+  /** True when the trip would require an estimated 72-hour reset */
+  requiresReset: boolean;
+  /** 72 when requiresReset is true, otherwise 0 */
+  resetHours: number;
+  /** Number of estimated 10-hr rest breaks needed */
   restBreaksNeeded: number;
   /** restBreaksNeeded × 10 */
   totalRestHours: number;
-  /** Always 3.0 hrs (1.5 pickup + 1.5 delivery dwell) */
-  dwellHours: number;
-  /** totalDriveHours + totalRestHours + dwellHours */
+  /** totalDriveHours + totalRestHours + resetHours (excludes dwell/detention) */
   totalTransitHours: number;
   /** pickupDateTime + totalTransitHours */
   earliestDelivery: Date;
-  /** true when requestedDeliveryDateTime >= earliestDelivery */
+  /** true when schedule has no HOS conflict (or fits within earliestDelivery) */
   isFeasible: boolean;
   /** Hours by which the requested delivery falls short (0 when feasible) */
   hoursShort: number;
@@ -55,7 +72,8 @@ export function toDateTimeLocal(date: Date): string {
 }
 
 /**
- * Calculates HOS-compliant transit requirements and delivery feasibility.
+ * Estimates HOS transit requirements and checks for schedule conflicts based on
+ * driver HOS availability and 72-hour reset requirements.
  *
  * Returns null when inputs are insufficient (no miles entered, or invalid dates).
  */
@@ -64,6 +82,7 @@ export function calculateHOSTransit(
   deadheadMiles: number,
   pickupDateTime: string,
   requestedDeliveryDateTime: string,
+  options?: HOSTransitOptions,
 ): HOSResult | null {
   const totalMiles = (loadedMiles || 0) + (deadheadMiles || 0);
 
@@ -74,37 +93,53 @@ export function calculateHOSTransit(
 
   if (isNaN(pickupDate.getTime()) || isNaN(requestedDelivery.getTime())) return null;
 
-  // ── Drive time ──────────────────────────────────────────────────────────────
-  const totalDriveHours = totalMiles / HOS_AVG_SPEED_MPH;
+  // ── Drive time (distance ÷ average speed only, no dwell) ────────────────────
+  const averageSpeedMph =
+    options?.averageSpeedMph && options.averageSpeedMph > 0
+      ? options.averageSpeedMph
+      : HOS_AVG_SPEED_MPH;
+  const totalDriveHours = totalMiles / averageSpeedMph;
 
-  // ── Rest breaks ─────────────────────────────────────────────────────────────
-  // One mandatory 10-hr break is added after every completed 11-hr drive window.
-  // Only required when the total trip distance exceeds the threshold.
-  let restBreaksNeeded = 0;
-  if (totalMiles > HOS_REST_THRESHOLD_MILES) {
-    const driveSegments = Math.ceil(totalMiles / HOS_MAX_MILES_PER_DAY);
-    restBreaksNeeded = Math.max(0, driveSegments - 1);
-  }
+  // ── HOS availability & 72-hour reset check ──────────────────────────────────
+  const availableHosHours =
+    options?.availableHosHours !== undefined
+      ? Math.max(0, options.availableHosHours)
+      : HOS_MAX_DRIVE_HOURS;
+
+  const exceedsAvailableHours = totalDriveHours > availableHosHours;
+  const requiresReset =
+    totalDriveHours > HOS_CYCLE_HOURS ||
+    (options?.recentOnDutyHours !== undefined &&
+      options.recentOnDutyHours + totalDriveHours > HOS_CYCLE_HOURS);
+
+  const restBreaksNeeded = exceedsAvailableHours
+    ? Math.ceil((totalDriveHours - availableHosHours) / HOS_MAX_DRIVE_HOURS)
+    : 0;
 
   const totalRestHours    = restBreaksNeeded * HOS_REST_BREAK_HOURS;
-  const dwellHours        = HOS_DWELL_PICKUP_HOURS + HOS_DWELL_DELIVERY_HOURS;
-  const totalTransitHours = totalDriveHours + totalRestHours + dwellHours;
+  const resetHours        = requiresReset ? HOS_RESET_HOURS : 0;
+  const totalTransitHours = totalDriveHours + totalRestHours + resetHours;
 
   // Round up to nearest minute
   const earliestDeliveryMs = pickupDate.getTime() + totalTransitHours * 3_600_000;
   const earliestDelivery   = new Date(Math.ceil(earliestDeliveryMs / 60_000) * 60_000);
 
-  const diffMs     = requestedDelivery.getTime() - earliestDelivery.getTime();
-  const isFeasible = diffMs >= -60_000; // 1-minute tolerance
-  const hoursShort = isFeasible ? 0 : Math.abs(diffMs) / 3_600_000;
-  const isInverted = requestedDelivery.getTime() <= pickupDate.getTime();
+  const diffMs       = requestedDelivery.getTime() - earliestDelivery.getTime();
+  const isInverted   = requestedDelivery.getTime() <= pickupDate.getTime();
+  const hasHosIssue  = exceedsAvailableHours || requiresReset;
+  const isFeasible   = !isInverted && !(hasHosIssue && diffMs < -60_000);
+  const hoursShort   = isFeasible ? 0 : Math.abs(diffMs) / 3_600_000;
 
   return {
     totalMiles,
+    averageSpeedMph,
     totalDriveHours,
+    availableHosHours,
+    exceedsAvailableHours,
+    requiresReset,
+    resetHours,
     restBreaksNeeded,
     totalRestHours,
-    dwellHours,
     totalTransitHours,
     earliestDelivery,
     isFeasible,

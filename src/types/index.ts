@@ -103,6 +103,8 @@ export type Load = {
   };
 
   cargoDescription?: string;
+  cargoType?: 'general' | 'vehicle';
+  vehicleTransportType?: 'open' | 'enclosed';
   cargoLength?: number; // In feet
   cargoWidth?: number;  // In feet
   cargoHeight?: number; // In feet

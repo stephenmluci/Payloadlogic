@@ -1533,6 +1533,7 @@ export function LoadForm({
     loadedMiles,
     tarpingFee,
     assignedDriverObj,
+    effectiveDeckPercentageRatio,
     isFinancialProfileComplete
   ]);
 

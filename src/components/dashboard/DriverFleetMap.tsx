@@ -582,8 +582,8 @@ export function DriverFleetMap({
         </div>
       </div>
 
-      {/* ── Mathematical Telemetry HUD Banner ── */}
-      <div className="px-4 py-2 bg-slate-950/70 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] z-10">
+      {/* ── Mathematical Telemetry HUD Banner (desktop/tablet) ── */}
+      <div className="hidden sm:flex px-4 py-1.5 bg-slate-950/70 border-b border-slate-800/80 flex-wrap items-center justify-between gap-2 text-[11px] z-10 shrink-0">
         <div className="flex items-center gap-2">
           <Gauge className="h-3.5 w-3.5 text-sky-400 shrink-0" />
           <span className="text-slate-400 font-mono text-[10px] sm:text-[11px]">
@@ -595,11 +595,6 @@ export function DriverFleetMap({
           <span>&bull;</span>
           <span>Method: <strong className="text-sky-400">Calculated Progression</strong></span>
         </div>
-      </div>
-
-      {/* ── Disclaimer Notification Stripe ── */}
-      <div className="px-3.5 py-1.5 bg-amber-500/10 border-b border-amber-500/20 text-amber-200 text-[10px] sm:text-[11px] flex items-center gap-2 z-10">
-        <LocationDisclaimerNotice variant="inline" className="text-[10px] sm:text-[11px]" />
       </div>
 
       {/* ── Main Display Body ── */}

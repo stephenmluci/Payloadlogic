@@ -44,8 +44,8 @@ export function FloatingHelpWidget() {
 
   return (
     <>
-      {/* Floating trigger button: Lower-left corner on both mobile and desktop, safely above bottom nav & sticky save bars */}
-      <div className="fixed left-3 md:left-4 bottom-[124px] md:bottom-[76px] z-40 select-none">
+      {/* Floating trigger button: Lower-right corner on mobile and desktop, clear of map overlays & bottom nav */}
+      <div className="fixed right-3 md:right-4 bottom-[76px] md:bottom-[76px] z-40 select-none">
         <button
           type="button"
           onClick={() => setIsOpen((prev) => !prev)}

@@ -819,6 +819,7 @@ export function DriverFleetMap({
             onSelectDriver={onSelectDriver}
             mapType="roadmap"
             isVisible={viewMode === 'map'}
+            flyToTrigger={flyToTrigger}
             onSwitchToCorridor={() => setViewMode('corridor')}
           />
         </div>
@@ -826,10 +827,21 @@ export function DriverFleetMap({
 
       {/* ── Bottom Fleet Driver Switcher Bar ── */}
       <div className="p-2.5 bg-slate-950 border-t border-slate-800/90 z-20 shrink-0">
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-          <span className="text-[10px] uppercase font-bold text-slate-500 px-2 shrink-0">
+        <div className="flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-none">
+          <span className="text-[10px] uppercase font-bold text-slate-500 px-1.5 shrink-0">
             Fleet:
           </span>
+          {viewMode === 'map' && selectedItem && (
+            <button
+              type="button"
+              onClick={() => setFlyToTrigger((n) => n + 1)}
+              className="shrink-0 px-2.5 py-1.5 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 text-xs font-semibold flex items-center gap-1.5 transition-all"
+              title="Center map on active driver location"
+            >
+              <Navigation className="h-3.5 w-3.5" />
+              Fly to {selectedItem.driver.name.split(' ')[0]}
+            </button>
+          )}
           {drivers.map(d => {
             const isSelected = d.driver.uid === selectedItem?.driver.uid;
             const math = calculateMathematicalProgress(d);

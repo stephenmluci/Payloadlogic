@@ -213,7 +213,7 @@ export function SettingsPage() {
       'monthlyMaintenance'
     ];
 
-    const optionalNumericFields = ['loadingFee', 'detentionFeeRate', 'defaultDriverHourlyRate'];
+    const optionalNumericFields = ['loadingFee', 'detentionFeeRate', 'detentionFreeTimeMinutes', 'defaultDriverHourlyRate'];
 
     if (requiredNumericFields.includes(name)) {
       const numVal = value === '' ? 0 : Number(value);

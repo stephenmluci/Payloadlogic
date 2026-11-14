@@ -1939,6 +1939,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               return;
             }
         }
+        } finally {
+          isSavingLoadRef.current = false;
+        }
     }
     handleCancelEditLoad();
     localStorage.removeItem('agy_load_draft');

@@ -139,6 +139,47 @@ export function computeCargoLinearFootprint(
   }
 }
 
+/**
+ * Prorates daily truck overhead based on the actual estimated portion of an 8-hour operating day
+ * a single-day load uses, rather than charging a full calendar day for short trips.
+ */
+export function calculateTimeProratedOverheadDays({
+  totalMiles,
+  averageSpeedMph = 55,
+  operationalDays = 1,
+}: {
+  totalMiles: number;
+  averageSpeedMph?: number;
+  operationalDays?: number;
+}): {
+  driveHrs: number;
+  loadUnloadHrs: number;
+  totalHrs: number;
+  isTimeProrated: boolean;
+  timeScale: number;
+  effectiveOverheadDays: number;
+} {
+  const speed = averageSpeedMph > 0 ? averageSpeedMph : 55;
+  const driveHrs = totalMiles > 0 ? totalMiles / speed : 0;
+  const loadUnloadHrs = totalMiles > 0 ? 1.0 : 0; // ~30 min load + ~30 min unload
+  const totalHrs = driveHrs + loadUnloadHrs;
+  const safeOpDays = operationalDays > 0 ? operationalDays : 1;
+  const isTimeProrated = totalMiles > 0 && safeOpDays <= 1 && totalHrs < 8;
+  const timeScale = isTimeProrated ? Math.min(1, Math.max(0.05, totalHrs / 8)) : 1;
+  const effectiveOverheadDays = totalMiles > 0
+    ? (isTimeProrated ? timeScale : safeOpDays)
+    : 0;
+
+  return {
+    driveHrs,
+    loadUnloadHrs,
+    totalHrs,
+    isTimeProrated,
+    timeScale,
+    effectiveOverheadDays,
+  };
+}
+
 export interface TripInputs {
   truck: Truck;
   trailer: Trailer;

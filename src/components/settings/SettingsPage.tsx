@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { SUPPORT_EMAIL } from '@/lib/support';
+import { getDetentionFreeTimeMinutes, getDetentionFeeRate, formatFreeTimeLabel } from '@/lib/detention';
 import type { RecurringExpenseItem, Address } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

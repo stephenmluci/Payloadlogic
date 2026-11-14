@@ -209,7 +209,7 @@ export function LoadsPage() {
     if (loadForm.tripId && loadForm.tripId !== 'none') {
       const trip = trips.find(t => t.id === loadForm.tripId);
       if (trip) {
-        const tripLoads = loads.filter(l => l.tripId === trip.id && l.id !== editingLoadId && l.status !== 'delivered');
+        const tripLoads = loads.filter(l => l.tripId === trip.id && l.id !== editingLoadId && !isLoadCompleted(l));
         const effectiveTrailerId = trip.assignedTrailerId || tripLoads[0]?.assignedTrailerId || loadForm.assignedTrailerId;
         const effectiveTrailer = vehicles.find(v => v.id === effectiveTrailerId);
         

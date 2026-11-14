@@ -1487,6 +1487,9 @@ export function LoadForm({
               });
               return;
             }
+            if (!loadForm.cargoQuantity || loadForm.cargoQuantity < 1) {
+              setLoadForm(prev => ({ ...prev, cargoQuantity: 1 }));
+            }
             onSubmit(e);
           }}
           className="space-y-6"

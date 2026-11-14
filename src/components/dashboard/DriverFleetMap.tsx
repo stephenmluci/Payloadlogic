@@ -216,6 +216,7 @@ export interface GoogleMapProps {
   onSelectDriver: (driverId: string) => void;
   mapType?: 'roadmap' | 'satellite' | 'hybrid' | 'terrain';
   isVisible?: boolean;
+  flyToTrigger?: number;
   onSwitchToCorridor?: () => void;
   className?: string;
 }
@@ -232,6 +233,7 @@ export function GoogleMap({
   onSelectDriver,
   mapType = 'roadmap',
   isVisible = true,
+  flyToTrigger = 0,
   onSwitchToCorridor,
   className = '',
 }: GoogleMapProps) {

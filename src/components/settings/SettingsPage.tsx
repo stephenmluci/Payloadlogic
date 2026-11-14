@@ -632,6 +632,38 @@ export function SettingsPage() {
 
             <Separator />
 
+            {/* Current Detention Policy Summary */}
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="space-y-0.5">
+                <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-purple-600" />
+                  Current Detention Policy
+                </p>
+                <p className="text-xs text-slate-600">
+                  Free time:{' '}
+                  <span className="font-semibold text-slate-900">
+                    {formatFreeTimeLabel(getDetentionFreeTimeMinutes(settingsForm))}
+                  </span>
+                  {' • '}
+                  Hourly rate:{' '}
+                  <span className="font-semibold text-slate-900">
+                    ${getDetentionFeeRate(settingsForm).toFixed(2)}/hr
+                  </span>
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs shrink-0"
+                onClick={() => setActiveTab('contracts')}
+              >
+                Edit Detention Settings
+              </Button>
+            </div>
+
+            <Separator />
+
             {/* Company Driver Pay Model */}
             <div>
               <Label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2">

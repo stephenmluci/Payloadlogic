@@ -1764,13 +1764,34 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             }
         }
     } else { 
+        isSavingLoadRef.current = true;
+        try {
         if (editingLoadId) {
             try {
-              const loadRef = doc(db, `users/${user.uid}/loads`, editingLoadId);
               const sanitizedPayload = sanitizeForFirestore(dataWithCalculations);
-              await updateDoc(loadRef, sanitizedPayload);
-              // onSnapshot will update local state — no manual setLoads needed
-              toast({ title: "Load Updated", description: `Load ${loadForm.loadNumber || editingLoadId} has been successfully updated.` });
+              let targetLoadRef = doc(db, `users/${user.uid}/loads`, editingLoadId);
+              const existingSnap = await getDoc(targetLoadRef);
+
+              if (!existingSnap.exists() && loadForm.loadNumber) {
+                // Fallback: locate by loadNumber in case a stale local ID was passed
+                const byNumSnap = await getDocs(
+                  query(collection(db, `users/${user.uid}/loads`), where('loadNumber', '==', loadForm.loadNumber), limit(1)),
+                );
+                if (!byNumSnap.empty) {
+                  targetLoadRef = byNumSnap.docs[0].ref;
+                }
+              }
+
+              const finalCheckSnap = await getDoc(targetLoadRef);
+              if (finalCheckSnap.exists()) {
+                await updateDoc(targetLoadRef, sanitizedPayload);
+              } else {
+                await setDoc(targetLoadRef, sanitizedPayload, { merge: true });
+              }
+
+              // Also update local state immediately so UI reflects edits without waiting
+              setLoads(prev => prev.map(l => (l.id === editingLoadId || l.id === targetLoadRef.id) ? ({ ...l, ...dataWithCalculations, id: targetLoadRef.id } as Load) : l));
+              toast({ title: "Load Updated", description: `Load ${loadForm.loadNumber || targetLoadRef.id} has been successfully updated.` });
             } catch (error: any) {
               console.error('Error updating load:', error);
               toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
@@ -1778,6 +1799,29 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               return;
             }
         } else {
+            // Duplicate prevention: check if an identical load already exists in state
+            const candidateSig = getLoadDuplicateKey(dataWithCalculations);
+            const existingDuplicate = loads.find((l) => {
+              if (dataWithCalculations.originalClientRequestId && l.originalClientRequestId === dataWithCalculations.originalClientRequestId) {
+                return true;
+              }
+              return Boolean(candidateSig) && getLoadDuplicateKey(l) === candidateSig;
+            });
+
+            if (existingDuplicate?.id) {
+              const dupRef = doc(db, `users/${user.uid}/loads`, existingDuplicate.id);
+              const sanitizedPayload = sanitizeForFirestore(dataWithCalculations);
+              await setDoc(dupRef, sanitizedPayload, { merge: true });
+              toast({
+                title: "Load Updated",
+                description: `Existing load ${existingDuplicate.loadNumber || existingDuplicate.id} was updated instead of creating a duplicate.`,
+              });
+              setEditingLoadId(null);
+              setLoadForm(initialLoadFormData);
+              setIsSubmitting(false);
+              return;
+            }
+
             let nextLoadNumeric = 1;
             const loadsCollectionRef = collection(db, `users/${user.uid}/loads`);
             const q = query(loadsCollectionRef, orderBy('loadNumber', 'desc'), limit(1));

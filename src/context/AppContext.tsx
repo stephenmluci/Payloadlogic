@@ -1109,7 +1109,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }
         
       const unsub = onSnapshot(q, (snapshot: any) => {
-        const data = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as any));
+        const data = snapshot.docs.map((d: any) => ({ ...d.data(), id: d.id } as any));
         coll.setter(data);
       }, (error: any) => {
         console.error(`Error in snapshot for ${coll.name}:`, error);

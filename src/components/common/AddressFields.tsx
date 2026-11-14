@@ -330,6 +330,7 @@ export function AddressFields({ label, prefix: customPrefix, address, onChange, 
             value={safeAddress.street || ''}
             onChange={(e) => handleSmartInput('street', e.target.value)}
             onPaste={handleAddressPaste}
+            onBlur={handleStreetBlur}
             placeholder="Street Address (or paste full address string here...)"
             required={required}
             className="bg-white"

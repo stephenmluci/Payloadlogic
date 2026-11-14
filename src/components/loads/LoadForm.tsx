@@ -255,6 +255,14 @@ export function LoadForm({
     ? (loadForm.deadheadMiles || 0)
     : 0;
 
+  const assignedHosDriver = React.useMemo(
+    () =>
+      loadForm.assignedDriverId && loadForm.assignedDriverId !== 'none'
+        ? driverProfiles.find(d => d.uid === loadForm.assignedDriverId)
+        : undefined,
+    [loadForm.assignedDriverId, driverProfiles],
+  );
+
   const hosResult = React.useMemo(
     () =>
       calculateHOSTransit(
@@ -262,8 +270,20 @@ export function LoadForm({
         effectiveDeadheadMiles,
         loadForm.pickupDateTime  || '',
         loadForm.deliveryDateTime || '',
+        {
+          averageSpeedMph: settings?.truckAverageSpeed || 55,
+          availableHosHours: assignedHosDriver?.estimatedHosRemaining,
+          recentOnDutyHours: (assignedHosDriver as any)?.recentOnDutyHours,
+        },
       ),
-    [loadForm.distance, effectiveDeadheadMiles, loadForm.pickupDateTime, loadForm.deliveryDateTime],
+    [
+      loadForm.distance,
+      effectiveDeadheadMiles,
+      loadForm.pickupDateTime,
+      loadForm.deliveryDateTime,
+      settings?.truckAverageSpeed,
+      assignedHosDriver,
+    ],
   );
 
   const [lastCalculatedRoute, setLastCalculatedRoute] = React.useState('');

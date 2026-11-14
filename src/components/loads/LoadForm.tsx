@@ -1578,6 +1578,7 @@ export function LoadForm({
     settings?.defaultDriverHourlyRate,
     settings?.payrollPercentage,
     settings?.defaultDriverPayType,
+    settings?.targetDailyBusinessProfit,
     totalMiles,
     projectedFuel,
     projectedDef,

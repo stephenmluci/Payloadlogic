@@ -1,5 +1,6 @@
 import type { Load, DriverProfile, Vehicle, Settings } from '@/types';
 import { haversineDistanceMiles, resolveCoordinates, type Coordinates } from '@/lib/routeUtils';
+import { getDetentionFreeTimeMinutes } from '@/lib/detention';
 
 export interface NextLoadCandidate {
   load: Load;

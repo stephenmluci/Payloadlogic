@@ -136,12 +136,21 @@ export function LoadCard({
   const currentStatus = statusConfig[load.status] || statusConfig[normalizedStatus] || statusConfig.pending;
 
   // ── HOS transit feasibility (only meaningful for non-delivered loads) ────────
+  const assignedHosDriver = load.assignedDriverId
+    ? driverProfiles?.find(d => d.uid === load.assignedDriverId)
+    : undefined;
+
   const hosResult = load.status !== 'delivered'
     ? calculateHOSTransit(
         load.distance      || 0,
         load.deadheadMiles || 0,
         load.pickupDateTime  || '',
         load.deliveryDateTime || '',
+        {
+          averageSpeedMph: settings?.truckAverageSpeed || 55,
+          availableHosHours: assignedHosDriver?.estimatedHosRemaining,
+          recentOnDutyHours: (assignedHosDriver as any)?.recentOnDutyHours,
+        },
       )
     : null;
 

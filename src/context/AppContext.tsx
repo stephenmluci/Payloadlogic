@@ -1583,8 +1583,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setEditingLoadId(null);
   };
 
+  const isSavingLoadRef = React.useRef(false);
+
   const handleSaveLoad = async () => {
     if (!user || !ADMIN_ROLES.includes(user.role as any)) return;
+    if (isSavingLoadRef.current) return;
 
     // ── Driver Assignment Normalization & Validation ──
     let assignedDriverId = loadForm.assignedDriverId && loadForm.assignedDriverId !== 'none' ? loadForm.assignedDriverId.trim() : undefined;

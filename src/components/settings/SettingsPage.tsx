@@ -1099,52 +1099,116 @@ export function SettingsPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-5 space-y-5">
-            {/* Loading Fee & Detention Rate */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <Label htmlFor="loadingFee" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                  <DollarSign className="h-3.5 w-3.5 text-slate-500" />
-                  Default Loading / Tarping Fee ($)
-                </Label>
-                <div className="relative mt-1">
-                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input
-                    id="loadingFee"
-                    name="loadingFee"
-                    type="number"
-                    step="0.01"
-                    value={settingsForm.loadingFee === undefined ? '' : settingsForm.loadingFee}
-                    onChange={handleInputChange}
-                    placeholder="e.g. 50.00"
-                    className="pl-9 h-9 text-xs font-semibold"
-                  />
+            {/* Loading Fee */}
+            <div>
+              <Label htmlFor="loadingFee" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                <DollarSign className="h-3.5 w-3.5 text-slate-500" />
+                Default Loading / Tarping Fee ($)
+              </Label>
+              <div className="relative mt-1 max-w-md">
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  id="loadingFee"
+                  name="loadingFee"
+                  type="number"
+                  step="0.01"
+                  value={settingsForm.loadingFee === undefined ? '' : settingsForm.loadingFee}
+                  onChange={handleInputChange}
+                  placeholder="e.g. 50.00"
+                  className="pl-9 h-9 text-xs font-semibold"
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Optional standard accessorial fee for specialized tarping, forklift assistance, or ramp work.
+              </p>
+            </div>
+
+            <Separator />
+
+            {/* Detention & Free-Time Settings */}
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-purple-200 bg-purple-50/60 px-4 py-3">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-purple-600" />
+                    Detention &amp; Free-Time Settings
+                  </h4>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    Used to calculate billable detention on loads and detention terms on rate confirmations.
+                  </p>
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Optional standard accessorial fee for specialized tarping, forklift assistance, or ramp work.
-                </p>
+                <Badge className="bg-white text-purple-800 border border-purple-200 hover:bg-white text-[11px] font-semibold w-fit">
+                  Current: {formatFreeTimeLabel(getDetentionFreeTimeMinutes(settingsForm))} • ${getDetentionFeeRate(settingsForm).toFixed(2)}/hr
+                </Badge>
               </div>
 
-              <div>
-                <Label htmlFor="detentionFeeRate" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                  <DollarSign className="h-3.5 w-3.5 text-slate-500" />
-                  Default Detention Rate ($/hr)
-                </Label>
-                <div className="relative mt-1">
-                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input
-                    id="detentionFeeRate"
-                    name="detentionFeeRate"
-                    type="number"
-                    step="0.01"
-                    value={settingsForm.detentionFeeRate === undefined ? '' : settingsForm.detentionFeeRate}
-                    onChange={handleInputChange}
-                    placeholder="e.g. 75.00"
-                    className="pl-9 h-9 text-xs font-semibold"
-                  />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <Label htmlFor="detentionFreeTimeMinutes" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-slate-500" />
+                    Free Time Before Detention Starts (minutes)
+                  </Label>
+                  <div className="relative mt-1">
+                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <Input
+                      id="detentionFreeTimeMinutes"
+                      name="detentionFreeTimeMinutes"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={settingsForm.detentionFreeTimeMinutes === undefined ? '' : settingsForm.detentionFreeTimeMinutes}
+                      onChange={handleInputChange}
+                      placeholder="e.g. 120"
+                      className="pl-9 h-9 text-xs font-semibold"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {[0, 60, 90, 120].map((preset) => {
+                      const isSelected = getDetentionFreeTimeMinutes(settingsForm) === preset;
+                      return (
+                        <Button
+                          key={preset}
+                          type="button"
+                          size="sm"
+                          variant={isSelected ? 'default' : 'outline'}
+                          className="h-6 px-2.5 text-[11px]"
+                          onClick={() =>
+                            setSettingsForm(prev => ({ ...prev, detentionFreeTimeMinutes: preset }))
+                          }
+                        >
+                          {preset === 0 ? '0 min' : preset === 60 ? '60 min (1h)' : preset === 90 ? '90 min (1.5h)' : '120 min (2h)'}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1.5">
+                    Enter 0, 60, 90, 120, or any custom number of minutes before detention billing begins.
+                  </p>
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Hourly fee billed to brokers/shippers when shipper wait time exceeds the standard 2-hour free time window.
-                </p>
+
+                <div>
+                  <Label htmlFor="detentionFeeRate" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                    <DollarSign className="h-3.5 w-3.5 text-slate-500" />
+                    Hourly Detention Rate ($/hr)
+                  </Label>
+                  <div className="relative mt-1">
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <Input
+                      id="detentionFeeRate"
+                      name="detentionFeeRate"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={settingsForm.detentionFeeRate === undefined ? '' : settingsForm.detentionFeeRate}
+                      onChange={handleInputChange}
+                      placeholder="e.g. 75.00"
+                      className="pl-9 h-9 text-xs font-semibold"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1.5">
+                    Hourly fee billed per hour after the {formatFreeTimeLabel(getDetentionFreeTimeMinutes(settingsForm))} free-time window is exceeded.
+                  </p>
+                </div>
               </div>
             </div>
 

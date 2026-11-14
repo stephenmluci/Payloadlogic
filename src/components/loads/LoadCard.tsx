@@ -962,6 +962,22 @@ export function LoadCard({
                     ${projectedProfit.toFixed(2)}
                   </span>
                 </div>
+                <p className="text-[10px] text-slate-600 leading-snug">
+                  {(() => {
+                    const totalTripMiles = (load.distance || 0) + (load.deadheadMiles || 0);
+                    const { totalHrs, isTimeProrated, timeScale } = calculateTimeProratedOverheadDays({
+                      totalMiles: totalTripMiles,
+                      averageSpeedMph: settings.truckAverageSpeed || 55,
+                      operationalDays: load.tripDuration || 1,
+                    });
+                    const deckNote = deckFootprintPercentage < 100 ? ` and ${deckFootprintPercentage}% deck share` : '';
+                    if (isTimeProrated) {
+                      return `Overhead prorated to ${Math.round(timeScale * 100)}% of an 8h day (${totalHrs.toFixed(1)}h est. trip time)${deckNote}.`;
+                    }
+                    const days = load.tripDuration && load.tripDuration > 0 ? load.tripDuration : 1;
+                    return `Overhead allocated across ${days} operational day${days !== 1 ? 's' : ''}${deckNote}.`;
+                  })()}
+                </p>
 
                 {/* In-Transit Expense Ledger Breakdown (for active loads) */}
                 {actualExpensesList.length > 0 && (

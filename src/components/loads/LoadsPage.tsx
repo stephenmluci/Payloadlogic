@@ -2,6 +2,7 @@
 import React from 'react';
 import { type Client, isDriverOffDuty } from '@/types';
 import { getDriverProfileId } from '@/lib/driverAssignment';
+import { isLoadCompleted, deduplicateLoads } from '@/lib/loadStatus';
 import { LoadForm } from './LoadForm';
 import { LoadCard } from './LoadCard';
 import { ClientLoadRequestCard } from './ClientLoadRequestCard'; 

@@ -18,55 +18,145 @@ type AddressFieldsProps = {
   enableAutocomplete?: boolean;
 };
 
+function parseCityStateZip(raw: string): { city?: string; state?: string; zip?: string } | null {
+  const parts = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) return null;
+
+  // Case 1: "City, ST, 34769" or "ST, 34769"
+  const last = parts[parts.length - 1];
+  if (/^\d{5}(?:-\d{4})?$/.test(last) && parts.length >= 2) {
+    const prev = parts[parts.length - 2];
+    if (/^[A-Za-z]{2}$/.test(prev)) {
+      return {
+        city: parts.length >= 3 ? parts.slice(0, -2).join(', ') : '',
+        state: prev.toUpperCase(),
+        zip: last,
+      };
+    }
+    const prevMatch = prev.match(/^(.+?)\s+([A-Za-z]{2})$/);
+    if (prevMatch) {
+      return {
+        city: prevMatch[1].trim(),
+        state: prevMatch[2].toUpperCase(),
+        zip: last,
+      };
+    }
+  }
+
+  // Case 2: "City, ST 34769" or "ST 34769"
+  const stZipMatch = last.match(/^([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+  if (stZipMatch) {
+    return {
+      city: parts.length >= 2 ? parts.slice(0, -1).join(', ') : '',
+      state: stZipMatch[1].toUpperCase(),
+      zip: stZipMatch[2],
+    };
+  }
+
+  // Case 3: "City ST 34769"
+  const cityStZipMatch = last.match(/^(.+?)\s+([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+  if (cityStZipMatch) {
+    return {
+      city: cityStZipMatch[1].trim(),
+      state: cityStZipMatch[2].toUpperCase(),
+      zip: cityStZipMatch[3],
+    };
+  }
+
+  // Case 4: Partial without zip — "City, ST"
+  if (/^[A-Za-z]{2}$/.test(last) && parts.length >= 2) {
+    return {
+      city: parts.slice(0, -1).join(', '),
+      state: last.toUpperCase(),
+      zip: '',
+    };
+  }
+
+  // Case 5: Partial without zip — "City ST"
+  const cityStMatch = last.match(/^(.+?)\s+([A-Za-z]{2})$/);
+  if (cityStMatch) {
+    return {
+      city: cityStMatch[1].trim(),
+      state: cityStMatch[2].toUpperCase(),
+      zip: '',
+    };
+  }
+
+  return null;
+}
+
 /**
- * Parse a multi-line address block pasted from the clipboard.
- *
- * Supports two common formats:
- *   3-line: "Company Name\nStreet\nCity, ST Zip"
- *   2-line: "Street\nCity, ST Zip"
- *
- * Returns null when the text doesn't look like a block address,
- * so normal single-line paste is unaffected.
+ * Parses a pasted or typed full/partial US address into street, city, state, and zip.
+ * Supports single-line comma-separated formats (including "Street, City, ST, Zip" and
+ * "Street, City, ST Zip") as well as 2-line and 3-line clipboard blocks.
  */
-function parseAddressBlock(raw: string): Partial<Address> | null {
+function parseAddressBlock(raw: string, hideCompany?: boolean): Partial<Address> | null {
+  const isCountryToken = (s: string) => /^(usa?|united states(?: of america)?)$/i.test(s.trim());
+
   let lines = raw
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
 
-  // If single line with commas, transform it to behave like lines
-  if (lines.length === 1 && raw.includes(',')) {
-    const commas = raw.split(',').map((s) => s.trim()).filter(Boolean);
-    if (commas.length >= 3) {
-      // e.g. ["2831 W Jefferson St", "Joliet", "IL 60435"]
-      // Combine the last two as "City, State Zip" to match the existing regex
-      const city = commas[commas.length - 2];
-      const stateZip = commas[commas.length - 1];
-      const firstParts = commas.slice(0, commas.length - 2);
-      lines = [...firstParts, `${city}, ${stateZip}`];
+  if (lines.length > 1 && isCountryToken(lines[lines.length - 1])) {
+    lines = lines.slice(0, -1);
+  }
+
+  // Multi-line address block
+  if (lines.length >= 2) {
+    const lastParsed = parseCityStateZip(lines[lines.length - 1]);
+    if (!lastParsed) return null;
+
+    const result: Partial<Address> = {
+      street: '',
+      city: lastParsed.city || '',
+      state: lastParsed.state || '',
+      zip: lastParsed.zip || '',
+    };
+
+    if (lines.length >= 3 && !hideCompany) {
+      result.companyName = lines[0];
+      result.street = lines.slice(1, -1).join(', ');
+    } else {
+      result.street = lines.slice(0, -1).join(', ');
+    }
+    return result;
+  }
+
+  // Single-line comma-separated address
+  if (lines.length === 1 && lines[0].includes(',')) {
+    let parts = lines[0]
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (parts.length > 1 && isCountryToken(parts[parts.length - 1])) {
+      parts = parts.slice(0, -1);
+    }
+
+    if (parts.length < 2) return null;
+
+    // Try matching the tail (last 3, 2, or 1 comma parts) as City/State/Zip
+    for (let tailLen = Math.min(3, parts.length); tailLen >= 1; tailLen--) {
+      const tail = parts.slice(parts.length - tailLen).join(', ');
+      const parsedTail = parseCityStateZip(tail);
+      if (parsedTail && (parsedTail.city || parsedTail.zip)) {
+        const streetParts = parts.slice(0, parts.length - tailLen);
+        return {
+          street: streetParts.join(', '),
+          city: parsedTail.city || '',
+          state: parsedTail.state || '',
+          zip: parsedTail.zip || '',
+        };
+      }
     }
   }
 
-  if (lines.length < 2) return null;
-
-  // Last line must match "City, ST Zip" or "City ST Zip"
-  const lastLine = lines[lines.length - 1];
-  const m = lastLine.match(/^(.+?),?\s+([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
-  if (!m) return null;
-
-  const [, rawCity, state, zip] = m;
-  const result: Partial<Address> = { city: rawCity.trim(), state: state.toUpperCase(), zip };
-
-  if (lines.length >= 3) {
-    // First line = company, second = street
-    result.companyName = lines[0];
-    result.street = lines[1];
-  } else {
-    // Only street + city/state/zip
-    result.street = lines[0];
-  }
-
-  return result;
+  return null;
 }
 
 export function AddressFields({ label, prefix: customPrefix, address, onChange, required, hideCompany, hideContact, onCompanyParsed, enableAutocomplete }: AddressFieldsProps) {

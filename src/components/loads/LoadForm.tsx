@@ -1302,7 +1302,12 @@ export function LoadForm({
     showMarginAlert,
     targetMarginRatio,
     profitTargetFloor,
-    suggestedRate
+    suggestedRate,
+    estDriveHours,
+    estLoadUnloadHours,
+    estTotalTripHours,
+    isShortTripScaled,
+    shortTripTimeScale
   } = useMemo(() => {
     // When isPartialLTL is false, strictly remove fractional multiplier and apply 100% of trip costs!
     let share = 1.0;
@@ -1314,13 +1319,22 @@ export function LoadForm({
       share = 1.0;
     }
 
+    // ── Trip Time & Short-Trip Scaling ─────────────────────────────────────
+    const avgSpeed = settings?.truckAverageSpeed || 55;
+    const driveHrs = totalMiles > 0 ? totalMiles / avgSpeed : 0;
+    const loadUnloadHrs = totalMiles > 0 ? 1.0 : 0; // ~30 min load + ~30 min unload
+    const totalHrs = driveHrs + loadUnloadHrs;
+    const isShortTrip = totalMiles > 0 && effectiveTripDays <= 1 && (totalMiles < 100 || totalHrs < 2);
+    const timeScale = isShortTrip ? Math.min(1, Math.max(0.125, totalHrs / 8)) : 1;
+
     // ── Global Overhead Rule ────────────────────────────────────────────────
     // 1. Deck Percentage: (Load Linear Feet / Trailer Max Length) uses effectiveDeckPercentageRatio computed above
 
-    // 2. Gross Overhead: (Daily Truck Overhead * Transit Calendar Days)
+    // 2. Gross Overhead: (Daily Truck Overhead * Transit Calendar Days, time-scaled for short local trips)
     const dailyTruckOverhead = totalMonthlyForOverhead / 30;
     const transitCalendarDays = effectiveTripDays > 0 ? effectiveTripDays : 1;
-    const grossOverhead = dailyTruckOverhead * transitCalendarDays;
+    const effectiveOverheadDays = isShortTrip ? timeScale : transitCalendarDays;
+    const grossOverhead = dailyTruckOverhead * effectiveOverheadDays;
 
     // 3. Prorated Allocation: (Gross Overhead * Deck Percentage)
     // 4. Override: Applies globally to all loads — even if the only load in a container, 15% deck = 15% overhead.
@@ -1340,7 +1354,13 @@ export function LoadForm({
         { label: 'Paper GCWR',     value: `${paperGcwr.toLocaleString()} lbs`, highlight: true },
         { label: 'Gross Op. Wt',  value: `${grossOperatingWeight.toLocaleString()} lbs` },
       ] : []),
-      { label: 'Operational Days', value: `${effectiveTripDays.toFixed(1)} Days` },
+      ...(totalMiles > 0 ? [
+        { label: 'Est. Total Time', value: `${totalHrs.toFixed(1)}h (${driveHrs.toFixed(1)}h drive + ${loadUnloadHrs.toFixed(1)}h load/unload)` },
+      ] : []),
+      ...(isShortTrip
+        ? [{ label: 'Short-Trip Scaling', value: `${Math.round(timeScale * 100)}% of 8h day`, highlight: true }]
+        : [{ label: 'Operational Days', value: `${effectiveTripDays.toFixed(1)} Days` }]
+      ),
       {
         label: 'Cost Allocation',
         value: isPartialLTL
@@ -1367,16 +1387,14 @@ export function LoadForm({
       if (assignedDriver.payType === 'per-mile') {
         driverPay = totalMiles * (assignedDriver.payRate || 0) * share;
       } else if (assignedDriver.payType === 'hourly') {
-        const estHours = assignedDriver.estimatedTripHours
-          || (totalMiles > 0 ? totalMiles / (settings?.truckAverageSpeed || 55) : 0);
+        const estHours = assignedDriver.estimatedTripHours || totalHrs;
         driverPay = estHours * (assignedDriver.payRate || settings?.defaultDriverHourlyRate || 0) * share;
       } else {
         const rate = assignedDriver.payPercentageOfGross ?? assignedDriver.payrollPercentage ?? settings?.payrollPercentage ?? 0;
         driverPay = manualGrossRevenue * (rate / 100);
       }
     } else if (settings?.defaultDriverPayType === 'hourly') {
-      const estHours = totalMiles > 0 ? totalMiles / (settings?.truckAverageSpeed || 55) : 0;
-      driverPay = estHours * (settings?.defaultDriverHourlyRate || 0) * share;
+      driverPay = totalHrs * (settings?.defaultDriverHourlyRate || 0) * share;
     } else if (financialProfile?.targetDriverCPM) {
       driverPay = totalMiles * financialProfile.targetDriverCPM * share;
     } else {

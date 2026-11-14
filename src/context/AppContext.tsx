@@ -1666,8 +1666,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       sanitizedDestination.lng = destCoords.lng;
     }
 
+    const { id: _stripId, ...loadFormWithoutId } = loadForm as any;
     const dataWithCalculations: Partial<Load> = {
-        ...loadForm,
+        ...loadFormWithoutId,
         assignedDriverId: assignedDriverId || undefined,
         assignedDriverName: assignedDriverName || undefined,
         origin: sanitizedOrigin,

@@ -352,6 +352,14 @@ export function GoogleMap({
     }
   }, [isVisible, center]);
 
+  // 3. Explicit "Fly to Driver" button trigger from the bottom control bar
+  useEffect(() => {
+    if (flyToTrigger > 0 && mapInstanceRef.current && center) {
+      mapInstanceRef.current.panTo(center);
+      mapInstanceRef.current.setZoom(12);
+    }
+  }, [flyToTrigger, center]);
+
   // Sync Markers and Active Route Polyline whenever drivers or selectedItem changes
   useEffect(() => {
     if (!mapInstanceRef.current || !((window as any).google?.maps)) return;

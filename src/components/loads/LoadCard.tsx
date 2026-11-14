@@ -473,9 +473,14 @@ export function LoadCard({
     // ── Global Overhead Rule ────────────────────────────────────────────────
     // 1. Deck Percentage: (Load Linear Feet / Trailer Max Length) uses effectiveDeckPercentageRatio computed above
 
-    // 2. Gross Overhead: (Daily Truck Overhead * Transit Calendar Days)
+    // 2. Gross Overhead: (Daily Truck Overhead * Time-Prorated Operating Days)
     const transitCalendarDays = tripCalendarDays > 0 ? tripCalendarDays : 1;
-    const grossOverhead = dailyTruckOverhead * transitCalendarDays;
+    const overheadTiming = calculateTimeProratedOverheadDays({
+      totalMiles: totalTripMiles,
+      averageSpeedMph: settings.truckAverageSpeed || 55,
+      operationalDays: transitCalendarDays,
+    });
+    const grossOverhead = dailyTruckOverhead * overheadTiming.effectiveOverheadDays;
 
     // 3. Prorated Allocation: (Gross Overhead * Deck Percentage)
     // 4. Override: Applies globally to all loads — even if the only load in a container, 15% deck = 15% overhead.

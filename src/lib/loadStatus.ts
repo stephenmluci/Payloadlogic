@@ -6,7 +6,7 @@ const VALID_LOAD_STATUSES: Load['status'][] = [
   'pending',
   'client-request-approved',
   'dispatched',
-  'deadheading',
+  'Deadheading',
   'arrived-origin',
   'loading',
   'in-transit',

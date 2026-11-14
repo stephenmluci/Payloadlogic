@@ -1,7 +1,7 @@
 
 import React from 'react';
 import type { Load, Client, Settings } from '@/types';
-import { calculateTripMetrics, computeCargoLinearFootprint } from '@/lib/logisticsEngine';
+import { calculateTripMetrics, computeCargoLinearFootprint, calculateTimeProratedOverheadDays } from '@/lib/logisticsEngine';
 import { vehicleToEngineTruck, vehicleToEngineTrailer, loadToCargoItem } from '@/lib/logisticsAdapters';
 import { calculateHOSTransit } from '@/lib/hosEngine';
 import { computeCompliance } from '@/lib/complianceEngine';

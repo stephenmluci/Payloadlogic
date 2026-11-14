@@ -456,35 +456,8 @@ export function GoogleMap({
 
   return (
     <div className={`h-full w-full relative ${className}`}>
-      {/* Map Canvas - Persistent DOM Node */}
-      <div ref={mapContainerRef} className="h-full w-full min-h-[350px]" />
-
-      {/* Floating Status & Telemetry Badge */}
-      <div className="absolute top-3 left-3 z-[10] flex flex-col gap-1.5 max-w-[calc(100%-6rem)] pointer-events-none">
-        <div className="bg-slate-900/90 border border-slate-800 rounded-md px-3 py-1.5 text-[11px] text-slate-300 backdrop-blur-sm shadow-md w-fit">
-          <span className="text-sky-400 font-bold">&bull; Route Corridor Map</span> &bull;{' '}
-          {selectedItem ? `Estimated: ${selectedItem.driver.name}` : 'Calculated Progression Overview'}
-        </div>
-        <LocationDisclaimerNotice variant="overlay" className="text-[10px] sm:text-[11px] py-1 px-2.5 max-w-md" />
-      </div>
-
-      {/* Re-center / Fly to Driver Button */}
-      {selectedItem && (
-        <button
-          type="button"
-          onClick={() => {
-            if (mapInstanceRef.current) {
-              mapInstanceRef.current.panTo(center);
-              mapInstanceRef.current.setZoom(12);
-            }
-          }}
-          className="absolute bottom-6 left-3 z-[10] bg-slate-900/90 hover:bg-slate-800 text-sky-400 hover:text-sky-300 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-lg backdrop-blur-sm flex items-center gap-1.5 transition-all"
-          title="Fly to active driver location"
-        >
-          <Navigation className="h-3.5 w-3.5" />
-          Fly to {selectedItem.driver.name.split(' ')[0]}
-        </button>
-      )}
+      {/* Map Canvas - Persistent DOM Node (unobstructed) */}
+      <div ref={mapContainerRef} className="h-full w-full" />
 
       {/* API Configuration Alert Overlay */}
       {mapError && (

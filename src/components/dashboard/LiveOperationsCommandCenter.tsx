@@ -121,7 +121,7 @@ export function LiveOperationsCommandCenter() {
               Driver Command Center
             </h2>
             <p className="text-slate-300 text-sm mt-1.5 max-w-2xl leading-relaxed">
-              Real-time driver telemetry, route corridor tracking, FMCSA HOS compliance clocks, and automated next-load dispatch suggestions designed for multi-truck fleets.
+              Estimated route progress, driver status updates, FMCSA HOS compliance clocks, and automated next-load dispatch suggestions designed for multi-truck fleets.
             </p>
           </div>
 

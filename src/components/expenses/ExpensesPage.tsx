@@ -144,6 +144,7 @@ export function ExpensesPage() {
             loads={loads}
             vehicles={vehicles}
             settings={settings}
+            driverProfiles={driverProfiles}
             onSubmit={handleExpenseSubmit}
             isSubmitting={isSubmittingExpense}
             onCancel={() => setIsAddFormOpen(false)}

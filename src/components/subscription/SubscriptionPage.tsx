@@ -470,7 +470,7 @@ export function SubscriptionPage({ userDisplayName, onStartTrial }: Subscription
             {[
               { emoji: '📦', title: 'Full Load Management', desc: 'Create, dispatch, edit, and archive loads from pickup to final delivery.' },
               { emoji: '🧮', title: 'Partial Freight Consolidation', desc: 'Stack multiple cargoes onto one deck run with GCWR and dimension validation.' },
-              { emoji: '🖥️', title: 'Live Dispatch Command Center', desc: 'Live fleet telemetry view — driver phases, load statuses, ETA projections.' },
+              { emoji: '🖥️', title: 'Dispatch Command Center', desc: 'Estimated route progress — driver phases, load statuses, ETA projections.' },
               { emoji: '📐', title: 'Deck Space & Payload Calculators', desc: 'Real-time cargo placement with stacking, nesting, and legal height checks.' },
               { emoji: '👷', title: 'Driver Asset Tracking', desc: 'Full driver roster with CDL class, med card expiry, and availability status.' },
               { emoji: '🚛', title: 'Equipment Registry', desc: 'Trucks and trailers tracked with GVWR, towing caps, CPM history, and MPG.' },

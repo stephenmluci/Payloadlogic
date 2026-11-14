@@ -3,7 +3,7 @@ import { adminAuth } from '@/lib/firebaseAdmin';
 import { validateDotFormat, TRIAL_MESSAGES } from '@/lib/trial';
 import { lookupDot } from '@/lib/fmcsa';
 import { startTrialForUser } from '@/lib/trialServer';
-import { isOwnerEmail, PRIVATE_TESTING_RESTRICTION_MESSAGE } from '@/lib/authConfig';
+import { isOwnerEmail } from '@/lib/authConfig';
 
 export const runtime = 'nodejs';
 
@@ -26,12 +26,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Please sign in again.' }, { status: 401 });
   }
 
-  // Private Testing Mode: Only the owner is permitted
-  if (!isOwnerEmail(decodedEmail)) {
-    return NextResponse.json(
-      { error: PRIVATE_TESTING_RESTRICTION_MESSAGE, code: 'private_testing_restricted' },
-      { status: 403 }
-    );
+  // Owner / admin accounts bypass DOT and trial rules completely
+  if (isOwnerEmail(decodedEmail)) {
+    return NextResponse.json({ outcome: 'owner_bypass', trial: null });
   }
 
   let body: any = {};
@@ -45,23 +42,26 @@ export async function POST(req: NextRequest) {
   if (!format.ok) return NextResponse.json({ error: format.error, code: 'invalid_dot' }, { status: 400 });
 
   const lookup = await lookupDot(format.dot);
-  if (lookup.status === 'invalid') {
+  if (lookup.status !== 'valid_verified') {
+    const errMsg =
+      lookup.status === 'invalid'
+        ? lookup.error || TRIAL_MESSAGES.dotNotFound
+        : TRIAL_MESSAGES.dotUnverified;
     return NextResponse.json(
-      { error: lookup.error || TRIAL_MESSAGES.dotNotFound, code: 'dot_invalid' },
+      { error: errMsg, code: 'dot_invalid' },
       { status: 400 }
     );
   }
 
   try {
-    const isVerified = lookup.status === 'valid_verified';
     const { outcome, record } = await startTrialForUser({
       uid,
       dot: format.dot,
       mcNumber: typeof body?.mcNumber === 'string' ? body.mcNumber.trim().slice(0, 20) || undefined : undefined,
-      dotVerification: isVerified ? 'verified' : 'unverified',
-      verificationStatus: lookup.status,
-      carrierSnapshot: isVerified ? lookup.carrier : undefined,
-      carrierLegalName: isVerified ? lookup.carrier.legalName : undefined,
+      dotVerification: 'verified',
+      verificationStatus: 'valid_verified',
+      carrierSnapshot: lookup.carrier,
+      carrierLegalName: lookup.carrier.legalName,
     });
 
     return NextResponse.json({

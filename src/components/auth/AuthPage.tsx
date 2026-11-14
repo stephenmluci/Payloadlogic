@@ -1,6 +1,6 @@
 
 'use client';
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -63,6 +63,19 @@ type AuthPageProps = {
 
 export function AuthPage({ email, setEmail, password, setPassword, handleSignIn, handleSignUp }: AuthPageProps) {
   const [isSigningUp, setIsSigningUp] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<'starter' | 'fleetPro'>('fleetPro');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') === 'signup') {
+      setIsSigningUp(true);
+    }
+    const plan = params.get('plan');
+    if (plan === 'starter' || plan === 'fleetPro') {
+      setSelectedPlan(plan);
+    }
+  }, []);
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGeneratingPassword, setIsGeneratingPassword] = useState(false);
@@ -133,19 +146,6 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
       return;
     }
 
-    if (!isOwnerEmail(emailVal)) {
-      setAuthError({
-        code: 'auth/private-testing-restricted',
-        message: PRIVATE_TESTING_RESTRICTION_MESSAGE,
-      });
-      toast({
-        variant: 'destructive',
-        title: 'Access Restricted',
-        description: PRIVATE_TESTING_RESTRICTION_MESSAGE,
-      });
-      return;
-    }
-
     setIsResettingPassword(true);
     setAuthError(null);
     try {
@@ -188,20 +188,6 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
     if (!passwordVal) {
       setAuthError({ code: 'auth/wrong-password', message: 'Please enter your password.' });
       passwordRef.current?.focus();
-      return;
-    }
-
-    // Private Testing Mode Lockdown: Only the owner is permitted to create a new account (drivers sign in with their provisioned credentials)
-    if (isSigningUp && !isOwnerEmail(emailVal)) {
-      setAuthError({
-        code: 'auth/private-testing-restricted',
-        message: PRIVATE_TESTING_RESTRICTION_MESSAGE,
-      });
-      toast({
-        variant: 'destructive',
-        title: 'Access Restricted',
-        description: PRIVATE_TESTING_RESTRICTION_MESSAGE,
-      });
       return;
     }
 
@@ -256,7 +242,8 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
           return;
         }
         if (check.status === 'valid_unverified' || check.status === 'unverified') {
-          setDotUnverifiedNotice(TRIAL_MESSAGES.dotUnverified);
+          setFmcsaError(TRIAL_MESSAGES.dotUnverified);
+          return;
         }
         if (check.status === 'valid_verified' || check.status === 'verified') {
           const name = check.carrier?.legalName || check.carrierLegalName;
@@ -290,7 +277,7 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
   const hasError = !!authError;
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#0c141f] p-4 sm:p-6 text-slate-100 relative overflow-hidden">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#0c141f] p-4 pb-24 sm:p-6 sm:pb-20 text-slate-100 relative overflow-hidden">
       {/* Background ambient radial glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[700px] h-[400px] bg-blue-600/10 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[350px] h-[200px] bg-[#ffbe24]/5 rounded-full blur-[100px] pointer-events-none" />
@@ -316,33 +303,6 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
           </CardHeader>
 
           <CardContent className="space-y-5 relative z-10">
-            {/* ── Private Testing Notice Banner ─────────────────────────────── */}
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 flex items-start gap-3 text-xs text-amber-200">
-              <ShieldCheck className="h-5 w-5 text-[#ffbe24] shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <div className="font-bold text-amber-300 flex items-center gap-1.5">
-                  <span>Private Testing Mode</span>
-                  <span className="text-[10px] bg-amber-400/20 text-amber-300 px-1.5 py-0.5 rounded font-mono">Owner Access Only</span>
-                </div>
-                <p className="text-amber-200/90 leading-relaxed">
-                  {PRIVATE_TESTING_RESTRICTION_MESSAGE}
-                </p>
-              </div>
-            </div>
-
-            {/* ── Registration Locked Notice for Sign Up ──────────────────── */}
-            {isSigningUp && (
-              <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 flex items-start gap-2.5 text-xs text-red-200">
-                <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold text-red-300">Public Sign-Up Closed</p>
-                  <p className="text-red-200/90 mt-0.5">
-                    {PRIVATE_TESTING_RESTRICTION_MESSAGE}
-                  </p>
-                </div>
-              </div>
-            )}
-
             {/* ── Inline error banner ─────────────────────────────────────── */}
             {hasError && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 flex flex-col gap-2">
@@ -506,7 +466,7 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
                     <p className="text-[11px] text-blue-900/80 leading-snug">
                       {isOwnerEmail(email) 
                         ? 'Your account is recognized as Owner/Admin. USDOT number is optional and trial gating is bypassed.'
-                        : 'Required credential to create an account and unlock rate intelligence.'}
+                        : `14-day free trial (${selectedPlan === 'starter' ? 'Starter' : 'Fleet Pro'}) requires a real, active USDOT number verified with FMCSA SAFER.`}
                     </p>
                   </div>
                 </div>
@@ -557,9 +517,9 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
                                 setCarrierVerifiedNotice(`USDOT ${f.dot} Verified with FMCSA/SAFER`);
                               }
                             } else if (res.status === 'valid_unverified' || res.status === 'unverified') {
-                              setFmcsaError(null);
+                              setFmcsaError(TRIAL_MESSAGES.dotUnverified);
                               setCarrierVerifiedNotice(null);
-                              setDotUnverifiedNotice(TRIAL_MESSAGES.dotUnverified);
+                              setDotUnverifiedNotice(null);
                             }
                           } finally {
                             setIsCheckingDot(false);
@@ -695,9 +655,16 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
               }
             </Button>
 
-            <Button variant="link" type="button" onClick={isSigningUp ? switchToSignIn : switchToSignUp} className="text-sm text-slate-300 hover:text-white">
+            <Button variant="link" type="button" onClick={isSigningUp ? switchToSignIn : switchToSignUp} className="text-sm text-slate-600 hover:text-slate-900">
               {isSigningUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
             </Button>
+
+            <Link
+              href="/pricing"
+              className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 font-semibold text-sm transition-colors"
+            >
+              See Plans &amp; Pricing
+            </Link>
 
             <div className="text-center text-xs text-muted-foreground pt-1 space-y-1">
               <p className="text-[11px] text-slate-500 leading-relaxed">

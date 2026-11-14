@@ -39,7 +39,7 @@ export const TRIAL_MESSAGES = {
   dotAlreadyUsed: 'This DOT number has already been used for a free trial.',
   dotAlreadyUsedNextStep: "You can still create your account, but you'll need to choose a plan (Starter or Fleet Pro) to continue.",
   trialExpired: 'Trial expired — choose a plan to continue.',
-  dotUnverified: "We couldn’t verify this DOT right now. You can continue, and we may re-check later.",
+  dotUnverified: 'We could not verify this USDOT number against the FMCSA SAFER database right now. A verified, active USDOT number is required to start your 14-day free trial.',
 } as const;
 
 // ─── DOT format ──────────────────────────────────────────────────────────────

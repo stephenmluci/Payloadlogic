@@ -13,10 +13,18 @@ export function FloatingHelpWidget() {
   // Hide the widget when already on the dedicated help page or public driver onboarding
   if (pathname === '/help' || pathname?.startsWith('/onboard')) return null;
 
+  const isPublicAuthOrLanding = pathname === '/' || pathname === '/login' || pathname === '/pricing';
+
   return (
     <>
       {/* Floating trigger button: Lower-left corner on both mobile and desktop, safely above bottom nav & sticky save bars */}
-      <div className="fixed bottom-[124px] left-3 md:bottom-[76px] md:left-4 z-40 select-none">
+      <div
+        className={`fixed left-3 md:left-4 z-40 select-none ${
+          isPublicAuthOrLanding
+            ? 'bottom-4 md:bottom-5'
+            : 'bottom-[124px] md:bottom-[76px]'
+        }`}
+      >
         <button
           type="button"
           onClick={() => setIsOpen((prev) => !prev)}

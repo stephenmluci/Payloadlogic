@@ -107,6 +107,14 @@ async function queryFmcsaApi(dot: string): Promise<DotLookupResult | null> {
       const opStatus =
         allowed === 'Y' ? 'ACTIVE' : allowed === 'N' ? 'INACTIVE' : (carrier.statusCode || 'ACTIVE');
 
+      if (allowed === 'N' || String(opStatus).toUpperCase().includes('INACTIVE')) {
+        return {
+          status: 'invalid',
+          reason: 'inactive',
+          error: 'This USDOT number is marked inactive with FMCSA. Please check and try again.',
+        };
+      }
+
       return {
         status: 'valid_verified',
         carrier: {
@@ -149,7 +157,7 @@ async function querySaferWeb(dot: string): Promise<DotLookupResult> {
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         Accept: 'text/html,application/xhtml+xml',
       },
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(8000),
       cache: 'no-store',
     });
 
@@ -220,11 +228,23 @@ async function querySaferWeb(dot: string): Promise<DotLookupResult> {
     }
 
     if (!legalName && !dotStatus) {
-      // SAFER returned an unexpected response format
       return {
-        status: 'valid_unverified',
-        reason: 'service_error',
-        notice: "We couldn’t verify this DOT right now. You can continue, and we may re-check later.",
+        status: 'invalid',
+        reason: 'not_found',
+        error: "We couldn’t find an active carrier for that DOT number in the FMCSA SAFER database. Please check and try again.",
+      };
+    }
+
+    const combinedStatus = `${dotStatus || ''} ${opStatus || ''}`.toUpperCase();
+    if (
+      combinedStatus.includes('INACTIVE') ||
+      combinedStatus.includes('OUT-OF-SERVICE') ||
+      combinedStatus.includes('OUT OF SERVICE')
+    ) {
+      return {
+        status: 'invalid',
+        reason: 'inactive',
+        error: 'This USDOT number is marked inactive or out-of-service in FMCSA SAFER. Please check and try again.',
       };
     }
 

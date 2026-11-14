@@ -864,23 +864,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const resolvedDriverProfileId = userProfile?.driverProfileId || rootUserData?.driverProfileId || currentUser.uid;
       const isProvisionedDriverAccount = fetchedRole === 'driver' && Boolean(resolvedDriverOwnerId);
 
-      // Private Testing Mode: Allow ONLY the owner OR a provisioned driver account
-      if (!isOwnerEmail(currentUser.email) && !isProvisionedDriverAccount) {
-        console.warn('[PrivateTesting] Revoking non-owner/non-driver access in fetchUserProfileAndData:', currentUser.email);
-        await signOut(auth).catch(() => {});
-        setUser(null);
-        setAuthUser(null);
-        setIsLoading(false);
-        setInitializationError(PRIVATE_TESTING_RESTRICTION_MESSAGE);
-        setAppDisplayState('auth');
-        toast({
-          variant: 'destructive',
-          title: 'Access Restricted',
-          description: PRIVATE_TESTING_RESTRICTION_MESSAGE,
-        });
-        return;
-      }
-
       // Check if authenticated user qualifies for owner/admin bypass
       const isOwnerTarget = !isProvisionedDriverAccount && isOwnerOrAdminUser({
         email: currentUser.email,
@@ -1311,20 +1294,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     role: 'admin' | 'client' = 'admin',
     fmcsaCredentials?: { usdotNumber?: string; mcNumber?: string }
   ): Promise<{ code: string; message: string } | null> => {
-    // Private Testing Mode: Strictly restrict sign up to allowed owner email
-    const targetEmail = (email || '').trim().toLowerCase();
-    if (!isOwnerEmail(targetEmail)) {
-      toast({
-        variant: 'destructive',
-        title: 'Registration Restricted',
-        description: PRIVATE_TESTING_RESTRICTION_MESSAGE,
-      });
-      return {
-        code: 'auth/private-testing-restricted',
-        message: PRIVATE_TESTING_RESTRICTION_MESSAGE,
-      };
-    }
-
     if (IS_ADMIN_REVIEW_MODE) {
       toast({ title: "Admin Review Mode", description: "Sign up is disabled in review mode." });
       return null;
@@ -1512,30 +1481,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
     setIsSubmitting(true);
     try {
-      const cred = await signInWithEmailAndPassword(auth, targetEmail, targetPassword);
-      // Verify immediately that the user is either the owner or a provisioned driver account
-      if (!isOwnerEmail(cred.user.email)) {
-        const [pSnap, rSnap] = await Promise.all([
-          fetchDocWithTimeout(doc(db, `users/${cred.user.uid}/profile/main`)),
-          fetchDocWithTimeout(doc(db, `users/${cred.user.uid}`)),
-        ]);
-        const pData: any = pSnap?.exists() ? pSnap.data() : null;
-        const rData: any = rSnap?.exists() ? rSnap.data() : null;
-        const role = pData?.role || rData?.role;
-        const ownerId = pData?.driverOwnerId || rData?.driverOwnerId;
-        if (role !== 'driver' || !ownerId) {
-          await signOut(auth).catch(() => {});
-          toast({
-            variant: 'destructive',
-            title: 'Access Restricted',
-            description: PRIVATE_TESTING_RESTRICTION_MESSAGE,
-          });
-          return {
-            code: 'auth/private-testing-restricted',
-            message: PRIVATE_TESTING_RESTRICTION_MESSAGE,
-          };
-        }
-      }
+      await signInWithEmailAndPassword(auth, targetEmail, targetPassword);
       toast({ title: "Signed In", description: "Welcome back!" });
       return null;
     } catch (error: any) {

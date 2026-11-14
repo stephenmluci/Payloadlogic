@@ -92,10 +92,10 @@ export function MarketingLandingClient() {
           <Link href="/" className="hover:opacity-95 transition-opacity">
             <PayloadLogicLogo variant="compact" iconSize={34} />
           </Link>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
             <Link
               href="/pricing"
-              className="text-sm font-medium text-slate-400 hover:text-white transition-colors hidden sm:block"
+              className="text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors"
             >
               Pricing
             </Link>
@@ -107,18 +107,17 @@ export function MarketingLandingClient() {
             </Link>
             <Link
               href="/login"
-              className="text-sm font-medium text-slate-300 hover:text-white transition-colors"
+              className="text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-colors"
             >
               Sign In
             </Link>
-            <button
-              type="button"
+            <Link
+              href="/login?mode=signup"
               id="nav-get-started"
-              onClick={openPrivateTestingModal}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#ffbe24] hover:bg-[#e6a817] text-[#0c141f] text-sm font-bold transition-all shadow-lg shadow-[#ffbe24]/20 hover:shadow-[#ffbe24]/30 hover:-translate-y-0.5 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg bg-[#ffbe24] hover:bg-[#e6a817] text-[#0c141f] text-xs sm:text-sm font-bold transition-all shadow-lg shadow-[#ffbe24]/20 hover:shadow-[#ffbe24]/30 hover:-translate-y-0.5"
             >
               Get Started <ChevronRight className="h-3.5 w-3.5" />
-            </button>
+            </Link>
           </div>
         </div>
       </nav>
@@ -172,21 +171,20 @@ export function MarketingLandingClient() {
 
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <button
-              type="button"
+            <Link
+              href="/login?mode=signup"
               id="hero-cta-primary"
-              onClick={openPrivateTestingModal}
-              className="group inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-[#ffbe24] hover:bg-[#e6a817] text-[#0c141f] font-bold text-base sm:text-lg shadow-2xl shadow-[#ffbe24]/25 hover:shadow-[#ffbe24]/40 transition-all hover:-translate-y-1 w-full sm:w-auto cursor-pointer"
+              className="group inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-[#ffbe24] hover:bg-[#e6a817] text-[#0c141f] font-bold text-base sm:text-lg shadow-2xl shadow-[#ffbe24]/25 hover:shadow-[#ffbe24]/40 transition-all hover:-translate-y-1 w-full sm:w-auto"
             >
-              Get Started Free
+              Start 14-Day Free Trial
               <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform text-[#0c141f]" />
-            </button>
+            </Link>
             <Link
               href="/pricing"
               id="hero-cta-pricing"
               className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-white font-semibold text-base sm:text-lg transition-all hover:-translate-y-0.5 w-full sm:w-auto"
             >
-              See Pricing Plans
+              See Plans &amp; Pricing
             </Link>
           </div>
 
@@ -202,10 +200,10 @@ export function MarketingLandingClient() {
           </div>
 
           {/* Trust row */}
-          <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8 mt-10 text-slate-500 text-xs sm:text-sm">
+          <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8 mt-10 text-slate-400 text-xs sm:text-sm">
             {[
-              { icon: Shield, text: 'No Credit Card Required' },
-              { icon: CheckCircle2, text: 'Free to Try' },
+              { icon: Shield, text: '14-Day Free Trial · Verified Active USDOT Required' },
+              { icon: CheckCircle2, text: 'No Credit Card Required' },
               { icon: Star, text: 'Built for US Operators' },
             ].map(({ icon: Icon, text }) => (
               <span key={text} className="flex items-center gap-1.5">
@@ -420,14 +418,13 @@ export function MarketingLandingClient() {
                   View Pricing
                   <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                 </Link>
-                <button
-                  type="button"
+                <Link
+                  href="/login?mode=signup"
                   id="footer-cta-app"
-                  onClick={openPrivateTestingModal}
-                  className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-white font-semibold text-base transition-all cursor-pointer"
+                  className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-white font-semibold text-base transition-all"
                 >
-                  Open App Free
-                </button>
+                  Start 14-Day Free Trial
+                </Link>
               </div>
             </div>
           </div>

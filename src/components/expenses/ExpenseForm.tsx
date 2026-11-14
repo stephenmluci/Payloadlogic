@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import type { Expense, Load, Settings } from '@/types';
+import type { DriverProfile, Expense, Load, Settings } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,6 +29,7 @@ type ExpenseFormProps = {
   loads: Load[];
   vehicles: any[];
   settings: Settings;
+  driverProfiles?: DriverProfile[];
   onSubmit: (e: React.FormEvent) => void;
   isSubmitting?: boolean;
   onCancel?: () => void;
@@ -56,6 +57,7 @@ export function ExpenseForm({
   loads, 
   vehicles, 
   settings, 
+  driverProfiles = [],
   onSubmit, 
   isSubmitting,
   onCancel 
@@ -104,18 +106,46 @@ export function ExpenseForm({
     });
   };
 
-  // Auto-calculate payroll when category is payroll and a load is linked
+  // Auto-calculate payroll from the assigned driver's pay profile (or fleet default) when category is payroll and a load is linked
   useEffect(() => {
-    if (expenseForm.category.toLowerCase() === 'payroll' && expenseForm.loadId && expenseForm.loadId !== NO_LOAD_VALUE) {
+    if (expenseForm.category.toLowerCase().includes('payroll') && expenseForm.loadId && expenseForm.loadId !== NO_LOAD_VALUE) {
       const selectedLoad = loads.find(load => load.id === expenseForm.loadId);
-      if (selectedLoad && settings.payrollPercentage > 0) {
-        const calculatedPayroll = (selectedLoad.totalAgreedRate * settings.payrollPercentage) / 100;
-        setExpenseForm(prev => ({ ...prev, amount: parseFloat(calculatedPayroll.toFixed(2)) }));
-      } else if (selectedLoad && settings.payrollPercentage <= 0) {
-        setExpenseForm(prev => ({ ...prev, amount: 0 }));
+      if (!selectedLoad) return;
+
+      const miles = (selectedLoad.distance || 0) + (selectedLoad.deadheadMiles || 0);
+      const driver = selectedLoad.assignedDriverId
+        ? driverProfiles.find(d => d.uid === selectedLoad.assignedDriverId || (d as any).id === selectedLoad.assignedDriverId)
+        : undefined;
+
+      let calculatedPayroll = 0;
+      let rateSummary = '';
+      if (driver) {
+        if (driver.payType === 'per-mile') {
+          const rate = driver.payRate || 0;
+          calculatedPayroll = miles * rate;
+          rateSummary = `${driver.name} · $${rate.toFixed(2)}/mi × ${miles} mi`;
+        } else if (driver.payType === 'hourly') {
+          const rate = driver.payRate || settings.defaultDriverHourlyRate || 25;
+          const estHrs = driver.estimatedTripHours || (miles > 0 ? miles / (settings.truckAverageSpeed || 55) : 0);
+          calculatedPayroll = estHrs * rate;
+          rateSummary = `${driver.name} · $${rate.toFixed(2)}/hr × ${estHrs.toFixed(1)} hrs`;
+        } else {
+          const pct = driver.payRate ?? driver.payrollPercentage ?? settings.payrollPercentage ?? 0;
+          calculatedPayroll = (selectedLoad.totalAgreedRate * pct) / 100;
+          rateSummary = `${driver.name} · ${pct}% of gross`;
+        }
+      } else if (settings.payrollPercentage > 0) {
+        calculatedPayroll = (selectedLoad.totalAgreedRate * settings.payrollPercentage) / 100;
+        rateSummary = `${selectedLoad.assignedDriverName || 'Driver'} · ${settings.payrollPercentage}% default`;
       }
+
+      setExpenseForm(prev => ({
+        ...prev,
+        amount: parseFloat(calculatedPayroll.toFixed(2)),
+        notes: prev.notes?.trim() ? prev.notes : (rateSummary ? `Payroll (${rateSummary})` : prev.notes),
+      }));
     }
-  }, [expenseForm.category, expenseForm.loadId, loads, settings, setExpenseForm]);
+  }, [expenseForm.category, expenseForm.loadId, loads, driverProfiles, settings, setExpenseForm]);
 
   // Selected load details for informative feedback
   const linkedLoad = loads.find(l => l.id === expenseForm.loadId);

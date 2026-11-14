@@ -46,6 +46,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (lookup.status !== 'valid_verified') {
+    return NextResponse.json(
+      {
+        status: 'invalid' as DotVerificationStatus,
+        dot: format.dot,
+        error: TRIAL_MESSAGES.dotUnverified,
+      },
+      { status: 200 }
+    );
+  }
+
   // 3. One-trial-per-DOT Anti-Abuse Registry check
   let trialAvailable: boolean | null = null;
   try {
@@ -60,8 +71,8 @@ export async function POST(req: NextRequest) {
         status: 'blocked_trial_used' as DotVerificationStatus,
         dot: format.dot,
         trialAvailable: false,
-        carrier: lookup.status === 'valid_verified' ? lookup.carrier : undefined,
-        carrierLegalName: lookup.status === 'valid_verified' ? lookup.carrier.legalName : undefined,
+        carrier: lookup.carrier,
+        carrierLegalName: lookup.carrier.legalName,
         error: TRIAL_MESSAGES.dotAlreadyUsed,
         nextStep: TRIAL_MESSAGES.dotAlreadyUsedNextStep,
       },
@@ -72,9 +83,8 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     status: lookup.status as DotVerificationStatus,
     dot: format.dot,
-    carrier: lookup.status === 'valid_verified' ? lookup.carrier : undefined,
-    carrierLegalName: lookup.status === 'valid_verified' ? lookup.carrier.legalName : undefined,
+    carrier: lookup.carrier,
+    carrierLegalName: lookup.carrier.legalName,
     trialAvailable,
-    notice: lookup.status === 'valid_unverified' ? lookup.notice : undefined,
   });
 }

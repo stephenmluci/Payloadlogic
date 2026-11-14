@@ -1453,7 +1453,12 @@ export function LoadForm({
       showMarginAlert: marginAlert,
       targetMarginRatio: marginRatio,
       profitTargetFloor: floor,
-      suggestedRate: calculatedRate
+      suggestedRate: calculatedRate,
+      estDriveHours: driveHrs,
+      estLoadUnloadHours: loadUnloadHrs,
+      estTotalTripHours: totalHrs,
+      isShortTripScaled: isShortTrip,
+      shortTripTimeScale: timeScale
     };
   }, [
     isPartialLTL,

@@ -1059,10 +1059,27 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const unsubscribes: (() => void)[] = [];
+    const cleanedDuplicateIds = new Set<string>();
 
     // Collections to listen to
     const collections = [
-      { name: 'loads', setter: setLoads },
+      {
+        name: 'loads',
+        setter: (data: Load[]) => {
+          const { unique, duplicateIds } = deduplicateLoads(data);
+          setLoads(unique);
+          if (duplicateIds.length > 0 && !isTrialSession) {
+            duplicateIds.forEach((dupId) => {
+              if (!cleanedDuplicateIds.has(dupId)) {
+                cleanedDuplicateIds.add(dupId);
+                deleteDoc(doc(db, `users/${user.uid}/loads`, dupId)).catch((err) =>
+                  console.warn('Could not remove duplicate load doc:', dupId, err),
+                );
+              }
+            });
+          }
+        },
+      },
       { name: 'expenses', setter: setExpenses },
       { name: 'clients', setter: (data: Client[]) => {
           setClients(data);

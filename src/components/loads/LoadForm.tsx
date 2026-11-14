@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { type Load, type Client, type Trip, type Vehicle, type DriverProfile, isDriverOffDuty } from '@/types';
-import { calculateTripMetrics, computeCargoLinearFootprint } from '@/lib/logisticsEngine';
+import { calculateTripMetrics, computeCargoLinearFootprint, calculateTimeProratedOverheadDays } from '@/lib/logisticsEngine';
 import { getDriverProfileId } from '@/lib/driverAssignment';
 import { vehicleToEngineTruck, vehicleToEngineTrailer, loadToCargoItem } from '@/lib/logisticsAdapters';
 import { calculateHOSTransit } from '@/lib/hosEngine';

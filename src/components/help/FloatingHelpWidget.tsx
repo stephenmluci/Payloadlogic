@@ -7,19 +7,38 @@ import { usePathname } from 'next/navigation';
 import { HelpChatbot } from '@/components/help/HelpChatbot';
 import { useApp } from '@/context/AppContext';
 
+const HIDDEN_EXACT_PATHS = new Set([
+  '/',
+  '/landing',
+  '/login',
+  '/pricing',
+  '/privacy-policy',
+  '/terms-of-service',
+  '/help',
+  '/client-portal',
+]);
+
+const HIDDEN_PREFIX_PATHS = [
+  '/landing/',
+  '/login/',
+  '/pricing/',
+  '/onboard',
+  '/driver-portal',
+  '/client-portal/',
+];
+
 export function FloatingHelpWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
-  const { user } = useApp();
+  const { user, isLoading, appDisplayState } = useApp();
 
-  // Only show on authenticated app pages; hide on public landing/sign-in/pricing, onboarding, and the dedicated help page
-  if (
-    !user ||
-    pathname === '/help' ||
-    pathname === '/login' ||
-    pathname === '/pricing' ||
-    pathname?.startsWith('/onboard')
-  ) {
+  const isHiddenPath =
+    !pathname ||
+    HIDDEN_EXACT_PATHS.has(pathname) ||
+    HIDDEN_PREFIX_PATHS.some((prefix) => pathname.startsWith(prefix));
+
+  // Only show on authenticated app pages after login; never on public landing, sign-in, or pre-auth screens
+  if (isLoading || !user?.uid || appDisplayState === 'auth' || isHiddenPath) {
     return null;
   }
 

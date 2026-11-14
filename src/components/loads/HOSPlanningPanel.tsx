@@ -49,6 +49,8 @@ type HOSPlanningPanelProps = {
   recentOnDutyHours?: number;
   /** Driver name for display context. */
   driverName?: string;
+  /** Company-configured facility free time in minutes (defaults to 120). */
+  freeTimeMinutes?: number;
   /** Whether the panel starts collapsed (default: true). */
   defaultCollapsed?: boolean;
 };
@@ -65,13 +67,14 @@ export function HOSPlanningPanel({
   averageSpeedMph = 55,
   recentOnDutyHours,
   driverName,
+  freeTimeMinutes,
   defaultCollapsed = true,
 }: HOSPlanningPanelProps) {
   const [collapsed, setCollapsed] = React.useState(defaultCollapsed);
 
   const plan: HOSPlan | null = React.useMemo(
-    () => calculateHOSPlan(distanceMiles ?? 0, averageSpeedMph, recentOnDutyHours),
-    [distanceMiles, averageSpeedMph, recentOnDutyHours],
+    () => calculateHOSPlan(distanceMiles ?? 0, averageSpeedMph, recentOnDutyHours, freeTimeMinutes),
+    [distanceMiles, averageSpeedMph, recentOnDutyHours, freeTimeMinutes],
   );
 
   // Don't render at all when there's nothing to show (no distance yet)

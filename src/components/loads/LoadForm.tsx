@@ -2288,6 +2288,11 @@ export function LoadForm({
                                 Full Load (100% Share)
                               </span>
                             )}
+                            {isShortTripScaled && (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[9px] uppercase tracking-wide border border-emerald-300">
+                                Short-Trip Scaled ({Math.round(shortTripTimeScale * 100)}% Day)
+                              </span>
+                            )}
                             {effectiveTripDays > 1 && (
                               <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold text-[9px] uppercase tracking-wide border border-slate-300">
                                 {effectiveTripDays} Calendar Days
@@ -2295,7 +2300,9 @@ export function LoadForm({
                             )}
                           </div>
                           <p className={`text-[10px] ${suggestedRate !== null ? 'text-emerald-700' : 'text-slate-500'} opacity-75 font-normal`}>
-                            Target: ${settings?.targetDailyBusinessProfit || 0}/day profit
+                            {isShortTripScaled
+                              ? `Time-scaled for ${estTotalTripHours.toFixed(1)}h total (${estDriveHours.toFixed(1)}h drive + ${estLoadUnloadHours.toFixed(1)}h load/unload) — ${Math.round(shortTripTimeScale * 100)}% of 8h day`
+                              : `Target: $${settings?.targetDailyBusinessProfit || 0}/day profit`}
                             {effectiveDriver ? ` + Driver: ${effectiveDriver.name || 'Assigned'}` : ''}
                             {effectiveTruck ? ` + Truck: #${effectiveTruck.unitNumber || effectiveTruck.name}` : ''}
                             {isPartialLTL ? ` [${deckPercentageUsed}% deck space]` : isTripConsolidated && costShareRatio < 1.0 ? ` [${(costShareRatio * 100).toFixed(0)}% trip share]` : ''}

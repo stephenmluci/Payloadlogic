@@ -215,6 +215,7 @@ export function calculateHOSPlan(
   distanceMiles: number,
   averageSpeedMph: number = 55,
   recentOnDutyHours?: number,
+  freeTimeMinutes?: number,
 ): HOSPlan | null {
   if (!distanceMiles || distanceMiles <= 0) return null;
 

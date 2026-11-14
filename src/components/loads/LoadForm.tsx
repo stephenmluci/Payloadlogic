@@ -1973,6 +1973,73 @@ export function LoadForm({
                 <span className="flex items-center gap-3"><StepBadge n={3} /><CargoIcon className="h-5 w-5 text-amber-600" /> Freight &amp; Cargo Specifications</span>
               </AccordionTrigger>
               <AccordionContent className="pt-2 space-y-6">
+                {/* Cargo Type & Vehicle Open/Enclosed Selector */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-700 mb-1.5 block">Cargo Type</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setLoadForm(prev => ({ ...prev, cargoType: 'general' }))}
+                        className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all ${
+                          !isVehicleLoad
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        General Freight
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setLoadForm(prev => ({
+                            ...prev,
+                            cargoType: 'vehicle',
+                            vehicleTransportType: prev.vehicleTransportType || 'open',
+                          }))
+                        }
+                        className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all ${
+                          isVehicleLoad
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        Vehicle
+                      </button>
+                    </div>
+                  </div>
+
+                  {isVehicleLoad && (
+                    <div>
+                      <Label className="text-xs font-semibold text-slate-700 mb-1.5 block">Vehicle Trailer Type</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setLoadForm(prev => ({ ...prev, cargoType: 'vehicle', vehicleTransportType: 'open' }))}
+                          className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all ${
+                            vehicleTransportType === 'open'
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          Open
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLoadForm(prev => ({ ...prev, cargoType: 'vehicle', vehicleTransportType: 'enclosed' }))}
+                          className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all ${
+                            vehicleTransportType === 'enclosed'
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          Enclosed
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Commodity Description */}
                 <div>
                   <Label htmlFor="cargoDescription">Commodity / Freight Description</Label>

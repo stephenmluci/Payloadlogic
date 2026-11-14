@@ -257,8 +257,12 @@ export function calculateHOSPlan(
   }
 
   // ── Duty-window gauge ───────────────────────────────────────────────────────
-  // Approximate on-duty time = drive + 2h dwell, measured against 14h window.
-  const estimatedOnDutyHours = estimatedDriveHours + 2;
+  // Approximate on-duty time = drive + configured facility free time (defaults to 2h), measured against 14h window.
+  const facilityHours =
+    typeof freeTimeMinutes === 'number' && Number.isFinite(freeTimeMinutes) && freeTimeMinutes >= 0
+      ? freeTimeMinutes / 60
+      : 2;
+  const estimatedOnDutyHours = estimatedDriveHours + facilityHours;
   const dutyWindowFillPct    = Math.min(100, Math.round((estimatedOnDutyHours / PLAN_MAX_DUTY_HOURS) * 100));
 
   // ── Days estimate ───────────────────────────────────────────────────────────

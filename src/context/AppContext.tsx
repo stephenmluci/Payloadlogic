@@ -3057,10 +3057,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       // --- Terms & Conditions Section ---
       yPos = drawTextLine('Terms & Conditions:', boldFont, subTitleFontSize, margin, yPos);
       
+      const freeTimeMins = getDetentionFreeTimeMinutes(settings);
+      const detentionRate = getDetentionFeeRate(settings);
+      const detentionPolicyText =
+        freeTimeMins === 0
+          ? `No free loading/unloading time. Detention will be billed at $${detentionRate.toFixed(2)} per hour upon arrival.`
+          : `Standard loading/unloading free time is ${formatFreeTimeLabel(freeTimeMins)}. Detention will be billed at $${detentionRate.toFixed(2)} per hour thereafter.`;
+
       const terms = [
         { label: 'Cargo Damage:', text: 'Carrier is not liable for damage resulting from improper packaging or inherent vice of the cargo (e.g., 2 light poles). Claims must be noted on the BOL at time of delivery.' },
         { label: 'Payment Terms:', text: 'Payment is due upon delivery unless otherwise specified. A 1.5% late fee applies after 30 days.' },
-        { label: 'Detention Policy:', text: 'Standard loading/unloading time is 2 hours. Detention will be billed at $75.00 per hour thereafter.' }
+        { label: 'Detention Policy:', text: detentionPolicyText }
       ];
 
       for (const term of terms) {

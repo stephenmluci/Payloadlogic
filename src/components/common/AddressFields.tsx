@@ -249,37 +249,51 @@ export function AddressFields({ label, prefix: customPrefix, address, onChange, 
     });
   };
 
-  /** Fire when the user pastes into Company Name or Street — try to parse a full address block. */
+  const applyParsedAddress = (parsed: Partial<Address>) => {
+    onChange('street', parsed.street || '');
+    onChange('city', parsed.city || '');
+    onChange('state', parsed.state || '');
+    onChange('zip', parsed.zip || '');
+    if (parsed.companyName) {
+      if (hideCompany && onCompanyParsed) {
+        onCompanyParsed(parsed.companyName);
+      } else if (!hideCompany) {
+        onChange('companyName', parsed.companyName);
+      }
+    }
+  };
+
+  /** Fire when the user pastes into Company Name or Street — try to parse a full or partial address. */
   const handleAddressPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const text = e.clipboardData.getData('text');
-    const parsed = parseAddressBlock(text);
-    if (!parsed) return; // single-line paste — let browser handle it normally
+    const parsed = parseAddressBlock(text, hideCompany);
+    if (!parsed) return; // single-line street-only paste — let browser handle it normally
     e.preventDefault();
-    (Object.entries(parsed) as [keyof Address, string][]).forEach(([field, value]) => {
-      if (field === 'companyName' && hideCompany && onCompanyParsed) {
-        onCompanyParsed(value);
-      } else {
-        onChange(field, value);
-      }
-    });
+    applyParsedAddress(parsed);
   };
 
   const handleSmartInput = (field: 'companyName' | 'street', value: string) => {
-    // If user types/autofills a comma-separated address into company or street
-    if (value.includes(',') && parseAddressBlock(value)) {
-      const parsed = parseAddressBlock(value);
-      if (parsed) {
-        (Object.entries(parsed) as [keyof Address, string][]).forEach(([f, v]) => {
-          if (f === 'companyName' && hideCompany && onCompanyParsed) {
-            onCompanyParsed(v);
-          } else {
-            onChange(f as keyof Address, v);
-          }
-        });
-        return; // Don't set the raw comma string into the single field
+    const prevValue = field === 'street' ? (safeAddress.street || '') : (safeAddress.companyName || '');
+    const isBulkInsert = value.length - prevValue.length >= 6;
+
+    if (value.includes(',')) {
+      const parsed = parseAddressBlock(value, hideCompany);
+      // Split immediately when a zip code is present or on bulk paste/autofill (e.g. mobile keyboard)
+      if (parsed && (parsed.zip || isBulkInsert)) {
+        applyParsedAddress(parsed);
+        return;
       }
     }
     onChange(field, value);
+  };
+
+  const handleStreetBlur = () => {
+    const current = safeAddress.street || '';
+    if (!current.includes(',')) return;
+    const parsed = parseAddressBlock(current, hideCompany);
+    if (parsed) {
+      applyParsedAddress(parsed);
+    }
   };
 
   return (

@@ -3181,8 +3181,8 @@ export function LoadForm({
             );
           })()}
 
-          {/* Sticky action bar — primary action always visible */}
-          <div className="sticky bottom-16 md:bottom-0 z-30 mt-6 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-4px_16px_rgba(15,23,42,0.08)] backdrop-blur flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {/* Action bar — normal document flow on mobile so it never covers form fields; sticky on desktop */}
+          <div className="md:sticky md:bottom-0 md:z-30 mt-6 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm md:shadow-[0_-4px_16px_rgba(15,23,42,0.08)] backdrop-blur flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0 text-xs text-slate-500">
               <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Fleet assignment</span>
               <span className="block truncate text-sm font-semibold text-slate-800">

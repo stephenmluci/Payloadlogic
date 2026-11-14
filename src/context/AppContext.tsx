@@ -96,6 +96,7 @@ const initialSettings: Settings = {
   carrierContactEmail: '',
   loadingFee: 0,
   detentionFeeRate: 0,
+  detentionFreeTimeMinutes: 120,
   defaultSpecialTerms: "Standard carrier terms apply. Full terms available upon request. Payment due upon delivery unless otherwise agreed in writing. Late payments may incur additional charges.",
   trailerType: '',
   trailerDimensions: '',

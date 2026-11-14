@@ -23,6 +23,7 @@ import { sendDriverNotification } from '@/lib/notifications';
 import { isErroneousArrivalTimestamp, isDriverBroadcastingGPS } from '@/lib/telemetrySync';
 import { normalizeLoadDriverAssignment, isLoadAssignedToDriver, getDriverProfileId } from '@/lib/driverAssignment';
 import { resolveCoordinates } from '@/lib/routeUtils';
+import { getDetentionFreeTimeMinutes, getDetentionFeeRate, formatFreeTimeLabel } from '@/lib/detention';
 
 
 

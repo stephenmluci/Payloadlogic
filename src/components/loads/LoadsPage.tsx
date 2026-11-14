@@ -236,8 +236,9 @@ export function LoadsPage() {
     await handleSaveLoad(); 
   };
 
-  const activeLoads = loads.filter(load => load.status !== 'delivered');
-  const completedLoads = loads.filter(load => load.status === 'delivered');
+  const uniqueLoads = React.useMemo(() => deduplicateLoads(loads).unique, [loads]);
+  const activeLoads = uniqueLoads.filter(load => !isLoadCompleted(load));
+  const completedLoads = uniqueLoads.filter(load => isLoadCompleted(load));
 
   // Split active loads into multi-stop trips vs. independent loads.
   // A load whose tripId points at a trip that no longer exists is treated as independent.

@@ -17,6 +17,12 @@ import { useApp } from '@/context/AppContext';
 import { ShareLoadPacketModal } from './ShareLoadPacketModal';
 import { SignedBolUpload } from './SignedBolUpload';
 import { getDriverProfileId } from '@/lib/driverAssignment';
+import {
+  calculateLoadDetention,
+  getDetentionFreeTimeMinutes,
+  getDetentionFeeRate,
+  formatDetentionDuration,
+} from '@/lib/detention';
 
 const CDL_THRESHOLD = 26_000; // lbs — 49 CFR § 383.91
 

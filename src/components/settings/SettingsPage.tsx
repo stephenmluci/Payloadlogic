@@ -34,6 +34,7 @@ import {
   ShieldCheck, 
   Gauge, 
   GaugeCircle, 
+  Clock,
   Fuel, 
   Percent, 
   User, 

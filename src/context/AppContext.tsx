@@ -1144,7 +1144,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         loadsColl,
         snap => {
           const matchedAndRedacted = snap.docs
-            .map(d => ({ id: d.id, ...d.data() } as Load))
+            .map(d => ({ ...d.data(), id: d.id } as Load))
             .filter(l => {
               const assignedId = String(l.assignedDriverId || l.driverId || '').trim();
               if (assignedId && driverQueryIds.includes(assignedId)) return true;

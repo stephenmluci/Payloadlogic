@@ -514,7 +514,12 @@ export function LoadCard({
       projectedTotalRecurring +
       loggedTollsAndScales;
 
-    projectedProfit = load.totalAgreedRate - totalProjectedExpenses;
+    const effectiveAgreedRate =
+      load.totalAgreedRate && load.totalAgreedRate > 0
+        ? load.totalAgreedRate
+        : (load.distance || 0) * (load.ratePerMile || 0) + (load.tarpingFee || 0);
+
+    projectedProfit = effectiveAgreedRate - totalProjectedExpenses;
   }
 
 

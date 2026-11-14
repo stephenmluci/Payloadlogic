@@ -39,6 +39,7 @@ const COMPARISON_ROWS: ComparisonRow[] = [
   { feature: 'Deck Space & Payload Capacity Calculators', starter: true, fleetPro: true },
   { feature: 'BOLs, Rate Agreements & Invoice PDFs', starter: true, fleetPro: true },
   { feature: 'Expense Ledger & Profit Tracking', starter: true, fleetPro: true },
+  { feature: 'AI Assistant (Create Loads, Answer Questions & Track Profit)', starter: true, fleetPro: true },
   { feature: 'Live Operations Dispatch Command Center', starter: false, fleetPro: true },
   { feature: 'Client Portal (Direct Load Requests)', starter: false, fleetPro: true },
   { feature: 'Multi-Truck Driver Settlements', starter: false, fleetPro: true },
@@ -219,6 +220,10 @@ export default function PricingPage() {
                   <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
                   <span>Deck Space &amp; Payload Capacity Calculators</span>
                 </li>
+                <li className="flex items-start gap-2.5">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span><strong>AI Assistant</strong> that helps you create loads, answer questions, and track profit</span>
+                </li>
               </ul>
             </div>
 
@@ -286,6 +291,10 @@ export default function PricingPage() {
                 <li className="flex items-start gap-2.5">
                   <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
                   <span><strong>Client Portal</strong> &amp; <strong>Multi-Truck Settlements</strong></span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span><strong>AI Assistant</strong> that helps you create loads, answer questions, and track profit</span>
                 </li>
               </ul>
             </div>

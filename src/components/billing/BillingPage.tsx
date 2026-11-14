@@ -64,6 +64,7 @@ const PLANS: PlanCardData[] = [
       'Digital Bill of Lading (BOL) & Invoice Generation',
       'Expense Tracking & Fuel Receipt Storage',
       'Client & Shipper Directory with 1-Click Load Start',
+      'AI Assistant that helps you create loads, answer questions, and track profit',
     ],
   },
   {
@@ -96,6 +97,7 @@ const FEATURE_MATRIX = [
   { feature: 'Multi-Stop Trip Consolidation', starter: '✓ Included', pro: '✓ Included' },
   { feature: 'Rate Projections & Margin Calculator', starter: '✓ Included', pro: '✓ Included' },
   { feature: 'Instant BOL & Invoice Generation', starter: '✓ Included', pro: '✓ Included' },
+  { feature: 'AI Assistant (Loads, Q&A & Profit Tracking)', starter: '✓ Included', pro: '✓ Included' },
   { feature: 'Live Operations Command Center', starter: '—', pro: '✓ Full Access' },
   { feature: 'Client Portal Shipper Requests', starter: '—', pro: '✓ Full Access' },
   { feature: 'Multi-Truck Payroll Settlements', starter: '—', pro: '✓ Included' },

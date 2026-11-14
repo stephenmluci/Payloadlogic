@@ -5,26 +5,28 @@ import Link from 'next/link';
 import { X, Sparkles, ExternalLink } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { HelpChatbot } from '@/components/help/HelpChatbot';
+import { useApp } from '@/context/AppContext';
 
 export function FloatingHelpWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
+  const { user } = useApp();
 
-  // Hide the widget when already on the dedicated help page or public driver onboarding
-  if (pathname === '/help' || pathname?.startsWith('/onboard')) return null;
-
-  const isPublicAuthOrLanding = pathname === '/' || pathname === '/login' || pathname === '/pricing';
+  // Only show on authenticated app pages; hide on public landing/sign-in/pricing, onboarding, and the dedicated help page
+  if (
+    !user ||
+    pathname === '/help' ||
+    pathname === '/login' ||
+    pathname === '/pricing' ||
+    pathname?.startsWith('/onboard')
+  ) {
+    return null;
+  }
 
   return (
     <>
       {/* Floating trigger button: Lower-left corner on both mobile and desktop, safely above bottom nav & sticky save bars */}
-      <div
-        className={`fixed left-3 md:left-4 z-40 select-none ${
-          isPublicAuthOrLanding
-            ? 'bottom-4 md:bottom-5'
-            : 'bottom-[124px] md:bottom-[76px]'
-        }`}
-      >
+      <div className="fixed left-3 md:left-4 bottom-[124px] md:bottom-[76px] z-40 select-none">
         <button
           type="button"
           onClick={() => setIsOpen((prev) => !prev)}

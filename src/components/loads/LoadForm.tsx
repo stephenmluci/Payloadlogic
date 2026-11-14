@@ -1307,7 +1307,10 @@ export function LoadForm({
     estLoadUnloadHours,
     estTotalTripHours,
     isShortTripScaled,
-    shortTripTimeScale
+    shortTripTimeScale,
+    projectedLoadRevenue,
+    projectedLoadTotalCost,
+    projectedLoadProfit
   } = useMemo(() => {
     // When isPartialLTL is false, strictly remove fractional multiplier and apply 100% of trip costs!
     let share = 1.0;
@@ -1440,6 +1443,21 @@ export function LoadForm({
       }
     }
 
+    const activeRateForProfit = manualRatePerMile > 0 ? manualRatePerMile : (calculatedRate ?? 0);
+    const projectedLoadRevenue = loadedMiles * activeRateForProfit + tarpingFee;
+    let activeDriverPay = driverPay;
+    if (assignedDriver) {
+      if (assignedDriver.payType !== 'per-mile' && assignedDriver.payType !== 'hourly') {
+        const rate = assignedDriver.payPercentageOfGross ?? assignedDriver.payrollPercentage ?? settings?.payrollPercentage ?? 0;
+        activeDriverPay = projectedLoadRevenue * (rate / 100);
+      }
+    } else if (settings?.defaultDriverPayType !== 'hourly' && !financialProfile?.targetDriverCPM) {
+      const rate = settings?.payrollPercentage || 0;
+      activeDriverPay = projectedLoadRevenue * (rate / 100);
+    }
+    const projectedLoadTotalCost = totalExpenses + activeDriverPay;
+    const projectedLoadProfit = projectedLoadRevenue - projectedLoadTotalCost;
+
     return {
       effectiveShare: share,
       recurringAllocation: recurring,
@@ -1458,7 +1476,10 @@ export function LoadForm({
       estLoadUnloadHours: loadUnloadHrs,
       estTotalTripHours: totalHrs,
       isShortTripScaled: isShortTrip,
-      shortTripTimeScale: timeScale
+      shortTripTimeScale: timeScale,
+      projectedLoadRevenue,
+      projectedLoadTotalCost,
+      projectedLoadProfit
     };
   }, [
     isPartialLTL,
@@ -2309,9 +2330,22 @@ export function LoadForm({
                             {effectiveTripDays !== 1 ? ` over ${effectiveTripDays} calendar days` : ''}
                           </p>
                           {suggestedRate !== null ? (
-                            <p className="text-xl font-black text-emerald-800 leading-tight mt-0.5">
-                              ${suggestedRate.toFixed(2)}<span className="text-sm font-semibold text-emerald-600">/mi</span>
-                            </p>
+                            <div className="mt-0.5 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                              <p className="text-xl font-black text-emerald-800 leading-tight">
+                                ${suggestedRate.toFixed(2)}<span className="text-sm font-semibold text-emerald-600">/mi</span>
+                              </p>
+                              <div className="flex flex-wrap items-baseline gap-1.5 text-xs">
+                                <span className="font-bold uppercase tracking-wider text-[10px] text-emerald-700">
+                                  Projected Profit{(loadForm.ratePerMile ?? 0) > 0 ? ` (at $${(loadForm.ratePerMile ?? 0).toFixed(2)}/mi)` : ' (at Suggested)'}:
+                                </span>
+                                <span className={`text-base font-extrabold ${projectedLoadProfit >= 0 ? 'text-emerald-800' : 'text-red-600'}`}>
+                                  {projectedLoadProfit >= 0 ? '' : '-'}${Math.abs(projectedLoadProfit).toFixed(2)}
+                                </span>
+                                <span className="text-[10px] text-emerald-700/80">
+                                  (Rev ${projectedLoadRevenue.toFixed(2)} &minus; Costs ${projectedLoadTotalCost.toFixed(2)})
+                                </span>
+                              </div>
+                            </div>
                           ) : (
                             <p className="text-xs text-slate-400 italic mt-0.5">
                               {loadedMiles === 0

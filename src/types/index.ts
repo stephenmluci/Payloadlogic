@@ -263,6 +263,8 @@ export type Settings = {
 
 
   detentionFeeRate?: number;
+  /** Free time in minutes before detention charges begin (e.g., 0, 60, 90, 120). */
+  detentionFreeTimeMinutes?: number;
   defaultSpecialTerms?: string;
   trailerType: string;
   trailerDimensions: string;

@@ -1858,8 +1858,15 @@ export function LoadForm({
                         type="number"
                         min="1"
                         step="1"
-                        value={loadForm.cargoQuantity ?? 1}
+                        value={loadForm.cargoQuantity !== undefined ? loadForm.cargoQuantity : ''}
                         onChange={handleInputChange}
+                        onBlur={() => {
+                          if (!loadForm.cargoQuantity || loadForm.cargoQuantity < 1) {
+                            setLoadForm(prev => ({ ...prev, cargoQuantity: 1 }));
+                          } else {
+                            setLoadForm(prev => ({ ...prev, cargoQuantity: Math.floor(prev.cargoQuantity || 1) }));
+                          }
+                        }}
                         placeholder="e.g., 1"
                         className="pl-9 bg-white"
                         required

@@ -3270,6 +3270,7 @@ export function LoadForm({
                 averageSpeedMph={settings?.truckAverageSpeed || 55}
                 recentOnDutyHours={(assignedDriver as any)?.recentOnDutyHours}
                 driverName={assignedDriver?.name}
+                freeTimeMinutes={settings?.detentionFreeTimeMinutes}
                 defaultCollapsed={true}
               />
             );

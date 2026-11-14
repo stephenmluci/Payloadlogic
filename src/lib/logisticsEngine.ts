@@ -279,10 +279,13 @@ export function calculateTripMetrics(inputs: TripInputs): CalculationResults {
   }
 
   // ── 6. Margin & Profit Target Matrix (Prorated for Partial / Consolidated & Short Trips) ──
-  const estDriveHours = totalMiles > 0 ? totalMiles / 55 : 0;
-  const estTotalTripHours = totalMiles > 0 ? estDriveHours + 1.0 : 0;
-  const isShortTrip = totalMiles > 0 && operationalDays === 1 && (totalMiles < 100 || estTotalTripHours < 2);
-  const shortTripScale = isShortTrip ? Math.min(1, Math.max(0.125, estTotalTripHours / 8)) : 1;
+  const {
+    timeScale: shortTripScale,
+  } = calculateTimeProratedOverheadDays({
+    totalMiles,
+    averageSpeedMph: 55,
+    operationalDays,
+  });
 
   const targetBusinessProfit = businessNetProfitTargetPerDay * operationalDays * shortTripScale * effectiveCostShare;
   const targetDriverPayroll  = driverPayrollTargetPerDay     * operationalDays * shortTripScale * effectiveCostShare;

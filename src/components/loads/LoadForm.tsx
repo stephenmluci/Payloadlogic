@@ -1594,6 +1594,18 @@ export function LoadForm({
     isFinancialProfileComplete
   ]);
 
+  const isVehicleLoad = React.useMemo(
+    () => isVehicleCargo(loadForm.cargoType, loadForm.cargoDescription),
+    [loadForm.cargoType, loadForm.cargoDescription],
+  );
+
+  const vehicleTransportType = loadForm.vehicleTransportType || 'open';
+
+  const vehicleMarketRef = React.useMemo(
+    () => (isVehicleLoad ? calculateVehicleMarketReference(loadedMiles, vehicleTransportType) : null),
+    [isVehicleLoad, loadedMiles, vehicleTransportType],
+  );
+
   return (
     <Card className="shadow-lg">
       <CardHeader>

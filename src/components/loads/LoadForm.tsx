@@ -1387,7 +1387,7 @@ export function LoadForm({
         { label: 'Est. Total Time', value: `${totalHrs.toFixed(1)}h (${driveHrs.toFixed(1)}h drive + ${loadUnloadHrs.toFixed(1)}h load/unload)` },
       ] : []),
       ...(isShortTrip
-        ? [{ label: 'Short-Trip Scaling', value: `${Math.round(timeScale * 100)}% of 8h day`, highlight: true }]
+        ? [{ label: 'Time Proration', value: `${Math.round(timeScale * 100)}% of 8h day`, highlight: true }]
         : [{ label: 'Operational Days', value: `${effectiveTripDays.toFixed(1)} Days` }]
       ),
       {

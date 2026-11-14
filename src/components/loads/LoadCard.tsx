@@ -125,21 +125,12 @@ export function LoadCard({
     'idle'
   ];
 
-  const normalizedStatus = React.useMemo(() => {
-    const raw = String(load.status || '').toLowerCase().trim();
-    if (!raw || raw === 'pending_approval' || raw === 'draft') return 'pending_approval';
-    if (raw === 'approved') return 'approved';
-    if (raw === 'pending') return 'pending_approval';
-    if (raw === 'arrived' || raw === 'arrived at destination') return 'arrived-destination';
-    if (raw === 'arrived at origin') return 'arrived-origin';
-    if (raw === 'enroute to pickup' || raw === 'dispatched / en route' || raw === 'dispatched') return 'dispatched';
-    if (raw === 'getting loaded') return 'loading';
-    if (raw === 'enroute to destination' || raw === 'in transit') return 'in-transit';
-    if (raw === 'getting unloaded') return 'unloading';
-    if (raw === 'complete' || raw === 'delivered / completed') return 'delivered';
-    return VALID_STATUS_VALUES.includes(raw) ? (raw as Load['status']) : 'pending_approval';
-  }, [load.status]);
+  const normalizedStatus = React.useMemo(
+    () => normalizeLoadStatus(load.status),
+    [load.status],
+  );
 
+  const loadIsCompleted = isLoadCompleted(load);
   const currentStatus = statusConfig[load.status] || statusConfig[normalizedStatus] || statusConfig.pending;
 
   // ── HOS transit feasibility (only meaningful for non-delivered loads) ────────
@@ -147,7 +138,7 @@ export function LoadCard({
     ? driverProfiles?.find(d => d.uid === load.assignedDriverId)
     : undefined;
 
-  const hosResult = load.status !== 'delivered'
+  const hosResult = !loadIsCompleted
     ? calculateHOSTransit(
         load.distance      || 0,
         load.deadheadMiles || 0,

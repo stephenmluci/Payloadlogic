@@ -2378,10 +2378,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }
 
         // Auto-close Completed Trip Containers
-        if (updates.status === 'delivered' && currentLoad.tripId) {
+        if (isLoadCompleted({ status: updates.status }) && currentLoad.tripId) {
           const tripId = currentLoad.tripId;
           const otherLoadsOnTrip = loads.filter(l => l.tripId === tripId && l.id !== id);
-          const allOthersDelivered = otherLoadsOnTrip.every(l => l.status === 'delivered');
+          const allOthersDelivered = otherLoadsOnTrip.every(l => isLoadCompleted(l));
           if (allOthersDelivered) {
             await updateTrip(tripId, { status: 'completed' });
             // The updateTrip function already triggers a toast, but this happens in the background.

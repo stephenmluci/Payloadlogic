@@ -2545,6 +2545,43 @@ export function LoadForm({
                   </div>
                 )}
 
+                {/* Vehicle Market Reference (Informational context only — does not override profit-based Suggested Rate) */}
+                {isVehicleLoad && (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs text-sky-950 space-y-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-bold text-sky-900 flex items-center gap-1.5">
+                        <Info className="h-3.5 w-3.5 text-sky-600 shrink-0" />
+                        Vehicle Haul Market Reference ({vehicleTransportType === 'enclosed' ? 'Enclosed' : 'Open'})
+                      </span>
+                      {vehicleMarketRef && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200">
+                          {vehicleMarketRef.tierLabel}
+                        </span>
+                      )}
+                    </div>
+                    {vehicleMarketRef ? (
+                      <>
+                        <p className="text-xs leading-relaxed text-sky-900">
+                          Market reference for similar vehicle hauls ({vehicleMarketRef.distanceMiles.toLocaleString()} mi):{' '}
+                          <strong className={vehicleTransportType === 'open' ? 'underline decoration-sky-500' : ''}>
+                            ${vehicleMarketRef.openTotalMin.toLocaleString()}&ndash;${vehicleMarketRef.openTotalMax.toLocaleString()}
+                          </strong>{' '}
+                          (${vehicleMarketRef.openPerMileMin.toFixed(2)}&ndash;${vehicleMarketRef.openPerMileMax.toFixed(2)}/mi open) or{' '}
+                          <strong className={vehicleTransportType === 'enclosed' ? 'underline decoration-sky-500' : ''}>
+                            ${vehicleMarketRef.enclosedTotalMin.toLocaleString()}&ndash;${vehicleMarketRef.enclosedTotalMax.toLocaleString()}
+                          </strong>{' '}
+                          (${vehicleMarketRef.enclosedPerMileMin.toFixed(2)}&ndash;${vehicleMarketRef.enclosedPerMileMax.toFixed(2)}/mi enclosed).{' '}
+                          Shorter trips typically cost more per mile.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-[11px] text-sky-800">
+                        Enter loaded miles above to view a distance-based market reference range for {vehicleTransportType} vehicle hauls. Shorter trips typically cost more per mile.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Progressive Disclosure: Additional Pricing & Load Options */}
                 <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/60 shadow-2xs">
                   <button

@@ -28,6 +28,7 @@ export function normalizeLoadStatus(status?: string | null): Load['status'] {
   if (raw === 'arrived' || raw === 'arrived at destination') return 'arrived-destination';
   if (raw === 'arrived at origin') return 'arrived-origin';
   if (raw === 'enroute to pickup' || raw === 'dispatched / en route' || raw === 'dispatched') return 'dispatched';
+  if (raw === 'deadheading') return 'Deadheading';
   if (raw === 'getting loaded') return 'loading';
   if (raw === 'enroute to destination' || raw === 'in transit') return 'in-transit';
   if (raw === 'getting unloaded') return 'unloading';

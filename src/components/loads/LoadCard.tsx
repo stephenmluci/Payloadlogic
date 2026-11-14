@@ -856,7 +856,7 @@ export function LoadCard({
             </div>
         )}
 
-        {load.status !== 'delivered' && (
+        {!loadIsCompleted && (
           <>
             <Separator className="my-3" />
             {!isFinancialProfileComplete ? (

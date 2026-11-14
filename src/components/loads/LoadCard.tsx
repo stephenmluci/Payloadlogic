@@ -643,27 +643,54 @@ export function LoadCard({
           </div>
         )}
         {/* ── Facility Arrival & Detention Active Banner ── (Hidden if GPS indicates driver is > 1 mile away) */}
-        {showDetentionBanner && (
-          <div className="mt-3 rounded-lg border border-teal-200 bg-teal-50/90 p-2.5 flex items-center justify-between text-xs text-teal-900 shadow-xs">
-            <div className="flex items-center gap-2">
-              <span className="flex h-2 w-2 rounded-full bg-teal-500 animate-ping shrink-0" />
-              <MapPin className="h-4 w-4 text-teal-700 shrink-0" />
-              <div>
-                <span className="font-bold text-teal-800">Stationary at Facility • Detention Clock Active</span>
-                {load.arrivedAt && (
-                  <span className="block text-[11px] text-teal-700">
-                    Arrival Logged: <strong>{formatDateTimeDisplay(load.arrivedAt)}</strong>
-                  </span>
-                )}
+        {showDetentionBanner && (() => {
+          const freeTimeMins = getDetentionFreeTimeMinutes(settings);
+          const hourlyRate = getDetentionFeeRate(settings);
+          const detentionInfo = calculateLoadDetention({
+            arrivedAt: load.arrivedAt || load.arrivalTimestamp,
+            freeTimeMinutes: freeTimeMins,
+            hourlyRate,
+          });
+          return (
+            <div className="mt-3 rounded-lg border border-teal-200 bg-teal-50/90 p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-teal-900 shadow-xs">
+              <div className="flex items-start sm:items-center gap-2">
+                <span className="flex h-2 w-2 rounded-full bg-teal-500 animate-ping shrink-0 mt-1 sm:mt-0" />
+                <MapPin className="h-4 w-4 text-teal-700 shrink-0 mt-0.5 sm:mt-0" />
+                <div>
+                  <span className="font-bold text-teal-800">Stationary at Facility • Detention Clock Active</span>
+                  {load.arrivedAt && (
+                    <span className="block text-[11px] text-teal-700">
+                      Arrival Logged: <strong>{formatDateTimeDisplay(load.arrivedAt)}</strong>
+                    </span>
+                  )}
+                  {detentionInfo && (
+                    <span className="block text-[11px] text-teal-800 mt-0.5">
+                      Elapsed: <strong>{formatDetentionDuration(detentionInfo.elapsedMinutes)}</strong>
+                      {' • '}
+                      {detentionInfo.hasExceededFreeTime ? (
+                        <>
+                          Billable: <strong>{detentionInfo.billableHours.toFixed(2)} hrs</strong>
+                          {detentionInfo.isBillable
+                            ? ` (Est. $${detentionInfo.estimatedCharge.toFixed(2)} @ $${hourlyRate.toFixed(2)}/hr)`
+                            : ` (after ${freeTimeMins}m free time)`}
+                        </>
+                      ) : (
+                        <>
+                          Free time remaining: <strong>{formatDetentionDuration(detentionInfo.freeTimeRemainingMinutes)}</strong> of {freeTimeMins}m
+                        </>
+                      )}
+                    </span>
+                  )}
+                </div>
               </div>
+              {(load.status === 'arrived' || (load as any).status === 'Arrived') && (
+                <Badge className="bg-teal-700 text-white hover:bg-teal-800 font-semibold text-[10px] shrink-0 w-fit">
+                  Detention Active
+                </Badge>
+              )}
             </div>
-            {(load.status === 'arrived' || (load as any).status === 'Arrived') && (
-              <Badge className="bg-teal-700 text-white hover:bg-teal-800 font-semibold text-[10px] shrink-0">
-                Detention Active
-              </Badge>
-            )}
-          </div>
-        )}
+          );
+        })()}
       </CardHeader>
       <CardContent className="space-y-3 text-sm flex-grow">
         {/* ── HOS Transit-Time Validation ─────────────────────────────────── */}

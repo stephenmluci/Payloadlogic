@@ -17,6 +17,7 @@ import { useApp } from '@/context/AppContext';
 import { ShareLoadPacketModal } from './ShareLoadPacketModal';
 import { SignedBolUpload } from './SignedBolUpload';
 import { getDriverProfileId } from '@/lib/driverAssignment';
+import { normalizeLoadStatus, isLoadCompleted } from '@/lib/loadStatus';
 import {
   calculateLoadDetention,
   getDetentionFreeTimeMinutes,

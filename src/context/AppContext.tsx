@@ -684,7 +684,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         if (raw) {
           const draft = JSON.parse(raw);
           if (draft && typeof draft === 'object') {
-            return { ...initialLoadFormData, ...draft };
+            const draftStatus = String(draft.status || '').toLowerCase().trim();
+            const safeStatus = (!draftStatus || draftStatus === 'delivered' || draftStatus === 'completed')
+              ? initialLoadFormData.status
+              : draft.status;
+            const { deliveredAt: _dAt, paperworkStatus: _pStat, ...restDraft } = draft;
+            return {
+              ...initialLoadFormData,
+              ...restDraft,
+              status: safeStatus,
+              ...(String(draft.driverPhase || '').toLowerCase().trim() === 'complete' ? { driverPhase: undefined } : {}),
+            };
           }
         }
       } catch {}
@@ -1724,7 +1734,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       dataWithCalculations.arrivedAt = new Date().toISOString();
     }
 
-    if (loadForm.status === 'delivered' || loadForm.driverPhase === 'Complete') {
+    if (!editingLoadId) {
+      // Brand-new loads must always start in a pending/pre-delivery state, never Delivered
+      const rawStatus = String(dataWithCalculations.status || '').toLowerCase().trim();
+      if (!rawStatus || rawStatus === 'delivered' || rawStatus === 'completed') {
+        dataWithCalculations.status = 'pending_approval';
+      }
+      if (String(dataWithCalculations.driverPhase || '').toLowerCase().trim() === 'complete') {
+        delete dataWithCalculations.driverPhase;
+      }
+      delete dataWithCalculations.deliveredAt;
+      delete dataWithCalculations.paperworkStatus;
+    } else if (loadForm.status === 'delivered' || loadForm.driverPhase === 'Complete') {
       if (!dataWithCalculations.deliveredAt) {
         dataWithCalculations.deliveredAt = new Date().toISOString();
       }
@@ -1783,7 +1804,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             toast({ title: "Trial/Review: Load Updated", description: `Load ${loadForm.loadNumber || editingLoadId} updated locally.` });
         } else {
             const newLoadNumber = formatLoadDisplayId(new Date(), loads.length + 1);
-            const newLoadData = { ...initialLoadFormData, ...dataWithCalculations, loadNumber: newLoadNumber, id: `mock-load-${Date.now()}` } as Load;
+            const newLoadData = {
+              ...initialLoadFormData,
+              ...dataWithCalculations,
+              status: (!dataWithCalculations.status || String(dataWithCalculations.status).toLowerCase() === 'delivered' || String(dataWithCalculations.status).toLowerCase() === 'completed')
+                ? 'pending_approval'
+                : dataWithCalculations.status,
+              loadNumber: newLoadNumber,
+              id: `mock-load-${Date.now()}`
+            } as Load;
             setLoads(prev => [...prev, newLoadData]);
             if (newLoadData.originalClientRequestId) {
               setClientLoadRequests(prev => prev.map(r => r.id === newLoadData.originalClientRequestId ? {...r, status: 'accepted', createdLoadId: newLoadData.id} : r));
@@ -2089,13 +2118,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           finalUpdates.arrivedAt = effectiveUpdates.arrivedAt || currentLoad.arrivedAt || new Date().toISOString();
         }
 
-        // Post-Delivery & Paperwork Workflow: Timestamp drop-off and transition to paperwork phase
-        const isMarkingDelivered =
-          effectiveUpdates.status === 'delivered' ||
-          effectiveUpdates.driverPhase === 'Complete' ||
-          updates.status === 'delivered';
+        // Post-Delivery & Paperwork Workflow: Timestamp drop-off ONLY when explicitly marking Delivered
+        const isExplicitlyMarkingDelivered =
+          updates.status === 'delivered' ||
+          (updates.status as string) === 'completed' ||
+          updates.driverPhase === 'Complete';
 
-        if (isMarkingDelivered) {
+        if (isExplicitlyMarkingDelivered) {
+          finalUpdates.status = 'delivered';
+          if (!finalUpdates.driverPhase) {
+            finalUpdates.driverPhase = 'Complete';
+          }
           finalUpdates.deliveredAt = effectiveUpdates.deliveredAt || currentLoad.deliveredAt || new Date().toISOString();
           const hasSignedBol = Boolean(currentLoad.signedBolUrl || effectiveUpdates.signedBolUrl || updates.signedBolUrl);
           finalUpdates.paperworkStatus = hasSignedBol ? 'pod_uploaded' : 'pending_pod';
@@ -2170,24 +2203,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
              recurring: (manualOverhead > 0 ? manualOverhead : projRecurring) + manualTolls + manualOther,
              calculated: true
           };
-        }
-
-        if (
-          finalUpdates.status === 'delivered' ||
-          isLoadCompleted({
-            status: finalUpdates.status || currentLoad.status,
-            driverPhase: finalUpdates.driverPhase || currentLoad.driverPhase,
-            deliveredAt: finalUpdates.deliveredAt || currentLoad.deliveredAt,
-            paperworkStatus: finalUpdates.paperworkStatus || currentLoad.paperworkStatus,
-          })
-        ) {
-          finalUpdates.status = 'delivered';
-          if (!finalUpdates.driverPhase) {
-            finalUpdates.driverPhase = 'Complete';
-          }
-          if (!finalUpdates.deliveredAt && !currentLoad.deliveredAt) {
-            finalUpdates.deliveredAt = new Date().toISOString();
-          }
         }
 
         return finalUpdates;

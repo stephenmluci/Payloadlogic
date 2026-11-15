@@ -131,13 +131,6 @@ export function QuickAssignModal({ driver, onClose }: QuickAssignModalProps) {
         loadIds: [...currentLoadIds, selectedLoadId],
       });
 
-      // 4. Trigger FCM push notification to the assigned driver
-      sendDriverPushNotification({
-        driver,
-        originCity: selectedLoad.origin.city,
-        originState: selectedLoad.origin.state,
-      }).catch(err => console.warn('Failed to send push notification in QuickAssignModal:', err));
-
       onClose();
     } catch (err) {
       console.error('[QuickAssignModal] Assignment failed:', err);

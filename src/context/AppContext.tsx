@@ -1621,8 +1621,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setActiveTab('loads');
   };
 
+  const createFreshLoadForm = (): Partial<Load> => ({
+    ...initialLoadFormData,
+    origin: { ...emptyAddress },
+    destination: { ...emptyAddress },
+  });
+
   const handleCancelEditLoad = () => {
-    setLoadForm(initialLoadFormData);
+    setLoadForm(createFreshLoadForm());
     if (typeof window !== 'undefined') {
       try { localStorage.removeItem('agy_load_draft'); } catch {}
     }

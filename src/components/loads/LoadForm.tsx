@@ -131,6 +131,38 @@ export function LoadForm({
   React.useEffect(() => { setExistingTripPicked(false); }, [editingLoadId]);
   const outboundFileInputRef = React.useRef<HTMLInputElement>(null);
 
+  const wasSubmittingRef = React.useRef(false);
+  const resetLocalFormUiState = React.useCallback(() => {
+    setDestinationClientId('');
+    setLastCalculatedRoute('');
+    setLastCalculatedDriver('');
+    setExistingTripPicked(false);
+    setShowAdvancedLocations(false);
+    setShowAdvancedCargo(false);
+    setShowAdvancedPricing(false);
+    setOpenSections(DEFAULT_OPEN_SECTIONS);
+    lastAutoMappedReqIdRef.current = null;
+    if (outboundFileInputRef.current) outboundFileInputRef.current.value = '';
+  }, []);
+
+  // After a successful load creation (isSubmitting: true -> false and form was cleared),
+  // clear all local UI-only fields and scroll back to top for the next load.
+  React.useEffect(() => {
+    const wasSubmitting = wasSubmittingRef.current;
+    wasSubmittingRef.current = isSubmitting;
+    if (wasSubmitting && !isSubmitting && !editingLoadId) {
+      const originCity = (loadForm.origin as Address)?.city;
+      const destCity = (loadForm.destination as Address)?.city;
+      const isCleared = !loadForm.clientId && !originCity && !destCity && !loadForm.cargoDescription;
+      if (isCleared) {
+        resetLocalFormUiState();
+        if (typeof window !== 'undefined') {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }
+    }
+  }, [isSubmitting, editingLoadId, loadForm.clientId, loadForm.origin, loadForm.destination, loadForm.cargoDescription, resetLocalFormUiState]);
+
   const handleOutboundFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -3539,7 +3571,12 @@ export function LoadForm({
                 className="w-full sm:w-auto border-dashed border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
                 onClick={() => {
                   try { localStorage.removeItem('agy_load_draft'); } catch {}
-                  setLoadForm({ ...blankLoadForm });
+                  setLoadForm({
+                    ...blankLoadForm,
+                    origin: { ...emptyAddress },
+                    destination: { ...emptyAddress },
+                  });
+                  resetLocalFormUiState();
                 }}
               >
                 <RotateCcw className="mr-2 h-4 w-4" />

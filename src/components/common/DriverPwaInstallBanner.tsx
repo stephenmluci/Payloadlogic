@@ -138,44 +138,71 @@ export function DriverPwaInstallBanner({
           <span className="hidden xs:inline">Install App</span>
         </button>
       ) : !isDismissed ? (
-        <div className="rounded-2xl bg-gradient-to-r from-[#0c141f] via-slate-900 to-[#0c141f] text-white p-3.5 shadow-sm border border-amber-400/30 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <img
-              src="/icons/icon-192x192.png"
-              alt="PayloadLogic"
-              className="w-10 h-10 rounded-xl border border-white/15 shrink-0 bg-[#0c141f]"
-            />
-            <div className="min-w-0">
-              <div className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5 flex-wrap">
-                <span>Save Driver View to Home Screen</span>
+        <div className="rounded-2xl bg-gradient-to-r from-[#0c141f] via-slate-900 to-[#0c141f] text-white p-3.5 shadow-sm border border-amber-400/30 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <img
+                src="/icons/icon-192x192.png"
+                alt="PayloadLogic"
+                className="w-10 h-10 rounded-xl border border-white/15 shrink-0 bg-[#0c141f]"
+              />
+              <div className="min-w-0">
+                <div className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5 flex-wrap">
+                  <span>Add PayloadLogic to Your Home Screen</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-snug mt-0.5">
+                  Install PayloadLogic on your phone for 1-tap full-screen access to your loads &amp; profile.
+                </p>
               </div>
-              <p className="text-[11px] text-slate-300 leading-snug mt-0.5">
-                Install PayloadLogic on your phone for 1-tap full-screen access to your loads &amp; profile.
-              </p>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={handleInstallClick}
+                className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs inline-flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <Download className="w-3.5 h-3.5 shrink-0" />
+                <span>Add to Phone</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDismiss}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                aria-label="Dismiss install banner"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={handleInstallClick}
-              className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs inline-flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer whitespace-nowrap"
-            >
-              <Download className="w-3.5 h-3.5 shrink-0" />
-              <span>Add to Phone</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleDismiss}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
-              aria-label="Dismiss install banner"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+
+          {showInlineInstructions && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-white/10 text-[11px] text-slate-300">
+              <div className="rounded-xl bg-white/5 border border-white/10 px-3 py-2">
+                <span className="font-bold text-blue-300">iPhone (Safari):</span>{' '}
+                Tap <strong>Share</strong> <Share className="w-3 h-3 inline text-blue-300 -mt-0.5" /> &rarr; <strong>Add to Home Screen</strong>
+              </div>
+              <div className="rounded-xl bg-white/5 border border-white/10 px-3 py-2">
+                <span className="font-bold text-emerald-300">Android (Chrome):</span>{' '}
+                Tap <strong>Menu</strong> <MoreVertical className="w-3 h-3 inline text-emerald-300 -mt-0.5" /> &rarr; <strong>Add to Home Screen / Install</strong>
+              </div>
+            </div>
+          )}
         </div>
       ) : null}
 
-      <Dialog open={showInstructionsModal} onOpenChange={setShowInstructionsModal}>
+      <Dialog
+        open={showInstructionsModal}
+        onOpenChange={(open) => {
+          setShowInstructionsModal(open);
+          if (!open) {
+            try {
+              localStorage.setItem('payloadlogic_driver_pwa_seen', '1');
+            } catch {
+              // Ignore storage errors
+            }
+          }
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-3">

@@ -773,6 +773,33 @@ export function LoadForm({
 
   // Persist draft on every meaningful field change
   React.useEffect(() => {
+    if (isEditMode) return;
+    const rawStatus = String(loadForm.status || '').toLowerCase().trim();
+    const hasStaleDelivered =
+      rawStatus === 'delivered' ||
+      rawStatus === 'completed' ||
+      String(loadForm.driverPhase || '').toLowerCase().trim() === 'complete' ||
+      Boolean(loadForm.deliveredAt) ||
+      Boolean(loadForm.paperworkStatus);
+
+    if (hasStaleDelivered) {
+      setLoadForm(prev => {
+        const next: Partial<Load> = { ...prev };
+        const prevStatus = String(prev.status || '').toLowerCase().trim();
+        if (!prevStatus || prevStatus === 'delivered' || prevStatus === 'completed') {
+          next.status = 'pending';
+        }
+        if (String(prev.driverPhase || '').toLowerCase().trim() === 'complete') {
+          delete next.driverPhase;
+        }
+        delete next.deliveredAt;
+        delete next.paperworkStatus;
+        return next;
+      });
+    }
+  }, [isEditMode, loadForm.status, loadForm.driverPhase, loadForm.deliveredAt, loadForm.paperworkStatus, setLoadForm]);
+
+  React.useEffect(() => {
     if (typeof window === 'undefined') return;
     const current = loadForm;
     const hasData = Boolean(

@@ -283,7 +283,17 @@ export function DriverPwaInstallBanner({
           </div>
 
           <DialogFooter>
-            <Button onClick={() => setShowInstructionsModal(false)} className="w-full">
+            <Button
+              onClick={() => {
+                setShowInstructionsModal(false);
+                try {
+                  localStorage.setItem('payloadlogic_driver_pwa_seen', '1');
+                } catch {
+                  // Ignore storage errors
+                }
+              }}
+              className="w-full"
+            >
               Got It
             </Button>
           </DialogFooter>

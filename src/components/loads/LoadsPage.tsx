@@ -266,25 +266,48 @@ export function LoadsPage() {
     }
   }, [editingLoadId]);
 
+  const [highlightedLoadId, setHighlightedLoadId] = React.useState<string | null>(null);
+
+  const handleSelectDriverLoad = React.useCallback((load: any) => {
+    if (!load?.id) return;
+    const el = typeof document !== 'undefined' ? document.getElementById(`load-card-${load.id}`) : null;
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setHighlightedLoadId(load.id);
+      window.setTimeout(() => {
+        setHighlightedLoadId(prev => (prev === load.id ? null : prev));
+      }, 2200);
+      return;
+    }
+    handleStartEditLoad(load);
+  }, [handleStartEditLoad]);
+
   const renderActiveLoadCard = (load: any) => (
-    <LoadCard
+    <div
       key={load.id}
-      load={load}
-      client={getClientForLoad(load)}
-      settings={settings}
-      vehicles={vehicles}
-      loads={loads}
-      driverProfiles={driverProfiles} expenses={expenses}
-      onStatusChange={(id, status) => updateLoad(id, { status })}
-      onUpdateDelivery={(id, dt) => updateLoad(id, { deliveryDateTime: dt })}
-      trips={trips}
-      onGenerateAgreement={generateAgreement}
-      onGenerateInvoice={generateInvoice}
-      onEdit={handleStartEditLoad}
-      onDelete={handleDeleteLoad}
-      calculateVehicleCPM={calculateVehicleCPM}
-      isUpdatingStatus={isSubmittingLoad}
-    />
+      id={load.id ? `load-card-${load.id}` : undefined}
+      className={`scroll-mt-20 rounded-xl transition-all duration-300 ${
+        highlightedLoadId === load.id ? 'ring-2 ring-blue-500 ring-offset-2' : ''
+      }`}
+    >
+      <LoadCard
+        load={load}
+        client={getClientForLoad(load)}
+        settings={settings}
+        vehicles={vehicles}
+        loads={loads}
+        driverProfiles={driverProfiles} expenses={expenses}
+        onStatusChange={(id, status) => updateLoad(id, { status })}
+        onUpdateDelivery={(id, dt) => updateLoad(id, { deliveryDateTime: dt })}
+        trips={trips}
+        onGenerateAgreement={generateAgreement}
+        onGenerateInvoice={generateInvoice}
+        onEdit={handleStartEditLoad}
+        onDelete={handleDeleteLoad}
+        calculateVehicleCPM={calculateVehicleCPM}
+        isUpdatingStatus={isSubmittingLoad}
+      />
+    </div>
   );
 
   // Settlement View & Printing Logic
@@ -309,7 +332,7 @@ export function LoadsPage() {
         <p className="text-muted-foreground">Create, track, and manage all your loads, including client requests.</p>
       </div>
 
-      <DriverAvailability />
+      <DriverAvailability onSelectDriverLoad={handleSelectDriverLoad} />
       
       <Tabs value={innerActiveTab} onValueChange={setInnerActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3 h-auto">

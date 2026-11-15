@@ -1887,8 +1887,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                 title: "Load Updated",
                 description: `Existing load ${existingDuplicate.loadNumber || existingDuplicate.id} was updated instead of creating a duplicate.`,
               });
-              setEditingLoadId(null);
-              setLoadForm(initialLoadFormData);
+              handleCancelEditLoad();
               setIsSubmitting(false);
               return;
             }

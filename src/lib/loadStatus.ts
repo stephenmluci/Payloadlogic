@@ -58,13 +58,6 @@ export function isLoadCompleted(
     return true;
   }
   if (Boolean(load.deliveredAt)) return true;
-  if (
-    load.paperworkStatus === 'pod_uploaded' ||
-    load.paperworkStatus === 'invoiced' ||
-    load.paperworkStatus === 'closed'
-  ) {
-    return true;
-  }
   return false;
 }
 

@@ -2444,23 +2444,57 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const isDriverAssignmentChanged = updates.assignedDriverId && updates.assignedDriverId !== 'none' && updates.assignedDriverId !== currentLoad.assignedDriverId;
 
       if (newlyAssignedDriverId && newlyAssignedDriverId !== 'none' && (isStatusTransitionToDispatched || isDriverAssignmentChanged)) {
-        const assignedDriver = driverProfiles.find(d => d.uid === newlyAssignedDriverId);
+        const assignedDriver = driverProfiles.find(
+          d => d.uid === newlyAssignedDriverId || d.authUid === newlyAssignedDriverId
+        );
+        const mergedLoadForSummary: Partial<Load> = {
+          ...currentLoad,
+          ...finalUpdates,
+          origin: finalUpdates.origin || currentLoad.origin,
+          destination: finalUpdates.destination || currentLoad.destination,
+        };
+        const driverLoadUrl = buildDriverLoadViewUrl(assignedDriver, id);
+        const { originText, destText, pickupText } = formatLoadPickupSummary(mergedLoadForSummary);
+        const loadLabel = mergedLoadForSummary.loadNumber || id.substring(0, 8);
+        const summaryMsg = `Load #${loadLabel}: ${originText} → ${destText} (Pickup: ${pickupText}).`;
+        const smsUrl = buildDispatchSmsUrl(
+          assignedDriver?.phone,
+          `${summaryMsg} View load: ${driverLoadUrl}`
+        );
+
         if (assignedDriver) {
           sendDriverPushNotification({
             driver: assignedDriver,
-            originCity: finalUpdates.origin?.city || currentLoad.origin?.city,
-            originState: finalUpdates.origin?.state || currentLoad.origin?.state,
+            originCity: mergedLoadForSummary.origin?.city,
+            originState: mergedLoadForSummary.origin?.state,
+            clickActionUrl: driverLoadUrl,
           }).catch(err => console.warn('Failed to send push notification on updateLoad assignment/dispatch:', err));
         }
 
-        const originLoc = finalUpdates.origin?.city || currentLoad.origin?.city || 'Origin';
-        const destLoc = finalUpdates.destination?.city || currentLoad.destination?.city || 'Destination';
         sendDriverNotification({
           driverId: newlyAssignedDriverId,
           title: isStatusTransitionToDispatched ? 'Load Dispatched to You' : 'New Load Assigned',
-          message: `Load ${finalUpdates.loadNumber || currentLoad.loadNumber || id} from ${originLoc} to ${destLoc} has been dispatched.`,
+          message: `${summaryMsg} Open Driver View to accept & track.`,
           loadId: id,
+          actionUrl: driverLoadUrl,
         }).catch(err => console.warn('Failed in-app driver notification on updateLoad:', err));
+
+        if (smsUrl) {
+          toast({
+            title: 'Dispatch SMS Ready',
+            description: `${assignedDriver?.name || 'Driver'}: ${summaryMsg}`,
+            action: (
+              <ToastAction altText="Send SMS to driver" asChild>
+                <a href={smsUrl}>Send SMS</a>
+              </ToastAction>
+            ),
+          });
+        } else {
+          toast({
+            title: 'In-App Driver Notification Sent',
+            description: `${assignedDriver?.name || 'Driver'} notified in-app (${summaryMsg})`,
+          });
+        }
       }
 
       toast({ title: "Load Updated", description: toastMessage });

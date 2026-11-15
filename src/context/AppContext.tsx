@@ -1921,21 +1921,53 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                   ? `${finalSavedLoadData.destination.city}, ${finalSavedLoadData.destination.state}`
                   : (finalSavedLoadData.destination?.city || 'Destination');
 
+                const assignedDriver = driverProfiles.find(
+                  d => d.uid === finalSavedLoadData.assignedDriverId || d.authUid === finalSavedLoadData.assignedDriverId
+                );
+                const driverLoadUrl = buildDriverLoadViewUrl(assignedDriver, finalSavedLoadData.id);
+                const { originText, destText, pickupText } = formatLoadPickupSummary(finalSavedLoadData);
+                const loadLabel = finalSavedLoadData.loadNumber || finalSavedLoadData.id.substring(0, 8);
+                const summaryMsg = `Load #${loadLabel}: ${originText} → ${destText} (Pickup: ${pickupText}).`;
+                const smsUrl = buildDispatchSmsUrl(
+                  assignedDriver?.phone,
+                  `${summaryMsg} View load: ${driverLoadUrl}`
+                );
+
                 // 1. In-app Firestore notification (100% free onSnapshot system)
                 sendDriverNotification({
                   driverId: finalSavedLoadData.assignedDriverId,
-                  title: 'New Load Assigned',
-                  message: `New Load Assigned from ${originLoc} to ${destLoc}`,
+                  title: finalSavedLoadData.status === 'dispatched' ? 'Load Dispatched to You' : 'New Load Assigned',
+                  message: `${summaryMsg} Open Driver View to accept & track.`,
                   loadId: finalSavedLoadData.id,
+                  actionUrl: driverLoadUrl,
                 }).catch(err => console.warn('Failed to send in-app driver notification on create:', err));
 
-                // 2. FCM push notification fallback
+                // 2. FCM / Web Push notification
                 if (assignedDriver) {
                   sendDriverPushNotification({
                     driver: assignedDriver,
                     originCity: finalSavedLoadData.origin?.city,
                     originState: finalSavedLoadData.origin?.state,
+                    clickActionUrl: driverLoadUrl,
                   }).catch(err => console.warn('Failed to send push notification on load creation:', err));
+                }
+
+                // 3. SMS dispatch action when driver phone is available, otherwise confirm in-app delivery
+                if (smsUrl) {
+                  toast({
+                    title: 'Dispatch SMS Ready',
+                    description: `${assignedDriver?.name || 'Driver'}: ${summaryMsg}`,
+                    action: (
+                      <ToastAction altText="Send SMS to driver" asChild>
+                        <a href={smsUrl}>Send SMS</a>
+                      </ToastAction>
+                    ),
+                  });
+                } else {
+                  toast({
+                    title: 'In-App Driver Notification Sent',
+                    description: `${assignedDriver?.name || 'Driver'} notified in-app (${summaryMsg})`,
+                  });
                 }
               }
             } catch (error: any) {

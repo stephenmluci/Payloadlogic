@@ -105,6 +105,7 @@ export async function sendDriverNotification({
   title,
   message,
   loadId,
+  actionUrl,
 }: SendDriverNotificationParams): Promise<string> {
   if (!driverId || driverId === 'none') {
     throw new Error('Valid driverId is required to send notification.');
@@ -117,6 +118,7 @@ export async function sendDriverNotification({
     isRead: false,
     createdAt: new Date().toISOString(),
     ...(loadId ? { loadId } : {}),
+    ...(actionUrl ? { actionUrl } : {}),
   };
 
   const colRef = collection(db, 'notifications');

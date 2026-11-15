@@ -31,7 +31,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Truck, Users, Plus, Trash2, Edit2, CheckCircle2, AlertCircle, Fuel, DollarSign, Calendar, ShieldCheck, ShieldAlert, RotateCcw, Clock, Mail, Copy, Eye, Route, ChevronRight, Sparkles, Lock, Info, Send, Phone, MapPin, HeartHandshake, Loader2, UserCheck } from 'lucide-react';
+import { Truck, Users, Plus, Trash2, Edit2, CheckCircle2, AlertCircle, Fuel, DollarSign, Calendar, ShieldCheck, ShieldAlert, RotateCcw, Clock, Mail, Copy, Eye, EyeOff, KeyRound, Route, ChevronRight, Sparkles, Lock, Info, Send, Phone, MapPin, HeartHandshake, Loader2, UserCheck } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { format, isValid } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -642,6 +642,70 @@ export function DriverFleetPage() {
     email?: string;
   } | null>(null);
   const [copiedCredField, setCopiedCredField] = useState('');
+
+  // TEMPORARY TESTING TOOL: Create Test Driver Login modal state (remove before production launch)
+  const [testLoginDriver, setTestLoginDriver] = useState<DriverProfile | null>(null);
+  const [testLoginEmail, setTestLoginEmail] = useState('');
+  const [testLoginPassword, setTestLoginPassword] = useState('');
+  const [showTestPassword, setShowTestPassword] = useState(true);
+  const [isSavingTestLogin, setIsSavingTestLogin] = useState(false);
+  const [createdTestLoginResult, setCreatedTestLoginResult] = useState<{
+    email: string;
+    password: string;
+    loginUrl: string;
+  } | null>(null);
+
+  const openTestDriverLoginModal = (driver: DriverProfile) => {
+    const slug = (driver.name || 'driver')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '.')
+      .replace(/^\.+|\.+$/g, '') || 'driver';
+    const defaultEmail =
+      (driver.loginEmail && driver.loginEmail.includes('@') ? driver.loginEmail : '') ||
+      (driver.email && driver.email.includes('@') ? driver.email : '') ||
+      `test.${slug}@drivers.payloadlogic.app`;
+    setTestLoginDriver(driver);
+    setTestLoginEmail(defaultEmail);
+    setTestLoginPassword(driver.tempPassword || 'TestDrive123!');
+    setShowTestPassword(true);
+    setCreatedTestLoginResult(null);
+  };
+
+  const handleCreateTestDriverLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!testLoginDriver) return;
+    const cleanEmail = testLoginEmail.trim().toLowerCase();
+    const cleanPass = testLoginPassword.trim();
+    if (!cleanEmail.includes('@')) {
+      toast({ variant: 'destructive', title: 'Valid Email Required', description: 'Please enter a valid email address for the test driver login.' });
+      return;
+    }
+    if (cleanPass.length < 6) {
+      toast({ variant: 'destructive', title: 'Password Too Short', description: 'Password must be at least 6 characters.' });
+      return;
+    }
+
+    try {
+      setIsSavingTestLogin(true);
+      const result = await createDriverAccount(cleanEmail, cleanPass, testLoginDriver);
+      if ('code' in result) {
+        toast({ variant: 'destructive', title: 'Could Not Create Test Login', description: result.message });
+        return;
+      }
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      setCreatedTestLoginResult({
+        email: result.loginEmail || cleanEmail,
+        password: cleanPass,
+        loginUrl: result.loginUrl || `${origin}/login`,
+      });
+      toast({
+        title: 'Test Driver Login Created',
+        description: `Sign out and sign in at /login as ${result.loginEmail || cleanEmail}.`,
+      });
+    } finally {
+      setIsSavingTestLogin(false);
+    }
+  };
 
   const handleOpenOrProvisionCredentials = async (driver: any) => {
     if (driver.driverPortalUrl && driver.loginEmail && driver.tempPassword) {
@@ -2721,6 +2785,21 @@ export function DriverFleetPage() {
                             <ShieldCheck className="h-3 w-3 text-emerald-600" />
                             Driver View Login
                           </Button>
+                          {/* TEMPORARY TESTING TOOL — remove or hide before production launch */}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2.5 text-[11px] font-bold border-dashed border-amber-400 text-amber-900 bg-amber-50/70 hover:bg-amber-100 flex items-center gap-1"
+                            onClick={() => openTestDriverLoginModal(driver)}
+                            title="Temporary testing tool: create a real Firebase Auth driver login with custom email & password"
+                          >
+                            <KeyRound className="h-3 w-3 text-amber-600" />
+                            Create Test Driver Login
+                            <span className="ml-0.5 rounded bg-amber-200 px-1 text-[9px] font-extrabold uppercase text-amber-950">
+                              Test
+                            </span>
+                          </Button>
                           {driver.accessRevoked ? (
                             <Button
                               type="button"
@@ -3160,6 +3239,23 @@ export function DriverFleetPage() {
 
           <DialogFooter className="flex-col sm:flex-row gap-2 sm:justify-between">
             <div className="flex flex-wrap gap-2">
+              {/* TEMPORARY TESTING TOOL — remove or hide before production launch */}
+              {viewDetailsDriver && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="border-dashed border-amber-400 text-amber-900 bg-amber-50/70 hover:bg-amber-100"
+                  onClick={() => {
+                    const d = viewDetailsDriver;
+                    setViewDetailsDriver(null);
+                    openTestDriverLoginModal(d);
+                  }}
+                >
+                  <KeyRound className="h-3.5 w-3.5 mr-1.5 text-amber-600" />
+                  Create Test Driver Login (Test)
+                </Button>
+              )}
               {viewDetailsDriver && (
                 viewDetailsDriver.accessRevoked ? (
                   <Button
@@ -3215,6 +3311,188 @@ export function DriverFleetPage() {
               }}>Edit Driver</Button>
             </div>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* TEMPORARY TESTING TOOL — Create Test Driver Login Dialog (remove before launch) */}
+      <Dialog
+        open={!!testLoginDriver}
+        onOpenChange={(open) => {
+          if (!open && !isSavingTestLogin) {
+            setTestLoginDriver(null);
+            setCreatedTestLoginResult(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md w-full bg-white text-slate-900">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-amber-900">
+                Temporary · Test Only
+              </span>
+            </div>
+            <DialogTitle className="text-lg font-bold text-slate-900 mt-1">
+              Create Test Driver Login — {testLoginDriver?.name}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600">
+              Creates a real Firebase Auth driver account linked to this driver so you can sign out and test signing in as the driver.
+            </DialogDescription>
+          </DialogHeader>
+
+          {createdTestLoginResult ? (
+            <div className="space-y-3 py-2">
+              <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3.5 space-y-2 text-xs">
+                <div className="font-bold text-emerald-900">
+                  Test Driver Account Ready
+                </div>
+                <div className="flex items-center justify-between gap-2 bg-white rounded-lg border border-emerald-200 px-2.5 py-1.5">
+                  <div>
+                    <span className="text-slate-500">Email: </span>
+                    <code className="font-mono font-bold text-slate-900">{createdTestLoginResult.email}</code>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-[10px]"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdTestLoginResult.email);
+                      setCopiedCredField('test-email');
+                      setTimeout(() => setCopiedCredField(''), 2000);
+                    }}
+                  >
+                    {copiedCredField === 'test-email' ? 'Copied' : 'Copy'}
+                  </Button>
+                </div>
+                <div className="flex items-center justify-between gap-2 bg-white rounded-lg border border-emerald-200 px-2.5 py-1.5">
+                  <div>
+                    <span className="text-slate-500">Password: </span>
+                    <code className="font-mono font-bold text-slate-900">{createdTestLoginResult.password}</code>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-[10px]"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdTestLoginResult.password);
+                      setCopiedCredField('test-pass');
+                      setTimeout(() => setCopiedCredField(''), 2000);
+                    }}
+                  >
+                    {copiedCredField === 'test-pass' ? 'Copied' : 'Copy'}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-emerald-800 pt-1">
+                  Sign out from the top-right header, then sign in at <strong>/login</strong> with this email and password to see the restricted Driver View.
+                </p>
+              </div>
+              <DialogFooter className="gap-2 sm:justify-between">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="border-red-200 text-red-600 hover:bg-red-50"
+                  onClick={async () => {
+                    if (!testLoginDriver) return;
+                    await revokeDriverAccess(testLoginDriver, false);
+                    setTestLoginDriver(null);
+                    setCreatedTestLoginResult(null);
+                  }}
+                >
+                  Disable Test Login
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    setTestLoginDriver(null);
+                    setCreatedTestLoginResult(null);
+                  }}
+                >
+                  Done
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <form onSubmit={handleCreateTestDriverLogin} className="space-y-3.5 py-1">
+              <div className="space-y-1.5">
+                <Label htmlFor="test-driver-email" className="text-xs font-semibold text-slate-700">
+                  Driver Login Email
+                </Label>
+                <Input
+                  id="test-driver-email"
+                  type="email"
+                  value={testLoginEmail}
+                  onChange={(e) => setTestLoginEmail(e.target.value)}
+                  placeholder="test.driver@drivers.payloadlogic.app"
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="test-driver-password" className="text-xs font-semibold text-slate-700">
+                  Driver Password (min. 6 characters)
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="test-driver-password"
+                    type={showTestPassword ? 'text' : 'password'}
+                    value={testLoginPassword}
+                    onChange={(e) => setTestLoginPassword(e.target.value)}
+                    minLength={6}
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowTestPassword((v) => !v)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                    aria-label={showTestPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showTestPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <DialogFooter className="gap-2 sm:justify-between pt-2">
+                {testLoginDriver?.driverAccountCreated && !testLoginDriver?.accessRevoked ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-red-200 text-red-600 hover:bg-red-50"
+                    onClick={async () => {
+                      if (!testLoginDriver) return;
+                      await revokeDriverAccess(testLoginDriver, false);
+                      setTestLoginDriver(null);
+                    }}
+                  >
+                    Disable Existing Login
+                  </Button>
+                ) : (
+                  <span />
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isSavingTestLogin}
+                    onClick={() => setTestLoginDriver(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={isSavingTestLogin}
+                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold"
+                  >
+                    {isSavingTestLogin ? 'Creating...' : 'Create Test Login'}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
 

@@ -265,7 +265,7 @@ export const DriverAvailability = ({ onSelectDriverLoad }: DriverAvailabilityPro
 
                               if (isEditing) {
                                 return (
-                                  <div className="inline-flex items-center gap-1">
+                                  <div className="inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                                     <input
                                       type="number"
                                       step="0.1"
@@ -307,7 +307,8 @@ export const DriverAvailability = ({ onSelectDriverLoad }: DriverAvailabilityPro
                                 <div className="inline-flex items-center gap-1">
                                   <button
                                     type="button"
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       setEditingHosDriverUid(driver.uid);
                                       setEditingHosValue(hos.toFixed(1));
                                     }}

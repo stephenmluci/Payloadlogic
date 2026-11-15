@@ -149,8 +149,9 @@ export function LoadForm({
   // clear all local UI-only fields and scroll back to top for the next load.
   React.useEffect(() => {
     const wasSubmitting = wasSubmittingRef.current;
-    wasSubmittingRef.current = isSubmitting;
-    if (wasSubmitting && !isSubmitting && !editingLoadId) {
+    const nowSubmitting = Boolean(isSubmitting);
+    wasSubmittingRef.current = nowSubmitting;
+    if (wasSubmitting && !nowSubmitting && !editingLoadId) {
       const originCity = (loadForm.origin as Address)?.city;
       const destCity = (loadForm.destination as Address)?.city;
       const isCleared = !loadForm.clientId && !originCity && !destCity && !loadForm.cargoDescription;

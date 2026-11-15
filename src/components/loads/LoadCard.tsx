@@ -10,6 +10,14 @@ import { ComplianceBadges } from './ComplianceBadges';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue, SelectSeparator, SelectLabel } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { MapPin, Map, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2, Ruler, Weight, Box, ShieldCheck, ShieldX, ShieldAlert, Timer, Phone, TrendingUp, TrendingDown, Info, AlertTriangle, Scale, MessageSquare, Lock, FileCheck, ExternalLink, Share2, Receipt, ChevronDown, ChevronUp, Send } from 'lucide-react';
@@ -105,9 +113,11 @@ const formatDateTimeDisplay = (isoString: string | undefined) => {
 export function LoadCard({ 
   load, client, settings, onStatusChange, onGenerateAgreement, onGenerateInvoice, onGenerateSettlement, onShareLoadPacket, onEdit, onDelete, onUpdateDelivery, calculateVehicleCPM, isUpdatingStatus, vehicles, loads, trips, driverProfiles, expenses
 }: LoadCardProps) {
-  const { financialProfile, isFinancialProfileComplete, setIsFleetFinancialModalOpen } = useApp();
+  const { financialProfile, isFinancialProfileComplete, setIsFleetFinancialModalOpen, user, previewRole } = useApp();
+  const isAdminOrOwner = ['owner', 'admin', 'company_admin'].includes(user?.role || '') && previewRole !== 'driver';
   const [isSharePacketOpen, setIsSharePacketOpen] = React.useState(false);
   const [isExpenseLedgerOpen, setIsExpenseLedgerOpen] = React.useState(false);
+  const [isCompleteConfirmOpen, setIsCompleteConfirmOpen] = React.useState(false);
   const VALID_STATUS_VALUES = [
     'pending_approval',
     'approved',
@@ -1304,6 +1314,19 @@ export function LoadCard({
                 <MapPin className="h-3.5 w-3.5 mr-1 text-teal-600" /> Mark Arrived
               </Button>
             )}
+            {isAdminOrOwner && !loadIsCompleted && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsCompleteConfirmOpen(true)}
+                disabled={isUpdatingStatus}
+                className="px-2.5 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-700 font-bold shadow-xs transition-colors"
+                title="Mark load as delivered and move to Completed Loads"
+              >
+                <CheckCircle className="h-3.5 w-3.5 mr-1 text-emerald-600" /> Mark Delivered
+              </Button>
+            )}
             <div className="relative inline-flex items-center gap-1.5">
               {isTrackingViaTelemetry && (
                 <div 
@@ -1418,6 +1441,46 @@ export function LoadCard({
         isOpen={isSharePacketOpen}
         onClose={() => setIsSharePacketOpen(false)}
       />
+      <Dialog open={isCompleteConfirmOpen} onOpenChange={setIsCompleteConfirmOpen}>
+        <DialogContent className="max-w-md w-full">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900">
+              Mark Load as Delivered?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600 pt-1">
+              Are you sure you want to mark{' '}
+              <span className="font-semibold text-slate-800">
+                Load #{load.loadNumber || load.id?.substring(0, 8)}
+              </span>{' '}
+              ({load.origin?.city || 'Origin'} → {load.destination?.city || 'Destination'}) as delivered?
+              This will record the delivery time, move the load to Completed Loads, and update dashboard financials.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsCompleteConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+              disabled={isUpdatingStatus}
+              onClick={() => {
+                onStatusChange(load.id!, 'delivered');
+                setIsCompleteConfirmOpen(false);
+              }}
+            >
+              <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+              Confirm Mark Delivered
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

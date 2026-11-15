@@ -11,6 +11,7 @@ import {
   serverTimestamp 
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { sendDriverPushNotification } from '@/lib/pushNotification';
 import type { AppNotification, DriverProfile, Load } from '@/types';
 
 export interface SendDriverNotificationParams {
@@ -57,14 +58,14 @@ export function formatLoadPickupSummary(load: Partial<Load>): {
 } {
   const originText =
     [load.origin?.city, load.origin?.state].filter(Boolean).join(', ') ||
-    load.origin?.address ||
+    load.origin?.street ||
     'Origin';
   const destText =
     [load.destination?.city, load.destination?.state].filter(Boolean).join(', ') ||
-    load.destination?.address ||
+    load.destination?.street ||
     'Destination';
 
-  const rawPickup = load.pickupWindow?.start || load.pickupDate || '';
+  const rawPickup = load.pickupDateTime || '';
   let pickupText = 'Scheduled';
   if (rawPickup) {
     const parsed = new Date(rawPickup);
@@ -94,6 +95,56 @@ export function buildDispatchSmsUrl(
   const digits = phone.replace(/\D/g, '');
   if (digits.length < 10) return null;
   return `sms:${digits}?body=${encodeURIComponent(message)}`;
+}
+
+/**
+ * Sends in-app + push dispatch notifications and returns an SMS URI if the driver has a phone number.
+ */
+export function dispatchDriverAssignmentAlert(params: {
+  driverId: string;
+  driver?: DriverProfile | null;
+  loadId: string;
+  loadData: Partial<Load>;
+  isDispatched: boolean;
+}): {
+  smsUrl: string | null;
+  summaryMsg: string;
+  driverName: string;
+  driverLoadUrl: string;
+} {
+  const { driverId, driver, loadId, loadData, isDispatched } = params;
+  const driverLoadUrl = buildDriverLoadViewUrl(driver, loadId);
+  const { originText, destText, pickupText } = formatLoadPickupSummary(loadData);
+  const loadLabel = loadData.loadNumber || loadId.substring(0, 8);
+  const summaryMsg = `Load #${loadLabel}: ${originText} → ${destText} (Pickup: ${pickupText}).`;
+  const smsUrl = buildDispatchSmsUrl(
+    driver?.phone,
+    `${summaryMsg} View load: ${driverLoadUrl}`
+  );
+
+  sendDriverNotification({
+    driverId,
+    title: isDispatched ? 'Load Dispatched to You' : 'New Load Assigned',
+    message: `${summaryMsg} Open Driver View to accept & track.`,
+    loadId,
+    actionUrl: driverLoadUrl,
+  }).catch((err) => console.warn('Failed to send in-app driver notification:', err));
+
+  if (driver) {
+    sendDriverPushNotification({
+      driver,
+      originCity: loadData.origin?.city,
+      originState: loadData.origin?.state,
+      clickActionUrl: driverLoadUrl,
+    }).catch((err) => console.warn('Failed to send push driver notification:', err));
+  }
+
+  return {
+    smsUrl,
+    summaryMsg,
+    driverName: driver?.name || 'Driver',
+    driverLoadUrl,
+  };
 }
 
 /**

@@ -379,7 +379,7 @@ export function DriverFleetPage() {
   const { toast } = useToast();
   const { 
     vehicles, driverProfiles, addVehicle, updateVehicle, deleteVehicle,
-    addDriverProfile, updateDriverProfile, deleteDriverProfile,
+    addDriverProfile, updateDriverProfile, deleteDriverProfile, revokeDriverAccess,
     isSubmitting, setIsSubmitting, createDriverAccount,
     fleetSubTab, setFleetSubTab,
     trips,
@@ -403,6 +403,8 @@ export function DriverFleetPage() {
   const [viewDetailsVehicle, setViewDetailsVehicle] = useState<any | null>(null);
   const [viewDetailsDriver, setViewDetailsDriver] = useState<any | null>(null);
   const [driverToDelete, setDriverToDelete] = useState<DriverProfile | null>(null);
+  const [driverToRevoke, setDriverToRevoke] = useState<DriverProfile | null>(null);
+  const [isRevokingAccess, setIsRevokingAccess] = useState(false);
   const [isDeletingDriver, setIsDeletingDriver] = useState(false);
 
   // Driver self-onboarding state
@@ -2719,6 +2721,29 @@ export function DriverFleetPage() {
                             <ShieldCheck className="h-3 w-3 text-emerald-600" />
                             Driver View Login
                           </Button>
+                          {driver.accessRevoked ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2.5 text-[11px] font-bold border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 flex items-center gap-1"
+                              onClick={() => revokeDriverAccess(driver, true)}
+                              title="Restore driver sign-in and portal access"
+                            >
+                              Restore Access
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2.5 text-[11px] font-bold border-amber-300 text-amber-800 bg-amber-50/60 hover:bg-amber-100 flex items-center gap-1"
+                              onClick={() => setDriverToRevoke(driver)}
+                              title="Revoke driver sign-in and portal access immediately"
+                            >
+                              Revoke Access
+                            </Button>
+                          )}
                           <Button
                             type="button"
                             variant="outline"
@@ -3134,20 +3159,53 @@ export function DriverFleetPage() {
           )}
 
           <DialogFooter className="flex-col sm:flex-row gap-2 sm:justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-              onClick={() => {
-                const d = viewDetailsDriver;
-                setViewDetailsDriver(null);
-                setDriverToDelete(d);
-              }}
-            >
-              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-              Remove Driver
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {viewDetailsDriver && (
+                viewDetailsDriver.accessRevoked ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    onClick={async () => {
+                      const d = viewDetailsDriver;
+                      setViewDetailsDriver(null);
+                      await revokeDriverAccess(d, true);
+                    }}
+                  >
+                    Restore Access
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-amber-300 text-amber-800 hover:bg-amber-50"
+                    onClick={() => {
+                      const d = viewDetailsDriver;
+                      setViewDetailsDriver(null);
+                      setDriverToRevoke(d);
+                    }}
+                  >
+                    Revoke Access
+                  </Button>
+                )
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                onClick={() => {
+                  const d = viewDetailsDriver;
+                  setViewDetailsDriver(null);
+                  setDriverToDelete(d);
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                Remove Driver
+              </Button>
+            </div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" size="sm" onClick={() => setViewDetailsDriver(null)}>Close</Button>
               <Button size="sm" onClick={() => {
@@ -3156,6 +3214,47 @@ export function DriverFleetPage() {
                 startEditDriver(d);
               }}>Edit Driver</Button>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Revoke Driver Access Confirmation Dialog ── */}
+      <Dialog open={!!driverToRevoke} onOpenChange={(open) => !open && !isRevokingAccess && setDriverToRevoke(null)}>
+        <DialogContent className="max-w-md w-full">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-slate-900">Revoke Driver Access?</DialogTitle>
+            <DialogDescription className="text-xs text-slate-600 pt-1">
+              Revoking access for <span className="font-semibold text-slate-800">{driverToRevoke?.name}</span> will immediately disable their sign-in and Driver View link so they can no longer log in or view any loads.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isRevokingAccess}
+              onClick={() => setDriverToRevoke(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={isRevokingAccess}
+              onClick={async () => {
+                if (!driverToRevoke) return;
+                setIsRevokingAccess(true);
+                try {
+                  await revokeDriverAccess(driverToRevoke, false);
+                  setDriverToRevoke(null);
+                } finally {
+                  setIsRevokingAccess(false);
+                }
+              }}
+            >
+              {isRevokingAccess ? 'Revoking...' : 'Revoke Access'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

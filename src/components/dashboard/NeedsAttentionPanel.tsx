@@ -4,6 +4,11 @@ import React from 'react';
 import { useApp } from '@/context/AppContext';
 import { isDriverOffDuty, type Load } from '@/types';
 import { getLoadDisplayId } from '@/lib/displayId';
+import {
+  deduplicateLoads,
+  doesDriverLocationMatchDestination,
+  isLoadCompleted,
+} from '@/lib/loadStatus';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -52,12 +57,26 @@ type Group = {
 export function NeedsAttentionPanel() {
   const {
     loads, trips, clients, driverProfiles, clientLoadRequests, isFinancialProfileComplete,
-    setActiveTab, handleStartEditLoad, setViewClientRequestId, openFleetFinancialSetup,
+    setActiveTab, handleStartEditLoad, setViewClientRequestId, openFleetFinancialSetup, updateLoad,
   } = useApp();
 
-  const activeLoads = loads.filter(l => l.status !== 'delivered');
+  const activeLoads = React.useMemo(
+    () => deduplicateLoads(loads).unique.filter(l => !isLoadCompleted(l)),
+    [loads]
+  );
 
   const editLoad = (load: Load) => { handleStartEditLoad(load); setActiveTab('loads'); };
+  const markLoadDelivered = (load: Load) => {
+    if (!load.id) {
+      editLoad(load);
+      return;
+    }
+    updateLoad(load.id, {
+      status: 'delivered',
+      driverPhase: 'Complete',
+      deliveredAt: new Date().toISOString(),
+    });
+  };
   const loadName = (l: Load) => `Load ${getLoadDisplayId(l)}`;
   const route = (l: Load) =>
     `${l.origin?.city || '—'}${l.origin?.state ? `, ${l.origin.state}` : ''} → ${l.destination?.city || '—'}${l.destination?.state ? `, ${l.destination.state}` : ''}`;
@@ -65,12 +84,18 @@ export function NeedsAttentionPanel() {
   // 1. Loads whose scheduled pickup/delivery has passed but whose status hasn't moved
   const needsStatus = activeLoads.flatMap<Row>(l => {
     if (isPast(l.deliveryDateTime)) {
+      const assignedDriver = l.assignedDriverId
+        ? driverProfiles.find(d => d.uid === l.assignedDriverId)
+        : undefined;
+      const atDestination = doesDriverLocationMatchDestination(assignedDriver, l);
       return [{
         key: `status-${l.id}`,
         title: loadName(l),
-        detail: `Delivery time has passed — still “${prettyStatus(l.status)}”. ${route(l)}`,
-        actionLabel: 'Update status',
-        onClick: () => editLoad(l),
+        detail: atDestination
+          ? `Driver is at ${l.destination?.city || 'destination'} and delivery window passed — ${route(l)}`
+          : `Delivery time has passed — still “${prettyStatus(l.status)}”. ${route(l)}`,
+        actionLabel: 'Mark Delivered',
+        onClick: () => markLoadDelivered(l),
       }];
     }
     if (PRE_PICKUP_STATUSES.includes(l.status as string) && isPast(l.pickupDateTime)) {

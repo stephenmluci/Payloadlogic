@@ -511,8 +511,10 @@ export function DriverDashboard() {
       if (tripLoads.length > 1) {
         items.push({ type: 'trip', trip: matchedTrip, loads: tripLoads });
       } else {
-        // Check if other loads in the system belong to this tripId
-        const siblingLoadsInTrip = loads.filter(l => l.tripId === tripId && !isLoadHistoricalOrDelivered(l));
+        // Check if other loads assigned to this driver belong to this tripId
+        const siblingLoadsInTrip = loads.filter(
+          l => l.tripId === tripId && !isLoadHistoricalOrDelivered(l) && isLoadAssignedToDriver(l, driverProfile, trips, vehicles)
+        );
         if (siblingLoadsInTrip.length > 1) {
           items.push({ type: 'trip', trip: matchedTrip, loads: siblingLoadsInTrip });
         } else {
@@ -802,7 +804,7 @@ export function DriverDashboard() {
       </div>
 
       <div className="max-w-[500px] mx-auto px-3.5 pt-4 sm:pt-6 space-y-4">
-        {!isAdminOrDispatcher && <DriverPwaInstallBanner variant="banner" />}
+        {!isAdminOrDispatcher && <DriverPwaInstallBanner variant="banner" autoPromptOnFirstVisit showInlineInstructions />}
 
         <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
           <DialogContent>
@@ -966,7 +968,15 @@ export function DriverDashboard() {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              <NotificationBell driverId={targetDriverId || driverProfile.uid} />
+              <NotificationBell
+                driverId={targetDriverId || driverProfile.uid}
+                onSelectLoad={(loadId) => {
+                  document.getElementById(`driver-load-${loadId}`)?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center',
+                  });
+                }}
+              />
               <Button
                 type="button"
                 size="sm"
@@ -1046,6 +1056,7 @@ export function DriverDashboard() {
               return (
                 <Card 
                   key={load.id} 
+                  id={`driver-load-${load.id}`}
                   className={`border-0 rounded-2xl overflow-hidden relative bg-white transition-all shadow-sm ${
                     isPrimary ? 'ring-2 ring-blue-500/50 shadow-md' : ''
                   }`}

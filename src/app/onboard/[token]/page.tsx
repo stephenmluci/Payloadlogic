@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { PayloadLogicLogo } from '@/components/brand/PayloadLogicLogo';
+import { DriverPwaInstallBanner } from '@/components/common/DriverPwaInstallBanner';
 import {
   User,
   Phone,
@@ -480,13 +481,19 @@ export default function DriverOnboardingPage() {
           <PayloadLogicLogo className="h-8 w-auto text-amber-400" />
           <span className="text-xl font-bold tracking-tight text-white font-headline">PayloadLogic</span>
         </div>
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300">
-          <Lock className="w-3.5 h-3.5 text-emerald-400" /> Secure Driver Self-Onboarding
+        <div className="inline-flex items-center gap-2 flex-wrap justify-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300">
+            <Lock className="w-3.5 h-3.5 text-emerald-400" /> Secure Driver Self-Onboarding
+          </div>
+          <DriverPwaInstallBanner variant="header-button" />
         </div>
       </div>
 
       {/* Main Container */}
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-2xl space-y-4">
+        {!isLoading && !errorStatus && !isSuccess && (
+          <DriverPwaInstallBanner variant="banner" showInlineInstructions />
+        )}
         {/* State 1: Loading */}
         {isLoading && (
           <Card className="bg-slate-900/90 border-slate-800 text-slate-200 shadow-2xl p-8 sm:p-12 text-center">
@@ -690,6 +697,8 @@ export default function DriverOnboardingPage() {
                   </div>
                 </div>
               )}
+
+              <DriverPwaInstallBanner variant="banner" showInlineInstructions />
 
               <p className="text-center text-xs text-slate-400">
                 Bookmark your Driver View link above or sign in anytime at{' '}

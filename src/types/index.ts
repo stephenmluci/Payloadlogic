@@ -334,7 +334,7 @@ export type Vehicle = {
   }[];
 };
 
-export type DriverStatus = 'active' | 'on-leave' | 'terminated' | 'off-duty' | 'Off Duty';
+export type DriverStatus = 'active' | 'on-leave' | 'terminated' | 'off-duty' | 'Off Duty' | 'inactive';
 
 export type DriverProfile = {
   id?: string;
@@ -414,6 +414,10 @@ export type DriverProfile = {
   driverPortalUrl?: string;
   driverAccountCreated?: boolean;
   driverAccountCreatedAt?: string;
+  passwordSetupRequired?: boolean;
+  passwordSetAt?: string;
+  accessRevoked?: boolean;
+  accessRevokedAt?: string;
 };
 
 export function isDriverOffDuty(driver?: Partial<DriverProfile> | null): boolean {
@@ -449,6 +453,7 @@ export type User = FirebaseUser & {
   driverProfileId?: string;
   /** UID of the company/admin account that owns this driver's Firestore data. Set only when role === 'driver'. */
   driverOwnerId?: string;
+  accessRevoked?: boolean;
   clientId?: string;
   companyName?: string;
   usdotNumber?: string;
@@ -474,6 +479,7 @@ export type UserProfile = {
   driverProfileId?: string; // Link to DriverProfile if role is driver
   /** UID of the admin/owner account that this driver belongs to. Required when role === 'driver'. */
   driverOwnerId?: string;
+  accessRevoked?: boolean;
   clientId?: string;
   companyName?: string;
   usdotNumber?: string;

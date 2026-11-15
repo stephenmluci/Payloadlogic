@@ -214,7 +214,9 @@ export function LoadCard({
     return deriveTelemetryLoadStatus(load, loads || [], driver, Date.now());
   }, [driver, load, loads, isPreDispatchState]);
 
-  const effectiveStatus = isPreDispatchState
+  const effectiveStatus = loadIsCompleted
+    ? 'delivered'
+    : isPreDispatchState
     ? normalizedStatus
     : (load.assignedDriverId && telemetryDerivedStatus
         ? telemetryDerivedStatus

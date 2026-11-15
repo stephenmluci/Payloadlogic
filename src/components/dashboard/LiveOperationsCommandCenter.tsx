@@ -4,6 +4,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useApp } from '@/context/AppContext';
 import { vehicleToEngineTruck, vehicleToEngineTrailer, loadToCargoItem } from '@/lib/logisticsAdapters';
 import { calculateTripMetrics, computeCargoLinearFootprint } from '@/lib/logisticsEngine';
+import { deduplicateLoads, isLoadCompleted } from '@/lib/loadStatus';
 import {
   buildDriverProgressLegs,
   calculateLegProgress,
@@ -191,14 +192,17 @@ export function LiveOperationsCommandCenter() {
   // ── Active (in-transit/active container) loads ──────────────────────────────
   const activeLoads = useMemo(() => {
     const activeTripIds = new Set(trips.filter(t => t.status === 'active').map(t => t.id));
-    return loads.filter(l => 
-      l.status === 'in-transit' || 
-      l.status === 'arrived' || 
-      (l as any).status === 'Arrived' || 
-      l.status === 'loading' || 
-      l.status === 'unloading' || 
-      (l.tripId && activeTripIds.has(l.tripId) && l.status !== 'delivered')
-    );
+    return deduplicateLoads(loads).unique.filter(l => {
+      if (isLoadCompleted(l)) return false;
+      return (
+        l.status === 'in-transit' || 
+        l.status === 'arrived' || 
+        (l as any).status === 'Arrived' || 
+        l.status === 'loading' || 
+        l.status === 'unloading' || 
+        (l.tripId && activeTripIds.has(l.tripId))
+      );
+    });
   }, [loads, trips]);
 
   // Auto-sync exact physical coordinates for active loads in database

@@ -20,12 +20,7 @@ import { sendNotificationEmail, type SendNotificationEmailInput } from '@/ai/flo
 import { formatAddress } from '@/lib/utils';
 import { geocodePhysicalAddress } from '@/lib/geocoding';
 import { sendDriverPushNotification } from '@/lib/pushNotification';
-import {
-  sendDriverNotification,
-  buildDriverLoadViewUrl,
-  formatLoadPickupSummary,
-  buildDispatchSmsUrl,
-} from '@/lib/notifications';
+import { dispatchDriverAssignmentAlert } from '@/lib/notifications';
 import { isErroneousArrivalTimestamp, isDriverBroadcastingGPS } from '@/lib/telemetrySync';
 import { normalizeLoadDriverAssignment, isLoadAssignedToDriver, getDriverProfileId } from '@/lib/driverAssignment';
 import { resolveCoordinates } from '@/lib/routeUtils';
@@ -365,6 +360,7 @@ interface AppContextType {
   addDriverProfile: (profile: DriverProfile) => Promise<void>;
   updateDriverProfile: (uid: string, updates: Partial<DriverProfile>) => Promise<void>;
   deleteDriverProfile: (uid: string, skipConfirm?: boolean) => Promise<void>;
+  revokeDriverAccess: (driver: DriverProfile, restore?: boolean) => Promise<void>;
 
 
   // Settings
@@ -957,6 +953,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       // Drivers: store driverOwnerId separately for listener scoping, skip settings fetch
       if (augmentedUser.role === 'driver') {
+        if (rootUserData?.accessRevoked || userProfile?.accessRevoked) {
+          await signOut(auth).catch(() => {});
+          setUser(null);
+          toast({
+            variant: 'destructive',
+            title: 'Driver Access Revoked',
+            description: 'Your driver access has been revoked by your fleet administrator.',
+          });
+          targetDisplayState = 'auth';
+          return;
+        }
         const ownerId = resolvedDriverOwnerId;
         setDriverOwnerId(ownerId);
         if (!ownerId) {
@@ -1507,7 +1514,30 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
     setIsSubmitting(true);
     try {
-      await signInWithEmailAndPassword(auth, targetEmail, targetPassword);
+      let resolvedEmail = targetEmail;
+      try {
+        const lookupRes = await fetch('/api/driver-auth-lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: targetEmail }),
+        });
+        if (lookupRes.ok) {
+          const lookupData = await lookupRes.json();
+          if (lookupData?.accessRevoked) {
+            return {
+              code: 'auth/user-disabled',
+              message: 'Your driver access has been revoked by your fleet administrator.',
+            };
+          }
+          if (lookupData?.loginEmail) {
+            resolvedEmail = lookupData.loginEmail;
+          }
+        }
+      } catch {
+        // Fallback to raw input if lookup fails
+      }
+
+      await signInWithEmailAndPassword(auth, resolvedEmail, targetPassword);
       toast({ title: "Signed In", description: "Welcome back!" });
       return null;
     } catch (error: any) {
@@ -1909,64 +1939,36 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
               // Trigger in-app notification & FCM push notification if driver assigned on create AND load is already dispatched
               if (
+                finalSavedLoadData.id &&
                 finalSavedLoadData.assignedDriverId &&
                 finalSavedLoadData.assignedDriverId !== 'none' &&
                 (finalSavedLoadData.status === 'dispatched' || finalSavedLoadData.status === 'in-transit')
               ) {
-                const assignedDriver = driverProfiles.find(d => d.uid === finalSavedLoadData.assignedDriverId);
-                const originLoc = finalSavedLoadData.origin?.city && finalSavedLoadData.origin?.state 
-                  ? `${finalSavedLoadData.origin.city}, ${finalSavedLoadData.origin.state}`
-                  : (finalSavedLoadData.origin?.city || 'Origin');
-                const destLoc = finalSavedLoadData.destination?.city && finalSavedLoadData.destination?.state 
-                  ? `${finalSavedLoadData.destination.city}, ${finalSavedLoadData.destination.state}`
-                  : (finalSavedLoadData.destination?.city || 'Destination');
-
                 const assignedDriver = driverProfiles.find(
                   d => d.uid === finalSavedLoadData.assignedDriverId || d.authUid === finalSavedLoadData.assignedDriverId
                 );
-                const driverLoadUrl = buildDriverLoadViewUrl(assignedDriver, finalSavedLoadData.id);
-                const { originText, destText, pickupText } = formatLoadPickupSummary(finalSavedLoadData);
-                const loadLabel = finalSavedLoadData.loadNumber || finalSavedLoadData.id.substring(0, 8);
-                const summaryMsg = `Load #${loadLabel}: ${originText} → ${destText} (Pickup: ${pickupText}).`;
-                const smsUrl = buildDispatchSmsUrl(
-                  assignedDriver?.phone,
-                  `${summaryMsg} View load: ${driverLoadUrl}`
-                );
-
-                // 1. In-app Firestore notification (100% free onSnapshot system)
-                sendDriverNotification({
+                const alertResult = dispatchDriverAssignmentAlert({
                   driverId: finalSavedLoadData.assignedDriverId,
-                  title: finalSavedLoadData.status === 'dispatched' ? 'Load Dispatched to You' : 'New Load Assigned',
-                  message: `${summaryMsg} Open Driver View to accept & track.`,
+                  driver: assignedDriver,
                   loadId: finalSavedLoadData.id,
-                  actionUrl: driverLoadUrl,
-                }).catch(err => console.warn('Failed to send in-app driver notification on create:', err));
+                  loadData: finalSavedLoadData,
+                  isDispatched: finalSavedLoadData.status === 'dispatched',
+                });
 
-                // 2. FCM / Web Push notification
-                if (assignedDriver) {
-                  sendDriverPushNotification({
-                    driver: assignedDriver,
-                    originCity: finalSavedLoadData.origin?.city,
-                    originState: finalSavedLoadData.origin?.state,
-                    clickActionUrl: driverLoadUrl,
-                  }).catch(err => console.warn('Failed to send push notification on load creation:', err));
-                }
-
-                // 3. SMS dispatch action when driver phone is available, otherwise confirm in-app delivery
-                if (smsUrl) {
+                if (alertResult.smsUrl) {
                   toast({
                     title: 'Dispatch SMS Ready',
-                    description: `${assignedDriver?.name || 'Driver'}: ${summaryMsg}`,
+                    description: `${alertResult.driverName}: ${alertResult.summaryMsg}`,
                     action: (
                       <ToastAction altText="Send SMS to driver" asChild>
-                        <a href={smsUrl}>Send SMS</a>
+                        <a href={alertResult.smsUrl}>Send SMS</a>
                       </ToastAction>
                     ),
                   });
                 } else {
                   toast({
                     title: 'In-App Driver Notification Sent',
-                    description: `${assignedDriver?.name || 'Driver'} notified in-app (${summaryMsg})`,
+                    description: `${alertResult.driverName} notified in-app (${alertResult.summaryMsg})`,
                   });
                 }
               }
@@ -2168,6 +2170,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
              recurring: (manualOverhead > 0 ? manualOverhead : projRecurring) + manualTolls + manualOther,
              calculated: true
           };
+        }
+
+        if (
+          finalUpdates.status === 'delivered' ||
+          isLoadCompleted({
+            status: finalUpdates.status || currentLoad.status,
+            driverPhase: finalUpdates.driverPhase || currentLoad.driverPhase,
+            deliveredAt: finalUpdates.deliveredAt || currentLoad.deliveredAt,
+            paperworkStatus: finalUpdates.paperworkStatus || currentLoad.paperworkStatus,
+          })
+        ) {
+          finalUpdates.status = 'delivered';
+          if (!finalUpdates.driverPhase) {
+            finalUpdates.driverPhase = 'Complete';
+          }
+          if (!finalUpdates.deliveredAt && !currentLoad.deliveredAt) {
+            finalUpdates.deliveredAt = new Date().toISOString();
+          }
         }
 
         return finalUpdates;
@@ -2453,46 +2473,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           origin: finalUpdates.origin || currentLoad.origin,
           destination: finalUpdates.destination || currentLoad.destination,
         };
-        const driverLoadUrl = buildDriverLoadViewUrl(assignedDriver, id);
-        const { originText, destText, pickupText } = formatLoadPickupSummary(mergedLoadForSummary);
-        const loadLabel = mergedLoadForSummary.loadNumber || id.substring(0, 8);
-        const summaryMsg = `Load #${loadLabel}: ${originText} → ${destText} (Pickup: ${pickupText}).`;
-        const smsUrl = buildDispatchSmsUrl(
-          assignedDriver?.phone,
-          `${summaryMsg} View load: ${driverLoadUrl}`
-        );
-
-        if (assignedDriver) {
-          sendDriverPushNotification({
-            driver: assignedDriver,
-            originCity: mergedLoadForSummary.origin?.city,
-            originState: mergedLoadForSummary.origin?.state,
-            clickActionUrl: driverLoadUrl,
-          }).catch(err => console.warn('Failed to send push notification on updateLoad assignment/dispatch:', err));
-        }
-
-        sendDriverNotification({
+        const alertResult = dispatchDriverAssignmentAlert({
           driverId: newlyAssignedDriverId,
-          title: isStatusTransitionToDispatched ? 'Load Dispatched to You' : 'New Load Assigned',
-          message: `${summaryMsg} Open Driver View to accept & track.`,
+          driver: assignedDriver,
           loadId: id,
-          actionUrl: driverLoadUrl,
-        }).catch(err => console.warn('Failed in-app driver notification on updateLoad:', err));
+          loadData: mergedLoadForSummary,
+          isDispatched: isStatusTransitionToDispatched,
+        });
 
-        if (smsUrl) {
+        if (alertResult.smsUrl) {
           toast({
             title: 'Dispatch SMS Ready',
-            description: `${assignedDriver?.name || 'Driver'}: ${summaryMsg}`,
+            description: `${alertResult.driverName}: ${alertResult.summaryMsg}`,
             action: (
               <ToastAction altText="Send SMS to driver" asChild>
-                <a href={smsUrl}>Send SMS</a>
+                <a href={alertResult.smsUrl}>Send SMS</a>
               </ToastAction>
             ),
           });
         } else {
           toast({
             title: 'In-App Driver Notification Sent',
-            description: `${assignedDriver?.name || 'Driver'} notified in-app (${summaryMsg})`,
+            description: `${alertResult.driverName} notified in-app (${alertResult.summaryMsg})`,
           });
         }
       }
@@ -3796,6 +3798,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     } else if (user) {
       try {
         const ownerId = (user.role === 'driver' && driverOwnerId) ? driverOwnerId : user.uid;
+        const targetProfile = driverProfiles.find(p => p.uid === uid || (p as any).id === uid);
+        const tokenHeader = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => '') : '';
+        await fetch('/api/driver-access', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(tokenHeader ? { Authorization: `Bearer ${tokenHeader}` } : {}),
+          },
+          body: JSON.stringify({
+            action: 'revoke',
+            adminUid: ownerId,
+            driverUid: uid,
+            authUid: targetProfile?.authUid,
+            driverAccessToken: targetProfile?.driverAccessToken,
+          }),
+        }).catch(() => {});
         await deleteDoc(doc(db, `users/${ownerId}/driverProfiles`, uid));
         await deleteDoc(doc(db, 'drivers', uid)).catch(() => {});
         setDriverProfiles(prev => prev.filter(p => p.uid !== uid && (p as any).id !== uid));
@@ -3806,6 +3824,82 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }
     }
     setIsSubmitting(false);
+  };
+
+  const revokeDriverAccess = async (driver: DriverProfile, restore = false) => {
+    if (!user) return;
+    setIsSubmitting(true);
+    try {
+      if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
+        setDriverProfiles(prev =>
+          prev.map(p =>
+            p.uid === driver.uid
+              ? {
+                  ...p,
+                  accessRevoked: !restore,
+                  status: restore ? 'active' : 'inactive',
+                  driverAccountCreated: restore,
+                }
+              : p
+          )
+        );
+        toast({
+          title: restore ? 'Driver Access Restored' : 'Driver Access Revoked',
+          description: `${driver.name}'s access has been ${restore ? 'restored' : 'revoked'}.`,
+        });
+        return;
+      }
+
+      const ownerId = (user.role === 'driver' && driverOwnerId) ? driverOwnerId : user.uid;
+      const tokenHeader = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => '') : '';
+      const res = await fetch('/api/driver-access', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(tokenHeader ? { Authorization: `Bearer ${tokenHeader}` } : {}),
+        },
+        body: JSON.stringify({
+          action: restore ? 'restore' : 'revoke',
+          adminUid: ownerId,
+          driverUid: driver.uid,
+          authUid: driver.authUid,
+          driverAccessToken: driver.driverAccessToken,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to update driver access.');
+      }
+
+      const nowIso = new Date().toISOString();
+      setDriverProfiles(prev =>
+        prev.map(p =>
+          p.uid === driver.uid
+            ? {
+                ...p,
+                accessRevoked: !restore,
+                accessRevokedAt: restore ? '' : nowIso,
+                status: restore ? 'active' : 'inactive',
+                driverAccountCreated: restore,
+              }
+            : p
+        )
+      );
+      toast({
+        title: restore ? 'Driver Access Restored' : 'Driver Access Revoked',
+        description: restore
+          ? `${driver.name} can sign in again.`
+          : `${driver.name} can no longer sign in or view loads.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error Updating Access',
+        description: error?.message || 'Could not update driver access.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
 
@@ -4153,7 +4247,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     handleStartEditLoad, handleCancelEditLoad, approveClientLoadRequest, rejectClientLoadRequest, generateAgreement, generateInvoice,
     updateLoadPhaseWithLocation, reportDriverException, updateDriverNote,
     trips, addTrip, updateTrip, handleDeleteTrip, getFuelOptimizationProfit,
-    addVehicle, updateVehicle, deleteVehicle, addDriverProfile, updateDriverProfile, deleteDriverProfile,
+    addVehicle, updateVehicle, deleteVehicle, addDriverProfile, updateDriverProfile, deleteDriverProfile, revokeDriverAccess,
     calculateVehicleCPM, archiveVehicleCPM,
     previewRole, setPreviewRole,
     savePOD, createDriverAccount,

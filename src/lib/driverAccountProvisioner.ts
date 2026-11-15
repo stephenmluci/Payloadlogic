@@ -108,6 +108,7 @@ export async function provisionDriverViewAccount(
       await adminAuth.updateUser(authUid, {
         password: tempPassword,
         displayName: cleanName,
+        disabled: false,
       });
     } else {
       const createParams: Record<string, any> = {
@@ -141,6 +142,13 @@ export async function provisionDriverViewAccount(
   const driverPortalUrl = `${cleanBaseUrl}/driver-portal/${driverAccessToken}`;
   const loginUrl = `${cleanBaseUrl}/login`;
 
+  const hasExplicitPassword = Boolean(explicitPassword && explicitPassword.trim().length >= 6);
+  const passwordSetupRequired = hasExplicitPassword
+    ? false
+    : existingProfile?.passwordSetAt
+    ? false
+    : true;
+
   const userProfileDoc = {
     uid: authUid,
     driverProfileId: targetDriverUid,
@@ -152,6 +160,7 @@ export async function provisionDriverViewAccount(
     driverOwnerId: adminUid,
     driverAccessToken,
     driverPortalUrl,
+    accessRevoked: false,
     updatedAt: nowIso,
     createdAt: existingProfile?.driverAccountCreatedAt || nowIso,
   };
@@ -168,6 +177,7 @@ export async function provisionDriverViewAccount(
         displayName: cleanName,
         phone: cleanPhone,
         driverAccessToken,
+        accessRevoked: false,
         updatedAt: nowIso,
       },
       { merge: true }
@@ -211,6 +221,8 @@ export async function provisionDriverViewAccount(
     driverPortalUrl,
     driverAccountCreated: true,
     driverAccountCreatedAt: existingProfile?.driverAccountCreatedAt || nowIso,
+    passwordSetupRequired,
+    accessRevoked: false,
     status: profileData.status || existingProfile?.status || 'active',
     availabilityStatus:
       profileData.availabilityStatus || existingProfile?.availabilityStatus || 'Available',
@@ -230,7 +242,10 @@ export async function provisionDriverViewAccount(
     driverName: cleanName,
     driverEmail: hasRealEmail ? rawEmail : '',
     driverPhone: cleanPhone,
+    driverPhoneDigits: phoneDigits,
     companyName,
+    passwordSetupRequired,
+    accessRevoked: false,
     createdAt: existingProfile?.driverAccountCreatedAt || nowIso,
     updatedAt: nowIso,
   });

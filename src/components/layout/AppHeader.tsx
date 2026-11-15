@@ -38,13 +38,13 @@ export function AppHeader({ userEmail, onSignOut }: AppHeaderProps) {
   const notificationCount = pendingRequests.length;
 
   return (
-    <header className="w-full bg-[#0c141f] border-b border-white/10 text-white shadow-md sticky top-0 z-[100] px-3 sm:px-6 md:px-8 py-2.5 sm:py-3 flex items-center justify-between">
-      <div className="flex items-center gap-1 min-w-0">
-        {activeTab !== 'dashboard' && (<button type="button" onClick={goBackInApp} aria-label="Back" title="Back" className="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-full hover:bg-white/10 text-white"><ArrowLeft className="h-5 w-5" /></button>)}
-        <PayloadLogicLogo variant="compact" iconSize={32} />
+    <header className="w-full bg-[#0c141f] border-b border-white/10 text-white shadow-md sticky top-0 z-[100] px-3 sm:px-6 md:px-8 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
+      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 overflow-hidden">
+        {activeTab !== 'dashboard' && (<button type="button" onClick={goBackInApp} aria-label="Back" title="Back" className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 inline-flex items-center justify-center rounded-full hover:bg-white/10 text-white"><ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" /></button>)}
+        <PayloadLogicLogo variant="compact" iconSize={28} className="min-w-0 shrink-0" />
       </div>
 
-      <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         {/* Help & Guides Center Button (Desktop / Tablet) */}
         <Link
           href="/help"
@@ -57,14 +57,19 @@ export function AppHeader({ userEmail, onSignOut }: AppHeaderProps) {
 
         <Popover>
           <PopoverTrigger asChild>
-            <div className="relative cursor-pointer hover:bg-white/10 p-1.5 sm:p-2 rounded-full transition-all group">
+            <button
+              type="button"
+              aria-label="Notifications"
+              title="Notifications"
+              className="relative h-9 w-9 sm:h-10 sm:w-10 inline-flex items-center justify-center cursor-pointer hover:bg-white/10 rounded-full transition-all group shrink-0"
+            >
               <Bell className="h-5 w-5 sm:h-6 sm:w-6 transition-transform group-hover:rotate-12" />
               {notificationCount > 0 && (
                 <span className="absolute top-0.5 right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center border-2 border-[#0c141f] animate-pulse">
                   {notificationCount}
                 </span>
               )}
-            </div>
+            </button>
           </PopoverTrigger>
           <PopoverContent className="w-80 p-0 overflow-hidden border-blue-100 z-[150]" align="end">
             <div className="bg-blue-50 px-4 py-3 border-b border-blue-100 flex items-center justify-between">
@@ -139,7 +144,7 @@ export function AppHeader({ userEmail, onSignOut }: AppHeaderProps) {
         </div>
 
         {userEmail && (
-          <div className="flex items-center gap-1.5 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {/* Desktop user text label */}
             <div className="flex-col items-end hidden md:flex leading-tight">
               <div className="text-sm font-semibold text-white truncate max-w-[140px]">{userName}</div>
@@ -151,12 +156,12 @@ export function AppHeader({ userEmail, onSignOut }: AppHeaderProps) {
               variant="ghost" 
               size="sm"
               onClick={onSignOut} 
-              className="text-red-400 hover:text-red-300 hover:bg-red-500/15 border border-red-500/30 rounded-xl h-8 sm:h-9 px-2 sm:px-3 flex items-center gap-1 font-bold text-xs transition-all shadow-xs"
+              className="text-red-400 hover:text-red-300 hover:bg-red-500/15 border border-red-500/30 rounded-xl h-8 sm:h-9 px-2 sm:px-3 flex items-center gap-1 font-bold text-xs transition-all shadow-xs shrink-0"
               title="Sign Out of PayloadLogic"
               aria-label="Sign Out"
             >
               <LogOut className="h-3.5 w-3.5 shrink-0 text-red-400" />
-              <span className="inline text-xs font-bold">Sign Out</span>
+              <span className="hidden min-[420px]:inline text-xs font-bold">Sign Out</span>
             </Button>
 
             {/* User Profile Avatar with Dropdown Menu */}
@@ -164,7 +169,7 @@ export function AppHeader({ userEmail, onSignOut }: AppHeaderProps) {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-emerald-400 to-blue-500 flex items-center justify-center font-bold text-xs sm:text-sm border-2 border-white/20 hover:border-[#ffbe24] transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-[#ffbe24]"
+                  className="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-full bg-gradient-to-br from-emerald-400 to-blue-500 flex items-center justify-center font-bold text-xs sm:text-sm border-2 border-white/20 hover:border-[#ffbe24] transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-[#ffbe24]"
                   title={`User Menu (${userName})`}
                   aria-label="User profile menu"
                 >

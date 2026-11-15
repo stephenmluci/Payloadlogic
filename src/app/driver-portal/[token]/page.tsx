@@ -30,6 +30,9 @@ import {
   Send,
   RefreshCw,
   ShieldCheck,
+  KeyRound,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
@@ -64,6 +67,15 @@ export default function DriverPortalMagicLinkPage() {
   const [declineModalLoad, setDeclineModalLoad] = useState<Load | null>(null);
   const [declineReason, setDeclineReason] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
+  const [highlightedLoadId, setHighlightedLoadId] = useState<string | null>(null);
+  const [isRevoked, setIsRevoked] = useState(false);
+  const [passwordSetupRequired, setPasswordSetupRequired] = useState(false);
+  const [loginEmailDisplay, setLoginEmailDisplay] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [isSettingPassword, setIsSettingPassword] = useState(false);
 
   // Editable personal contact fields on My Profile tab
   const [editPhone, setEditPhone] = useState('');
@@ -77,9 +89,15 @@ export default function DriverPortalMagicLinkPage() {
       const res = await fetch(`/api/driver-portal?token=${encodeURIComponent(token)}`);
       const data = await res.json();
       if (!res.ok || !data.valid) {
+        if (data.revoked) {
+          setIsRevoked(true);
+        }
         setErrorMsg(data.error || 'This Driver View link is invalid or expired.');
         return;
       }
+      setIsRevoked(false);
+      setPasswordSetupRequired(Boolean(data.passwordSetupRequired));
+      setLoginEmailDisplay(data.loginEmail || '');
       setCompanyName(data.companyName || 'PayloadLogic Fleet');
       setDriverProfile(data.driverProfile);
       setAssignedTruck(data.assignedTruck || null);
@@ -113,6 +131,22 @@ export default function DriverPortalMagicLinkPage() {
   useEffect(() => {
     fetchPortalData();
   }, [fetchPortalData]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const targetLoadId = params.get('loadId');
+    if (!targetLoadId) return;
+    setHighlightedLoadId(targetLoadId);
+    setActiveTab('loads');
+    const timer = setTimeout(() => {
+      document.getElementById(`portal-load-${targetLoadId}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [loads.length]);
 
   const showToastBanner = (msg: string) => {
     setStatusMessage(msg);
@@ -220,6 +254,51 @@ export default function DriverPortalMagicLinkPage() {
     }
   };
 
+  const handleSetupPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+
+    if (newPassword.trim().length < 8) {
+      setPasswordError('Password must be at least 8 characters long.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Passwords do not match.');
+      return;
+    }
+
+    try {
+      setIsSettingPassword(true);
+      const res = await fetch('/api/driver-portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          action: 'set_password',
+          newPassword: newPassword.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Could not save password.');
+      }
+
+      if (data.loginEmail && data.authPassword) {
+        await signInWithEmailAndPassword(auth, data.loginEmail, data.authPassword).catch(() => {});
+      }
+
+      setPasswordSetupRequired(false);
+      setNewPassword('');
+      setConfirmPassword('');
+      await fetchPortalData();
+      showToastBanner('Password saved! Your Driver View is now unlocked.');
+    } catch (err: any) {
+      setPasswordError(err?.message || 'Failed to save your password.');
+    } finally {
+      setIsSettingPassword(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6">
@@ -234,15 +313,125 @@ export default function DriverPortalMagicLinkPage() {
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6">
         <Card className="max-w-md w-full bg-slate-900 border-slate-800 text-slate-100 p-6 text-center space-y-4">
           <AlertTriangle className="h-10 w-10 text-red-400 mx-auto" />
-          <h1 className="text-lg font-bold text-white">Driver View Unavailable</h1>
+          <h1 className="text-lg font-bold text-white">
+            {isRevoked ? 'Driver Access Revoked' : 'Driver View Unavailable'}
+          </h1>
           <p className="text-xs text-slate-400">{errorMsg || 'Invalid access link.'}</p>
-          <a
-            href="/login"
-            className="inline-block rounded-lg bg-amber-400 text-slate-950 font-bold text-xs px-4 py-2.5"
-          >
-            Go to Driver Sign In (/login)
-          </a>
+          {!isRevoked && (
+            <a
+              href="/login"
+              className="inline-block rounded-lg bg-amber-400 text-slate-950 font-bold text-xs px-4 py-2.5"
+            >
+              Go to Driver Sign In (/login)
+            </a>
+          )}
         </Card>
+      </div>
+    );
+  }
+
+  if (passwordSetupRequired) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-md space-y-4">
+          <div className="flex flex-col items-center text-center space-y-2">
+            <PayloadLogicLogo variant="compact" iconSize={32} />
+            <span className="text-xs text-slate-400">{companyName}</span>
+          </div>
+
+          <Card className="bg-slate-900 border-slate-800 text-slate-100 shadow-2xl">
+            <CardHeader className="space-y-2 border-b border-slate-800 pb-4">
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-400">
+                <KeyRound className="w-3.5 h-3.5" /> First-Time Driver Setup
+              </div>
+              <h1 className="text-lg font-bold text-white">Create Your Driver Password</h1>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Welcome, <strong className="text-white">{driverProfile.name}</strong>. Set a personal password before accessing your assigned loads. You can use this password to sign in anytime at <code className="text-amber-300">/login</code>.
+              </p>
+            </CardHeader>
+
+            <CardContent className="pt-5 space-y-4">
+              <div className="rounded-xl bg-slate-950/80 border border-slate-800 p-3 text-xs space-y-1">
+                <div className="text-slate-400">Your sign-in ID:</div>
+                <div className="font-mono font-semibold text-amber-300 break-all">
+                  {driverProfile.email || loginEmailDisplay}
+                </div>
+                {driverProfile.phone && (
+                  <div className="text-slate-300">
+                    Or phone: <strong className="text-white">{driverProfile.phone}</strong>
+                  </div>
+                )}
+              </div>
+
+              {passwordError && (
+                <div className="rounded-lg bg-red-950/70 border border-red-500/40 px-3 py-2 text-xs text-red-200 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                  <span>{passwordError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSetupPassword} className="space-y-3.5">
+                <div className="space-y-1.5">
+                  <Label htmlFor="driver-new-password" className="text-xs font-semibold text-slate-200">
+                    New Password (min. 8 characters)
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="driver-new-password"
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter at least 8 characters"
+                      minLength={8}
+                      required
+                      className="bg-slate-950 border-slate-700 text-white pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((v) => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                      aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="driver-confirm-password" className="text-xs font-semibold text-slate-200">
+                    Confirm Password
+                  </Label>
+                  <Input
+                    id="driver-confirm-password"
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter your password"
+                    minLength={8}
+                    required
+                    className="bg-slate-950 border-slate-700 text-white"
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={isSettingPassword}
+                  className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold h-11"
+                >
+                  {isSettingPassword ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving Password...
+                    </>
+                  ) : (
+                    'Save Password & Open Driver View'
+                  )}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <DriverPwaInstallBanner variant="banner" showInlineInstructions />
+        </div>
       </div>
     );
   }
@@ -280,7 +469,7 @@ export default function DriverPortalMagicLinkPage() {
       </div>
 
       <div className="max-w-xl mx-auto px-3.5 pt-4 space-y-4">
-        <DriverPwaInstallBanner variant="banner" />
+        <DriverPwaInstallBanner variant="banner" autoPromptOnFirstVisit showInlineInstructions />
         {statusMessage && (
           <div className="rounded-xl bg-emerald-900 text-emerald-100 border border-emerald-500/40 px-4 py-2.5 text-xs font-semibold flex items-center justify-between shadow-md">
             <span>{statusMessage}</span>
@@ -371,7 +560,15 @@ export default function DriverPortalMagicLinkPage() {
                 const needsAcceptance = load.driverAcceptedStatus !== 'accepted';
 
                 return (
-                  <Card key={load.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                  <Card
+                    key={load.id}
+                    id={`portal-load-${load.id}`}
+                    className={`rounded-2xl border bg-white shadow-sm overflow-hidden transition-all ${
+                      highlightedLoadId === load.id
+                        ? 'border-amber-400 ring-2 ring-amber-400/50'
+                        : 'border-slate-200'
+                    }`}
+                  >
                     <CardHeader className="p-4 border-b border-slate-100 bg-slate-50/60 space-y-2.5">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 flex-wrap">

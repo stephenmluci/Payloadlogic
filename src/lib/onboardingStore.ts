@@ -25,9 +25,14 @@ export interface DriverAccessTokenRecord {
   driverName: string;
   driverEmail: string;
   driverPhone: string;
+  driverPhoneDigits?: string;
   companyName: string;
   createdAt: string;
   updatedAt?: string;
+  passwordSetupRequired?: boolean;
+  passwordSetAt?: string;
+  accessRevoked?: boolean;
+  accessRevokedAt?: string;
 }
 
 // In-memory / dev fallback cache for local environments where Google Cloud default credentials are not present
@@ -155,5 +160,58 @@ export async function getDriverAccessTokenRecord(
     }
   }
   return localDriverAccessTokenStore.get(token) || null;
+}
+
+export async function findDriverAccessTokens(filter: {
+  driverUid?: string;
+  phoneDigits?: string;
+  email?: string;
+}): Promise<DriverAccessTokenRecord[]> {
+  const results: DriverAccessTokenRecord[] = [];
+  const seenTokens = new Set<string>();
+
+  try {
+    const colRef = adminDb.collection('driverAccessTokens');
+    let snap: FirebaseFirestore.QuerySnapshot | null = null;
+    if (filter.driverUid) {
+      snap = await colRef.where('driverUid', '==', filter.driverUid).get();
+    } else if (filter.phoneDigits) {
+      snap = await colRef.where('driverPhoneDigits', '==', filter.phoneDigits).get();
+    } else if (filter.email) {
+      snap = await colRef.where('loginEmail', '==', filter.email.toLowerCase()).get();
+    }
+    if (snap) {
+      for (const docSnap of snap.docs) {
+        const data = docSnap.data() as DriverAccessTokenRecord;
+        if (!seenTokens.has(data.token)) {
+          seenTokens.add(data.token);
+          results.push(data);
+        }
+      }
+    }
+  } catch (err: any) {
+    if (!isCredentialError(err)) {
+      throw err;
+    }
+  }
+
+  for (const record of localDriverAccessTokenStore.values()) {
+    if (seenTokens.has(record.token)) continue;
+    const matchesDriver = filter.driverUid && record.driverUid === filter.driverUid;
+    const matchesPhone =
+      filter.phoneDigits &&
+      (record.driverPhoneDigits === filter.phoneDigits ||
+        record.driverPhone.replace(/\D/g, '') === filter.phoneDigits);
+    const matchesEmail =
+      filter.email &&
+      (record.loginEmail.toLowerCase() === filter.email.toLowerCase() ||
+        record.driverEmail.toLowerCase() === filter.email.toLowerCase());
+    if (matchesDriver || matchesPhone || matchesEmail) {
+      seenTokens.add(record.token);
+      results.push(record);
+    }
+  }
+
+  return results;
 }
 

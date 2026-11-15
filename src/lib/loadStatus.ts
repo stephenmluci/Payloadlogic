@@ -1,4 +1,4 @@
-import type { Load } from '@/types';
+import type { DriverProfile, Load } from '@/types';
 
 const VALID_LOAD_STATUSES: Load['status'][] = [
   'pending_approval',
@@ -43,10 +43,83 @@ export function normalizeLoadStatus(status?: string | null): Load['status'] {
 /**
  * Returns true if a load is finished (delivered / completed).
  */
-export function isLoadCompleted(load: Pick<Load, 'status' | 'driverPhase'>): boolean {
+export function isLoadCompleted(
+  load: Pick<Load, 'status' | 'driverPhase' | 'deliveredAt' | 'paperworkStatus'>
+): boolean {
   if (normalizeLoadStatus(load.status) === 'delivered') return true;
   const phase = (load.driverPhase || '').toLowerCase().trim();
-  return phase === 'complete' || phase === 'completed';
+  if (
+    phase === 'complete' ||
+    phase === 'completed' ||
+    phase === 'delivered' ||
+    phase === 'delivered / complete' ||
+    phase === 'delivered / completed'
+  ) {
+    return true;
+  }
+  if (Boolean(load.deliveredAt)) return true;
+  if (
+    load.paperworkStatus === 'pod_uploaded' ||
+    load.paperworkStatus === 'invoiced' ||
+    load.paperworkStatus === 'closed'
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Checks if a driver's current location matches the load's delivery destination (by city/state or <= 25 mi).
+ */
+export function doesDriverLocationMatchDestination(
+  driver: Partial<DriverProfile> | undefined | null,
+  load: Partial<Load>
+): boolean {
+  if (!driver || !load.destination) return false;
+  const destCity = (load.destination.city || '').trim().toLowerCase();
+  const destState = (load.destination.state || '').trim().toLowerCase();
+  const driverLoc = [
+    driver.lastLocationCity,
+    driver.lastLocationState,
+    (driver.telemetry as any)?.locationName,
+  ]
+    .filter(Boolean)
+    .join(', ')
+    .trim()
+    .toLowerCase();
+
+  if (destCity && driverLoc.includes(destCity)) {
+    if (!destState || driverLoc.includes(destState)) {
+      return true;
+    }
+  }
+
+  const dLat = driver.telemetry?.lat ?? driver.currentLat;
+  const dLng = driver.telemetry?.lng ?? driver.currentLng;
+  const destLat = load.destination.lat ?? load.destinationLat;
+  const destLng = load.destination.lng ?? load.destinationLng;
+
+  if (
+    typeof dLat === 'number' &&
+    typeof dLng === 'number' &&
+    typeof destLat === 'number' &&
+    typeof destLng === 'number'
+  ) {
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const R = 3958.8; // Earth radius in miles
+    const dLatRad = toRad(destLat - dLat);
+    const dLngRad = toRad(destLng - dLng);
+    const a =
+      Math.sin(dLatRad / 2) * Math.sin(dLatRad / 2) +
+      Math.cos(toRad(dLat)) *
+        Math.cos(toRad(destLat)) *
+        Math.sin(dLngRad / 2) *
+        Math.sin(dLngRad / 2);
+    const miles = 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    if (miles <= 25) return true;
+  }
+
+  return false;
 }
 
 /**

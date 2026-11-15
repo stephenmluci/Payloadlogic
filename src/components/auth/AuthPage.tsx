@@ -351,23 +351,24 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
               </div>
             )}
 
-            {/* ── Email field ─────────────────────────────────────────────── */}
+            {/* ── Email / Driver Phone field ───────────────────────────────── */}
             <div className="space-y-2 relative z-10">
               <Label htmlFor="email" className="text-sm font-semibold text-slate-200">
-                Email
+                {isSigningUp ? 'Email' : 'Email or Driver Phone'}
               </Label>
               <div className="relative">
                 <Input
                   ref={emailRef}
                   id="email"
                   name="email"
-                  type="email"
+                  type={isSigningUp ? 'email' : 'text'}
+                  inputMode="email"
                   value={email ?? ''}
                   onChange={(e) => {
                     setEmail(e.target.value);
                     setAuthError(null);
                   }}
-                  placeholder="your@email.com"
+                  placeholder={isSigningUp ? 'your@email.com' : 'your@email.com or 555-123-4567'}
                   autoComplete="email"
                   autoCapitalize="none"
                   autoCorrect="off"
@@ -378,7 +379,7 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
                       : ''
                   }`}
                 />
-                {email && !isOwnerEmail(email) && (
+                {isSigningUp && email && !isOwnerEmail(email) && (
                   <p className="text-[11px] text-amber-300 font-medium flex items-center gap-1 mt-1.5">
                     <AlertCircle className="h-3 w-3 shrink-0 text-amber-400" />
                     Private testing: only {ALLOWED_OWNER_EMAIL} is authorized.

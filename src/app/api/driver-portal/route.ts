@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebaseAdmin';
+import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import {
   getDriverAccessTokenRecord,
   getDriverProfileForOnboarding,
+  saveDriverAccessTokenRecord,
   saveDriverProfileFromOnboarding,
 } from '@/lib/onboardingStore';
 
@@ -50,6 +51,25 @@ export async function GET(req: NextRequest) {
     }
 
     const driverProfile = await getDriverProfileForOnboarding(record.adminUid, record.driverUid);
+
+    if (
+      record.accessRevoked ||
+      driverProfile?.accessRevoked ||
+      driverProfile?.status === 'inactive'
+    ) {
+      return NextResponse.json(
+        {
+          valid: false,
+          revoked: true,
+          error: 'Your driver access has been revoked by your fleet administrator.',
+        },
+        { status: 403 }
+      );
+    }
+
+    const passwordSetupRequired = Boolean(
+      record.passwordSetupRequired ?? driverProfile?.passwordSetupRequired
+    );
 
     let assignedLoads: Record<string, any>[] = [];
     let assignedTruck: Record<string, any> | null = null;
@@ -107,13 +127,14 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       valid: true,
+      passwordSetupRequired,
       companyName: record.companyName || 'PayloadLogic Fleet',
       loginEmail: record.loginEmail,
-      tempPassword: record.tempPassword,
+      tempPassword: passwordSetupRequired ? undefined : record.tempPassword || undefined,
       driverProfile: safeProfile,
-      assignedTruck,
-      assignedTrailer,
-      loads: assignedLoads,
+      assignedTruck: passwordSetupRequired ? null : assignedTruck,
+      assignedTrailer: passwordSetupRequired ? null : assignedTrailer,
+      loads: passwordSetupRequired ? [] : assignedLoads,
     });
   } catch (error: any) {
     console.error('[DriverPortalAPI] GET error:', error);
@@ -136,6 +157,68 @@ export async function POST(req: NextRequest) {
     const record = await getDriverAccessTokenRecord(token);
     if (!record) {
       return NextResponse.json({ error: 'Invalid Driver View token.' }, { status: 403 });
+    }
+
+    if (record.accessRevoked) {
+      return NextResponse.json(
+        { error: 'Your driver access has been revoked by your fleet administrator.' },
+        { status: 403 }
+      );
+    }
+
+    if (action === 'set_password') {
+      const newPassword = typeof body.newPassword === 'string' ? body.newPassword.trim() : '';
+      if (newPassword.length < 8) {
+        return NextResponse.json(
+          { error: 'Password must be at least 8 characters long.' },
+          { status: 400 }
+        );
+      }
+
+      const nowIso = new Date().toISOString();
+      try {
+        if (record.authUid) {
+          await adminAuth.updateUser(record.authUid, {
+            password: newPassword,
+            disabled: false,
+          });
+        }
+      } catch (authErr: any) {
+        if (!isCredentialError(authErr)) {
+          return NextResponse.json(
+            { error: authErr?.message || 'Failed to save your new password.' },
+            { status: 500 }
+          );
+        }
+      }
+
+      await saveDriverAccessTokenRecord(token, {
+        ...record,
+        tempPassword: '',
+        passwordSetupRequired: false,
+        passwordSetAt: nowIso,
+        updatedAt: nowIso,
+      });
+
+      await saveDriverProfileFromOnboarding(record.adminUid, record.driverUid, {
+        tempPassword: '',
+        passwordSetupRequired: false,
+        passwordSetAt: nowIso,
+        updatedAt: nowIso,
+      });
+
+      return NextResponse.json({
+        success: true,
+        loginEmail: record.loginEmail,
+        authPassword: newPassword,
+      });
+    }
+
+    if (record.passwordSetupRequired) {
+      return NextResponse.json(
+        { error: 'Please create your driver password before accessing loads.' },
+        { status: 403 }
+      );
     }
 
     if (action === 'update_profile' && profileUpdates) {

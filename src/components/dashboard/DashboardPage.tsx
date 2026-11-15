@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/dialog";
 import { useApp } from '@/context/AppContext';
 import { buildUnifiedExpenses } from '@/lib/expenseLedger';
+import { deduplicateLoads, isLoadCompleted } from '@/lib/loadStatus';
 import { cn, formatAddress } from '@/lib/utils';
 import { getLoadDisplayId } from '@/lib/displayId';
 
@@ -100,28 +101,34 @@ export function DashboardPage() {
 
 
 
+  const uniqueLoads = React.useMemo(() => deduplicateLoads(loads).unique, [loads]);
+  const completedLoads = React.useMemo(
+    () => uniqueLoads.filter(l => isLoadCompleted(l)),
+    [uniqueLoads]
+  );
+  const activeLoadsList = React.useMemo(
+    () => uniqueLoads.filter(l => !isLoadCompleted(l)),
+    [uniqueLoads]
+  );
+  const completedLoadIds = React.useMemo(
+    () => new Set(completedLoads.map(l => l.id).filter(Boolean) as string[]),
+    [completedLoads]
+  );
+
   // Unified expense ledger (matches Expense Tracking & Ledger page)
   const unifiedExpenses = React.useMemo(
     () =>
       buildUnifiedExpenses({
-        loads,
+        loads: uniqueLoads,
         expenses,
         vehicles,
         settings,
         driverProfiles,
       }),
-    [loads, expenses, vehicles, settings, driverProfiles]
+    [uniqueLoads, expenses, vehicles, settings, driverProfiles]
   );
 
-  const totalIncome = loads.reduce((sum, load) => sum + load.totalAgreedRate, 0);
-  const totalCalculatedExpenses = unifiedExpenses.reduce(
-    (sum, exp) => sum + (exp.amount || 0),
-    0
-  );
-
-  // Note: netProfit computed here for reference but currentStats.profit is used in the UI
-  const netProfit = totalIncome - totalCalculatedExpenses;
-  const activeLoadsCount = loads.filter(l => l.status !== 'delivered').length;
+  const activeLoadsCount = activeLoadsList.length;
 
   // Monthly Comparison Logic
   const now = new Date();
@@ -135,13 +142,21 @@ export function DashboardPage() {
   };
 
   const calculateStatsForRange = (range: { start: Date, end: Date }) => {
-    const filteredLoads = loads.filter(l => 
-      l.deliveryDateTime && isWithinInterval(parseISO(l.deliveryDateTime), range)
-    );
-    
-    const revenue = filteredLoads.reduce((sum, l) => sum + l.totalAgreedRate, 0);
+    const filteredCompletedLoads = completedLoads.filter(l => {
+      const completionDate = l.deliveredAt || l.deliveryDateTime;
+      return Boolean(completionDate) && isWithinInterval(parseISO(completionDate!), range);
+    });
 
-    const rangeExpenses = unifiedExpenses.filter(e => isInRange(e.date, range));
+    const revenue = filteredCompletedLoads.reduce((sum, l) => sum + (l.totalAgreedRate || 0), 0);
+
+    // Only count actual logged expenses or auto-estimated expenses tied to completed loads (plus fleet reserve)
+    const rangeExpenses = unifiedExpenses.filter(e => {
+      if (!isInRange(e.date, range)) return false;
+      if (e.source === 'auto_estimated' && e.loadId && !completedLoadIds.has(e.loadId)) {
+        return false;
+      }
+      return true;
+    });
     const totalExp = parseFloat(
       rangeExpenses.reduce((sum, e) => sum + (e.amount || 0), 0).toFixed(2)
     );
@@ -153,9 +168,25 @@ export function DashboardPage() {
       revenue,
       expenses: totalExp,
       profit: parseFloat((revenue - totalExp).toFixed(2)),
+      completedCount: filteredCompletedLoads.length,
       usedEstimatedFuel,
     };
   };
+
+  // Projected revenue/profit from active (not yet delivered) loads in current month
+  const projectedActiveRevenue = React.useMemo(() => {
+    return activeLoadsList
+      .filter(l => isInRange(l.deliveryDateTime || l.pickupDateTime, currentMonth))
+      .reduce((sum, l) => sum + (l.totalAgreedRate || 0), 0);
+  }, [activeLoadsList]);
+
+  const projectedActiveProfit = React.useMemo(() => {
+    const activeIds = new Set(activeLoadsList.map(l => l.id).filter(Boolean) as string[]);
+    const activeAutoExp = unifiedExpenses
+      .filter(e => e.loadId && activeIds.has(e.loadId) && isInRange(e.date, currentMonth))
+      .reduce((sum, e) => sum + (e.amount || 0), 0);
+    return parseFloat((projectedActiveRevenue - activeAutoExp).toFixed(2));
+  }, [activeLoadsList, unifiedExpenses, projectedActiveRevenue]);
 
 
   const currentStats = calculateStatsForRange(currentMonth);
@@ -183,17 +214,21 @@ export function DashboardPage() {
 
   const weeklyAccumulator: Record<string, { revenue: number; expenses: number; profit: number }> = {};
 
-  loads.forEach(load => {
-    if (load.deliveryDateTime) {
-      const weekKey = getWeekKey(load.deliveryDateTime);
+  completedLoads.forEach(load => {
+    const completionDate = load.deliveredAt || load.deliveryDateTime;
+    if (completionDate) {
+      const weekKey = getWeekKey(completionDate);
       if (weekKey) {
         if (!weeklyAccumulator[weekKey]) weeklyAccumulator[weekKey] = { revenue: 0, expenses: 0, profit: 0 };
-        weeklyAccumulator[weekKey].revenue += load.totalAgreedRate;
+        weeklyAccumulator[weekKey].revenue += load.totalAgreedRate || 0;
       }
     }
   });
 
   unifiedExpenses.forEach(expense => {
+    if (expense.source === 'auto_estimated' && expense.loadId && !completedLoadIds.has(expense.loadId)) {
+      return;
+    }
     if (expense.date) {
       const weekKey = getWeekKey(expense.date);
       if (weekKey) {
@@ -222,7 +257,21 @@ export function DashboardPage() {
       const cat = expense.category || 'Other';
       categoryTotals[cat] = parseFloat(((categoryTotals[cat] || 0) + (expense.amount || 0)).toFixed(2));
     });
-  const pieData: { name: string; value: number }[] = Object.entries(categoryTotals)
+  const pieData: { name: string; value: number }[] = Object.entries(
+    unifiedExpenses
+      .filter(exp => {
+        if (!isInRange(exp.date, currentMonth)) return false;
+        if (exp.source === 'auto_estimated' && exp.loadId && !completedLoadIds.has(exp.loadId)) {
+          return false;
+        }
+        return true;
+      })
+      .reduce<Record<string, number>>((acc, exp) => {
+        const cat = exp.category || 'Other';
+        acc[cat] = parseFloat(((acc[cat] || 0) + (exp.amount || 0)).toFixed(2));
+        return acc;
+      }, {})
+  )
     .filter(([, value]) => value > 0)
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
@@ -274,10 +323,10 @@ export function DashboardPage() {
       <NeedsAttentionPanel />
 
       {/* Driver Exception & Notes Alert Banner for Dispatcher */}
-      {loads.some(l => l.status !== 'delivered' && (l.driverExceptionFlag || l.driverNote)) && (
+      {activeLoadsList.some(l => l.driverExceptionFlag || l.driverNote) && (
         <div className="space-y-3">
-          {loads
-            .filter(l => l.status !== 'delivered' && (l.driverExceptionFlag || l.driverNote))
+          {activeLoadsList
+            .filter(l => l.driverExceptionFlag || l.driverNote)
             .map(load => (
               <div
                 key={`alert-${load.id}`}
@@ -380,7 +429,11 @@ export function DashboardPage() {
               icon={<DollarSign />}
               variant="revenue"
               emphasis
-              changeText={revenueChange.text}
+              changeText={
+                projectedActiveRevenue > 0
+                  ? `${currentStats.completedCount} completed · $${projectedActiveRevenue.toLocaleString()} projected active`
+                  : revenueChange.text
+              }
               isPositive={revenueChange.positive}
               onClick={() => setActiveTab('loads')}
               actionLabel={noRevenue && !hasAnyLoads ? 'Create a load' : 'View loads'}
@@ -389,7 +442,7 @@ export function DashboardPage() {
                 !hasAnyLoads
                   ? 'Create your first load to start tracking revenue and profit'
                   : activeLoadsCount > 0
-                    ? `No loads delivered this month yet · ${activeLoadsCount} in progress`
+                    ? `No loads delivered this month yet · ${activeLoadsCount} in progress ($${projectedActiveRevenue.toLocaleString()} projected)`
                     : 'No loads delivered this month yet'
               }
             />
@@ -412,12 +465,20 @@ export function DashboardPage() {
               variant="profit"
               emphasis
               valueClassName={totalProfit < 0 ? 'text-red-600' : 'text-emerald-600'}
-              changeText={profitChange.text}
+              changeText={
+                activeLoadsCount > 0 && projectedActiveRevenue > 0
+                  ? `${currentStats.completedCount} completed · $${projectedActiveProfit.toLocaleString()} projected active`
+                  : profitChange.text
+              }
               isPositive={profitChange.positive}
               onClick={() => setActiveTab('loads')}
               actionLabel="View loads"
               isEmpty={noProfitData}
-              emptyHint="Profit shows up after your first delivered load"
+              emptyHint={
+                activeLoadsCount > 0 && projectedActiveRevenue > 0
+                  ? `Actual profit updates on delivery · $${projectedActiveProfit.toLocaleString()} projected from ${activeLoadsCount} active load${activeLoadsCount === 1 ? '' : 's'}`
+                  : 'Profit shows up after your first delivered load'
+              }
             />
             <MetricCard
               title="Fuel Optimization Profit"

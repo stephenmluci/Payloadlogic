@@ -92,7 +92,10 @@ export function NotificationBell({ driverId, onSelectLoad }: NotificationBellPro
 
     if (notif.loadId && onSelectLoad) {
       onSelectLoad(notif.loadId);
+    } else if (notif.actionUrl && typeof window !== 'undefined') {
+      window.location.href = notif.actionUrl;
     }
+    setIsOpen(false);
   };
 
   const handleMarkAllAsRead = async () => {

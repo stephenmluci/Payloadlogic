@@ -171,6 +171,7 @@ export function subscribeToDriverNotifications(
           isRead: Boolean(data.isRead),
           createdAt: data.createdAt || new Date().toISOString(),
           loadId: data.loadId || undefined,
+          actionUrl: data.actionUrl || undefined,
         };
       });
 

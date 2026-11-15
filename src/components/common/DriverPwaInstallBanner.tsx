@@ -13,9 +13,15 @@ import { Button } from '@/components/ui/button';
 
 interface DriverPwaInstallBannerProps {
   variant?: 'banner' | 'header-button';
+  autoPromptOnFirstVisit?: boolean;
+  showInlineInstructions?: boolean;
 }
 
-export function DriverPwaInstallBanner({ variant = 'banner' }: DriverPwaInstallBannerProps) {
+export function DriverPwaInstallBanner({
+  variant = 'banner',
+  autoPromptOnFirstVisit = false,
+  showInlineInstructions = false,
+}: DriverPwaInstallBannerProps) {
   const [isStandalone, setIsStandalone] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isDismissed, setIsDismissed] = useState(false);

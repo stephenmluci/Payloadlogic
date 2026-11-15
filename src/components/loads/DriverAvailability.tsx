@@ -9,13 +9,18 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MapPin, User, ArrowRight, PlusCircle, AlertTriangle, MessageSquare, RotateCcw, Clock } from 'lucide-react';
-import { type DriverProfile, isDriverOffDuty } from '@/types';
+import { type DriverProfile, type Load, isDriverOffDuty } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { QuickAssignModal } from './QuickAssignModal';
 import { buildDriverProgressLegs, calculateLegProgress } from '@/lib/routeUtils';
 import { isLoadAssignedToDriver } from '@/lib/driverAssignment';
+import { isLoadCompleted, normalizeLoadStatus } from '@/lib/loadStatus';
 
-export const DriverAvailability = () => {
+interface DriverAvailabilityProps {
+  onSelectDriverLoad?: (load: Load) => void;
+}
+
+export const DriverAvailability = ({ onSelectDriverLoad }: DriverAvailabilityProps = {}) => {
   const { toast } = useToast();
   const { driverProfiles, loads, vehicles, settings, trips, currentTime, updateDriverProfile } = useApp();
 
@@ -61,14 +66,14 @@ export const DriverAvailability = () => {
                   // ── Status derivation ────────────────────────────────────
                   // Match by unified load-to-driver assignment (ID, name, equipment, or trip)
                   const driverLoads = loads.filter(
-                    l => l.status !== 'delivered' && isLoadAssignedToDriver(l, driver, trips, vehicles),
+                    l => !isLoadCompleted(l) && isLoadAssignedToDriver(l, driver, trips, vehicles),
                   );
 
                   const inProgressLoads = driverLoads.filter(l =>
-                    ['in-transit', 'loading', 'waiting', 'unloading', 'on-break'].includes(l.status),
+                    ['dispatched', 'Deadheading', 'arrived-origin', 'arrived', 'Arrived', 'loading', 'in-transit', 'arrived-destination', 'unloading', 'waiting', 'on-break'].includes(l.status),
                   );
                   const pendingLoads = driverLoads.filter(l =>
-                    ['pending', 'client-request-approved', 'idle'].includes(l.status),
+                    ['pending', 'pending_approval', 'approved', 'client-request-approved', 'idle'].includes(l.status),
                   );
 
                   const activeLoads = inProgressLoads.length > 0 ? inProgressLoads : pendingLoads;
@@ -123,6 +128,16 @@ export const DriverAvailability = () => {
                   } else if (primaryLoad) {
                     if (primaryLoad.status === 'arrived' || (primaryLoad as any).status === 'Arrived' || primaryLoad.driverPhase === 'Arrived') {
                       badgeStatus = 'Arrived (At Facility)';
+                    } else if (primaryLoad.status === 'pending_approval') {
+                      badgeStatus = 'Pending Approval';
+                    } else if (primaryLoad.status === 'approved') {
+                      badgeStatus = 'Approved';
+                    } else if (primaryLoad.status === 'dispatched' || primaryLoad.status === 'Deadheading') {
+                      badgeStatus = 'Dispatched';
+                    } else if (primaryLoad.status === 'arrived-origin') {
+                      badgeStatus = 'Arrived at Origin';
+                    } else if (primaryLoad.status === 'arrived-destination') {
+                      badgeStatus = 'Arrived at Destination';
                     } else if (primaryLoad.driverPhase) {
                       badgeStatus = primaryLoad.driverPhase as string;
                     } else if (primaryLoad.status === 'loading') {
@@ -136,7 +151,7 @@ export const DriverAvailability = () => {
                     } else if (primaryLoad.status === 'on-break') {
                       badgeStatus = 'On Break';
                     } else if (primaryLoad.status === 'client-request-approved') {
-                      badgeStatus = 'Dispatched';
+                      badgeStatus = 'Approved';
                     } else if (primaryLoad.status === 'pending') {
                       badgeStatus = isPartial ? 'Partial Load' : 'Assigned (Pending)';
                     } else if (primaryLoad.status === 'idle') {
@@ -196,7 +211,7 @@ export const DriverAvailability = () => {
 
                   const completedLoads = loads
                     .filter(
-                      l => isLoadAssignedToDriver(l, driver, trips, vehicles) && l.status === 'delivered',
+                      l => isLoadAssignedToDriver(l, driver, trips, vehicles) && isLoadCompleted(l),
                     )
                     .sort(
                       (a, b) =>
@@ -206,9 +221,32 @@ export const DriverAvailability = () => {
                   const lastLocation =
                     completedLoads.length > 0 ? completedLoads[0].destination : null;
 
+                  const isClickableLoad = Boolean(primaryLoad && onSelectDriverLoad);
+
                   // ── Row ──────────────────────────────────────────────────
                   return (
-                    <TableRow key={driver.uid} className="hover:bg-slate-50 transition-colors">
+                    <TableRow
+                      key={driver.uid}
+                      onClick={() => {
+                        if (primaryLoad && onSelectDriverLoad) {
+                          onSelectDriverLoad(primaryLoad);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if ((e.key === 'Enter' || e.key === ' ') && primaryLoad && onSelectDriverLoad) {
+                          e.preventDefault();
+                          onSelectDriverLoad(primaryLoad);
+                        }
+                      }}
+                      tabIndex={isClickableLoad ? 0 : undefined}
+                      role={isClickableLoad ? 'button' : undefined}
+                      title={isClickableLoad ? `View ${driver.name}'s current load` : undefined}
+                      className={
+                        isClickableLoad
+                          ? 'cursor-pointer hover:bg-blue-50/70 active:bg-blue-100/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
+                          : 'hover:bg-slate-50 transition-colors'
+                      }
+                    >
 
                       {/* Driver & Capacity */}
                       <TableCell>
@@ -356,9 +394,28 @@ export const DriverAvailability = () => {
                       <TableCell>
                         <div className="flex flex-col gap-1 items-start">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <Badge className={`${badgeColor} shadow-none px-2 py-0.5 whitespace-nowrap overflow-hidden text-ellipsis max-w-[150px]`} title={routeStatusLabel || badgeStatus}>
-                              {routeStatusLabel !== 'Current Route' ? routeStatusLabel : badgeStatus}
-                            </Badge>
+                            {(() => {
+                              const normPrimary = primaryLoad ? normalizeLoadStatus(primaryLoad.status) : null;
+                              const isPreDispatchPrimary =
+                                normPrimary === 'pending_approval' ||
+                                normPrimary === 'approved' ||
+                                normPrimary === 'pending' ||
+                                normPrimary === 'client-request-approved';
+                              const statusText = !isPreDispatchPrimary && routeStatusLabel !== 'Current Route'
+                                ? routeStatusLabel
+                                : badgeStatus;
+                              return (
+                                <Badge className={`${badgeColor} shadow-none px-2 py-0.5 whitespace-nowrap overflow-hidden text-ellipsis max-w-[150px]`} title={statusText}>
+                                  {statusText}
+                                </Badge>
+                              );
+                            })()}
+
+                            {isClickableLoad && (
+                              <span className="text-[11px] font-semibold text-blue-600 inline-flex items-center gap-0.5">
+                                View load <ArrowRight className="h-3 w-3" />
+                              </span>
+                            )}
 
                             {/* ── [+ Add Load] shows when trailer has available capacity and driver is on duty ── */}
                             {isPartial && !isOffDuty && (
@@ -366,7 +423,10 @@ export const DriverAvailability = () => {
                                 size="sm"
                                 variant="outline"
                                 className="h-6 px-2 text-[11px] font-bold text-sky-700 border-sky-200 hover:bg-sky-50 hover:border-sky-400 transition-colors"
-                                onClick={() => setAssigningDriver(driver)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setAssigningDriver(driver);
+                                }}
                               >
                                 <PlusCircle className="h-3 w-3 mr-1" />
                                 Add Load

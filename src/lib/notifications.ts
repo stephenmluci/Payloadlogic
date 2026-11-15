@@ -11,13 +11,89 @@ import {
   serverTimestamp 
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import type { AppNotification } from '@/types';
+import type { AppNotification, DriverProfile, Load } from '@/types';
 
 export interface SendDriverNotificationParams {
   driverId: string;
   title: string;
   message: string;
   loadId?: string;
+  actionUrl?: string;
+}
+
+/**
+ * Builds the direct link to the driver's view of a specific load.
+ * Prefers the driver's restricted magic-link portal when available.
+ */
+export function buildDriverLoadViewUrl(
+  driver: Partial<DriverProfile> | null | undefined,
+  loadId: string,
+  originBase?: string
+): string {
+  const base =
+    originBase ||
+    (typeof window !== 'undefined' ? window.location.origin : '');
+  const encodedLoadId = encodeURIComponent(loadId);
+
+  if (driver?.driverPortalUrl) {
+    const sep = driver.driverPortalUrl.includes('?') ? '&' : '?';
+    return `${driver.driverPortalUrl}${sep}loadId=${encodedLoadId}`;
+  }
+
+  if (driver?.driverAccessToken) {
+    return `${base}/driver-portal/${encodeURIComponent(driver.driverAccessToken)}?loadId=${encodedLoadId}`;
+  }
+
+  return `${base}/dashboard?tab=driver-dashboard&loadId=${encodedLoadId}`;
+}
+
+/**
+ * Formats a concise origin, destination, and pickup time summary for dispatch alerts.
+ */
+export function formatLoadPickupSummary(load: Partial<Load>): {
+  originText: string;
+  destText: string;
+  pickupText: string;
+} {
+  const originText =
+    [load.origin?.city, load.origin?.state].filter(Boolean).join(', ') ||
+    load.origin?.address ||
+    'Origin';
+  const destText =
+    [load.destination?.city, load.destination?.state].filter(Boolean).join(', ') ||
+    load.destination?.address ||
+    'Destination';
+
+  const rawPickup = load.pickupWindow?.start || load.pickupDate || '';
+  let pickupText = 'Scheduled';
+  if (rawPickup) {
+    const parsed = new Date(rawPickup);
+    if (!Number.isNaN(parsed.getTime())) {
+      pickupText = parsed.toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    } else {
+      pickupText = rawPickup;
+    }
+  }
+
+  return { originText, destText, pickupText };
+}
+
+/**
+ * Builds a mobile-friendly `sms:` URI when a driver phone number has at least 10 digits.
+ */
+export function buildDispatchSmsUrl(
+  phone: string | undefined | null,
+  message: string
+): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 10) return null;
+  return `sms:${digits}?body=${encodeURIComponent(message)}`;
 }
 
 /**

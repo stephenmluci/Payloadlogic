@@ -66,6 +66,16 @@ export function NeedsAttentionPanel() {
   );
 
   const editLoad = (load: Load) => { handleStartEditLoad(load); setActiveTab('loads'); };
+  const assignDriverToLoad = (load: Load) => {
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('payloadlogic_load_jump_section', 'section-fleet');
+      } catch {
+        // Non-fatal
+      }
+    }
+    editLoad(load);
+  };
   const markLoadDelivered = (load: Load) => {
     if (!load.id) {
       editLoad(load);
@@ -122,7 +132,7 @@ export function NeedsAttentionPanel() {
       title: loadName(l),
       detail: `No driver assigned. ${route(l)}`,
       actionLabel: 'Assign driver',
-      onClick: () => editLoad(l),
+      onClick: () => assignDriverToLoad(l),
     }));
 
   // 3. Client requests waiting on a decision

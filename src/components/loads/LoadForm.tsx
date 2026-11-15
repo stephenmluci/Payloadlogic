@@ -298,15 +298,33 @@ export function LoadForm({
   const [showAdvancedCargo, setShowAdvancedCargo] = React.useState(false);
   const [showAdvancedPricing, setShowAdvancedPricing] = React.useState(false);
 
-  const jumpToSection = (sectionId: string) => {
+  const jumpToSection = React.useCallback((sectionId: string) => {
     setOpenSections(prev => prev.includes(sectionId) ? prev : [...prev, sectionId]);
     setTimeout(() => {
       const el = document.getElementById(sectionId);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
-    }, 60);
-  };
+    }, 100);
+  }, []);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let targetSection: string | null = null;
+    try {
+      targetSection = sessionStorage.getItem('payloadlogic_load_jump_section');
+      if (targetSection) {
+        sessionStorage.removeItem('payloadlogic_load_jump_section');
+      }
+    } catch {
+      return;
+    }
+    if (!targetSection) return;
+    const timer = setTimeout(() => {
+      jumpToSection(targetSection!);
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [editingLoadId, jumpToSection]);
 
   // Format address helper - strict full address string construction
   const getFormattedAddressStr = React.useCallback((addr?: Address) => {
@@ -454,6 +472,9 @@ export function LoadForm({
           loadForm.deadheadMiles ? ` | Deadhead: ${loadForm.deadheadMiles} mi` : ''
         )
       });
+
+      // Auto-scroll to Rate & Pricing so the suggested rate & profit are immediately visible
+      jumpToSection('section-pricing');
     } catch (err: any) {
       console.error("Route calculation error:", err);
       toast({
@@ -2332,7 +2353,7 @@ export function LoadForm({
             </AccordionItem>
 
             {/* Section 4: Rate & Pricing (mileage, rates & financials) */}
-            <AccordionItem id="section-pricing" value="section-pricing" className="border border-slate-200 rounded-xl px-5 py-1 bg-white shadow-sm">
+            <AccordionItem id="section-pricing" value="section-pricing" className="scroll-mt-20 border border-slate-200 rounded-xl px-5 py-1 bg-white shadow-sm">
               <AccordionTrigger className="hover:no-underline font-bold text-slate-900 text-lg py-4">
                 <span className="flex items-center gap-3"><StepBadge n={4} /><DollarSign className="h-5 w-5 text-emerald-600" /> Rate &amp; Pricing</span>
               </AccordionTrigger>
@@ -2694,7 +2715,7 @@ export function LoadForm({
             </AccordionItem>
 
             {/* Section 5: Fleet Assignment & Consolidation */}
-            <AccordionItem id="section-fleet" value="section-fleet" className="border border-slate-200 rounded-xl px-5 py-1 bg-white shadow-sm">
+            <AccordionItem id="section-fleet" value="section-fleet" className="scroll-mt-20 border border-slate-200 rounded-xl px-5 py-1 bg-white shadow-sm">
               <AccordionTrigger className="hover:no-underline font-bold text-slate-900 text-lg py-4">
                 <span className="flex items-center gap-3"><StepBadge n={5} /><Navigation className="h-5 w-5 text-purple-600" /> Fleet Assignment &amp; Consolidation</span>
               </AccordionTrigger>

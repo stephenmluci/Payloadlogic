@@ -44,9 +44,21 @@ export function DriverPwaInstallBanner({
     const iosDetected = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     setIsIos(iosDetected);
 
+    const standaloneMatch =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as any).standalone === true;
+
     try {
       if (sessionStorage.getItem('payloadlogic_driver_pwa_banner_dismissed') === '1') {
         setIsDismissed(true);
+      }
+      if (
+        autoPromptOnFirstVisit &&
+        variant === 'banner' &&
+        !standaloneMatch &&
+        localStorage.getItem('payloadlogic_driver_pwa_seen') !== '1'
+      ) {
+        setShowInstructionsModal(true);
       }
     } catch {
       // Ignore storage access errors

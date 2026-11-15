@@ -607,7 +607,7 @@ export function LoadCard({
             </CardDescription>
             {/* ── Unified dispatcher status badge ── */}
             {(() => {
-              const activeStatusKey = isTrackingViaTelemetry ? effectiveStatus : (load.status || normalizedStatus);
+              const activeStatusKey = effectiveStatus;
               const unified = getDispatcherStatusLabel(activeStatusKey, load);
               const base = statusConfig[activeStatusKey] ?? statusConfig.pending;
               return (
@@ -1259,8 +1259,8 @@ export function LoadCard({
       </CardContent>
       <CardFooter className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t mt-auto">
         <div className="flex flex-wrap items-center gap-2">
-            {/* ── Workflow Action Buttons ── */}
-            {effectiveStatus === 'pending_approval' && (
+            {/* ── Workflow Action Buttons (single logical next step) ── */}
+            {(effectiveStatus === 'pending_approval' || effectiveStatus === 'pending') && (
               <Button
                 size="sm"
                 onClick={() => onStatusChange(load.id!, 'approved')}
@@ -1272,7 +1272,7 @@ export function LoadCard({
               </Button>
             )}
 
-            {effectiveStatus === 'approved' && (
+            {(effectiveStatus === 'approved' || effectiveStatus === 'client-request-approved') && (
               <Button
                 size="sm"
                 onClick={() => onStatusChange(load.id!, 'dispatched')}
@@ -1281,6 +1281,45 @@ export function LoadCard({
                 title="Dispatch load to assigned driver and trigger alerts"
               >
                 <Send className="h-3.5 w-3.5 mr-1.5 text-emerald-200" /> Dispatch to Driver
+              </Button>
+            )}
+
+            {(effectiveStatus === 'dispatched' || effectiveStatus === 'Deadheading') && !isTrackingViaTelemetry && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onStatusChange(load.id!, 'arrived-origin')}
+                disabled={isUpdatingStatus}
+                className="px-2.5 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm bg-cyan-50 hover:bg-cyan-100 text-cyan-700 border-cyan-300 font-semibold transition-colors"
+                title="Mark driver arrived at pickup location"
+              >
+                <MapPin className="h-3.5 w-3.5 mr-1 text-cyan-600" /> Arrived at Origin
+              </Button>
+            )}
+
+            {effectiveStatus === 'arrived-origin' && !isTrackingViaTelemetry && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onStatusChange(load.id!, 'loading')}
+                disabled={isUpdatingStatus}
+                className="px-2.5 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300 font-semibold transition-colors"
+                title="Mark freight as loading"
+              >
+                <Box className="h-3.5 w-3.5 mr-1 text-blue-600" /> Start Loading
+              </Button>
+            )}
+
+            {effectiveStatus === 'loading' && !isTrackingViaTelemetry && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onStatusChange(load.id!, 'in-transit')}
+                disabled={isUpdatingStatus || isOverHeight || isDotWeightViolation}
+                className="px-2.5 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300 font-semibold transition-colors"
+                title="Mark load in transit to destination"
+              >
+                <TruckIcon className="h-3.5 w-3.5 mr-1 text-emerald-600" /> Mark In Transit
               </Button>
             )}
 
@@ -1302,19 +1341,19 @@ export function LoadCard({
             >
                 <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" /> Delete
             </Button>
-            {load.status === 'in-transit' && !isTrackingViaTelemetry && (
+            {effectiveStatus === 'in-transit' && !isTrackingViaTelemetry && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => onStatusChange(load.id!, 'arrived')}
+                onClick={() => onStatusChange(load.id!, 'arrived-destination')}
                 disabled={isUpdatingStatus}
                 className="px-2 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm bg-teal-50 hover:bg-teal-100 text-teal-700 border-teal-300 font-semibold transition-colors"
-                title="Log arrival and start facility detention clock"
+                title="Log arrival at destination"
               >
                 <MapPin className="h-3.5 w-3.5 mr-1 text-teal-600" /> Mark Arrived
               </Button>
             )}
-            {isAdminOrOwner && !loadIsCompleted && (
+            {isAdminOrOwner && !loadIsCompleted && (effectiveStatus === 'arrived-destination' || effectiveStatus === 'arrived' || effectiveStatus === 'unloading') && (
               <Button
                 type="button"
                 variant="outline"
@@ -1397,7 +1436,7 @@ export function LoadCard({
                 <FileCheck className="h-3.5 w-3.5 mr-1 text-purple-600" /> View Signed POD
               </a>
             )}
-            {load.status === 'delivered' && (
+            {loadIsCompleted && (
               <Button
                   variant="outline"
                   size="sm"
@@ -1408,7 +1447,7 @@ export function LoadCard({
                   <DollarSign className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" /> Invoice
               </Button>
             )}
-            {load.status === 'delivered' && onGenerateSettlement && (
+            {loadIsCompleted && onGenerateSettlement && (
               <Button
                   variant="outline"
                   size="sm"

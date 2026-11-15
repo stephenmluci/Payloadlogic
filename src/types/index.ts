@@ -223,6 +223,7 @@ export type AppNotification = {
   isRead: boolean;
   createdAt: string; // ISO string
   loadId?: string;
+  actionUrl?: string;
 };
 
 export type RecurringExpenseItem = {

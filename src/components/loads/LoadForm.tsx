@@ -773,7 +773,7 @@ export function LoadForm({
 
   // Persist draft on every meaningful field change
   React.useEffect(() => {
-    if (isEditMode) return;
+    if (Boolean(editingLoadId)) return;
     const rawStatus = String(loadForm.status || '').toLowerCase().trim();
     const hasStaleDelivered =
       rawStatus === 'delivered' ||
@@ -797,7 +797,7 @@ export function LoadForm({
         return next;
       });
     }
-  }, [isEditMode, loadForm.status, loadForm.driverPhase, loadForm.deliveredAt, loadForm.paperworkStatus, setLoadForm]);
+  }, [editingLoadId, loadForm.status, loadForm.driverPhase, loadForm.deliveredAt, loadForm.paperworkStatus, setLoadForm]);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;

@@ -3,7 +3,7 @@ import { type Load, type Client, type Trip, type Vehicle, type DriverProfile, is
 import { calculateTripMetrics, computeCargoLinearFootprint, calculateTimeProratedOverheadDays } from '@/lib/logisticsEngine';
 import { getDriverProfileId } from '@/lib/driverAssignment';
 import { vehicleToEngineTruck, vehicleToEngineTrailer, loadToCargoItem } from '@/lib/logisticsAdapters';
-import { calculateHOSTransit } from '@/lib/hosEngine';
+import { calculateHOSTransit, calculateHOSTransitEstimate, toDateTimeLocal } from '@/lib/hosEngine';
 import { isVehicleCargo, calculateVehicleMarketReference } from '@/lib/vehicleMarketRates';
 import { computeCompliance } from '@/lib/complianceEngine';
 import { HOSWarningBanner } from './HOSWarningBanner';
@@ -19,11 +19,11 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
-import { MapPin, DollarSign, Milestone, Package as CargoIcon, CalendarClock, Timer, Edit, Save, XCircle, Ruler, Weight, ShieldCheck, Hash, RotateCcw, TrendingUp, Zap, ShieldAlert, ShieldX, AlertTriangle, Navigation, Loader2, Sliders, CheckCircle2, Lock, FileText, Trash2, Upload, FileCheck, ExternalLink, Sparkles, ChevronDown, ChevronUp, Info } from 'lucide-react';
+import { MapPin, DollarSign, Milestone, Package as CargoIcon, CalendarClock, Timer, Clock, Edit, Save, XCircle, Ruler, Weight, ShieldCheck, Hash, RotateCcw, TrendingUp, Zap, ShieldAlert, ShieldX, AlertTriangle, Navigation, Loader2, Sliders, CheckCircle2, Lock, FileText, Trash2, Upload, FileCheck, ExternalLink, Sparkles, ChevronDown, ChevronUp, Info } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { uploadOutboundBolDocument } from '@/lib/storage';
 import { compileInternalOutboundBolPdf } from '@/lib/loadPacket';
-import { differenceInCalendarDays, parseISO, isValid } from 'date-fns';
+import { differenceInCalendarDays, parseISO, isValid, format as formatDate } from 'date-fns';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -130,10 +130,18 @@ export function LoadForm({
   }, [loadForm.tripId]);
   React.useEffect(() => { setExistingTripPicked(false); }, [editingLoadId]);
   const outboundFileInputRef = React.useRef<HTMLInputElement>(null);
+  const isDeliveryManualRef = React.useRef(false);
+
+  React.useEffect(() => {
+    isDeliveryManualRef.current = Boolean(editingLoadId && loadForm.deliveryDateTime);
+    // Only reset manual-override tracking when switching between create and edit targets.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingLoadId]);
 
   const [formResetKey, setFormResetKey] = React.useState(0);
   const wasSubmittingRef = React.useRef(false);
   const resetLocalFormUiState = React.useCallback(() => {
+    isDeliveryManualRef.current = false;
     setDestinationClientId('');
     setLastCalculatedRoute('');
     setLastCalculatedDriver('');
@@ -299,6 +307,40 @@ export function LoadForm({
     [loadForm.assignedDriverId, driverProfiles],
   );
 
+  const hosOptions = React.useMemo(
+    () => ({
+      averageSpeedMph: settings?.truckAverageSpeed || 55,
+      availableHosHours: assignedHosDriver?.estimatedHosRemaining,
+      recentOnDutyHours: (assignedHosDriver as any)?.recentOnDutyHours,
+    }),
+    [settings?.truckAverageSpeed, assignedHosDriver],
+  );
+
+  const hosEstimate = React.useMemo(
+    () =>
+      calculateHOSTransitEstimate(
+        loadForm.distance || 0,
+        effectiveDeadheadMiles,
+        loadForm.pickupDateTime || '',
+        hosOptions,
+      ),
+    [loadForm.distance, effectiveDeadheadMiles, loadForm.pickupDateTime, hosOptions],
+  );
+
+  const suggestedDeliveryLocal = React.useMemo(
+    () => (hosEstimate ? toDateTimeLocal(hosEstimate.earliestDelivery) : ''),
+    [hosEstimate],
+  );
+
+  // Auto-apply suggested delivery when deliveryDateTime is still empty (e.g. pickup set before miles).
+  React.useEffect(() => {
+    if (suggestedDeliveryLocal && !loadForm.deliveryDateTime && !isDeliveryManualRef.current) {
+      setLoadForm(prev =>
+        prev.deliveryDateTime ? prev : { ...prev, deliveryDateTime: suggestedDeliveryLocal },
+      );
+    }
+  }, [suggestedDeliveryLocal, loadForm.deliveryDateTime, setLoadForm]);
+
   const hosResult = React.useMemo(
     () =>
       calculateHOSTransit(
@@ -306,19 +348,14 @@ export function LoadForm({
         effectiveDeadheadMiles,
         loadForm.pickupDateTime  || '',
         loadForm.deliveryDateTime || '',
-        {
-          averageSpeedMph: settings?.truckAverageSpeed || 55,
-          availableHosHours: assignedHosDriver?.estimatedHosRemaining,
-          recentOnDutyHours: (assignedHosDriver as any)?.recentOnDutyHours,
-        },
+        hosOptions,
       ),
     [
       loadForm.distance,
       effectiveDeadheadMiles,
       loadForm.pickupDateTime,
       loadForm.deliveryDateTime,
-      settings?.truckAverageSpeed,
-      assignedHosDriver,
+      hosOptions,
     ],
   );
 
@@ -2011,7 +2048,32 @@ export function LoadForm({
                         id="pickupDateTime"
                         name="pickupDateTime"
                         value={loadForm.pickupDateTime || ''}
-                        onChange={(val) => setLoadForm(prev => ({ ...prev, pickupDateTime: val }))}
+                        onChange={(val) => {
+                          setLoadForm(prev => {
+                            const prevDeadhead =
+                              (prev.assignedDriverId && prev.assignedDriverId !== 'none') ||
+                              (prev.assignedTruckId && prev.assignedTruckId !== 'none')
+                                ? (prev.deadheadMiles || 0)
+                                : 0;
+                            const nextEstimate = calculateHOSTransitEstimate(
+                              prev.distance || 0,
+                              prevDeadhead,
+                              val,
+                              hosOptions,
+                            );
+                            const nextSuggested = nextEstimate
+                              ? toDateTimeLocal(nextEstimate.earliestDelivery)
+                              : '';
+                            const shouldAutoApply =
+                              Boolean(nextSuggested) &&
+                              (!prev.deliveryDateTime || !isDeliveryManualRef.current);
+                            return {
+                              ...prev,
+                              pickupDateTime: val,
+                              ...(shouldAutoApply ? { deliveryDateTime: nextSuggested } : {}),
+                            };
+                          });
+                        }}
                       />
                     </div>
                     <div>
@@ -2020,8 +2082,42 @@ export function LoadForm({
                         id="deliveryDateTime"
                         name="deliveryDateTime"
                         value={loadForm.deliveryDateTime || ''}
-                        onChange={(val) => setLoadForm(prev => ({ ...prev, deliveryDateTime: val }))}
+                        onChange={(val) => {
+                          isDeliveryManualRef.current = Boolean(val) && val !== suggestedDeliveryLocal;
+                          setLoadForm(prev => ({ ...prev, deliveryDateTime: val }));
+                        }}
                       />
+                      {hosEstimate && suggestedDeliveryLocal && (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+                          {loadForm.deliveryDateTime !== suggestedDeliveryLocal ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                isDeliveryManualRef.current = false;
+                                setLoadForm(prev => ({
+                                  ...prev,
+                                  deliveryDateTime: suggestedDeliveryLocal,
+                                }));
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-teal-300 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-800 hover:bg-teal-100 transition-colors"
+                            >
+                              <Clock className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+                              <span>
+                                Use suggested:{' '}
+                                {formatDate(hosEstimate.earliestDelivery, 'MMM d, yyyy h:mm a')}
+                              </span>
+                            </button>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] text-teal-700">
+                              <Clock className="h-3 w-3 text-teal-600 shrink-0" />
+                              <span>
+                                Suggested HOS earliest:{' '}
+                                {formatDate(hosEstimate.earliestDelivery, 'MMM d, yyyy h:mm a')}
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 

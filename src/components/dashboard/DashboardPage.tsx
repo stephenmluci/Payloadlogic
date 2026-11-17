@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { MetricCard } from './MetricCard';
 import { NeedsAttentionPanel } from './NeedsAttentionPanel';
 import { SetupCompleteBanner } from './SetupCompleteBanner';
+import { summarizeLoadFuelExpenses } from '@/lib/fuelExpense';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
@@ -641,6 +642,7 @@ export function DashboardPage() {
                         <span className={cn(
                           "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
                           load.status === 'delivered' ? "bg-teal-700 text-white" :
+                          load.status === 'approved' ? "bg-blue-600 text-white" :
                           load.status === 'in-transit' ? "bg-emerald-600 text-white" :
                           (load.status === 'loading' || load.status === 'unloading') ? "bg-blue-100 text-blue-800" :
                           load.status === 'waiting' ? "bg-orange-100 text-orange-800" :
@@ -648,7 +650,7 @@ export function DashboardPage() {
                           load.status === 'client-request-approved' ? "bg-teal-500 text-white" :
                           "bg-yellow-500 text-white" // pending
                         )}>
-                          {load.status.replace('-', ' ')}
+                          {load.status === 'pending_approval' ? 'Pending Approval' : load.status.replace(/[-_]/g, ' ')}
                         </span>
                         {load.driverExceptionFlag && (
                           <Badge className="bg-red-100 text-red-700 border-red-200 text-[9px] px-1.5 py-0 font-bold uppercase">
@@ -817,38 +819,54 @@ export function DashboardPage() {
                         </tr>
                         
                         {/* Calculated Direct Expenses */}
-                        <tr>
-                          <td className="px-3 py-1.5 text-slate-600">Fuel & DEF (Est.)</td>
-                          <td className="px-3 py-1.5 text-right text-rose-600">
-                            -${((selectedLoad.expenses?.fuel || 0) + (selectedLoad.expenses?.def || 0)).toFixed(2)}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="px-3 py-1.5 text-slate-600">Payroll ({settings.payrollPercentage}%)</td>
-                          <td className="px-3 py-1.5 text-right text-rose-600">-${(selectedLoad.expenses?.payroll || 0).toFixed(2)}</td>
-                        </tr>
+                        {(() => {
+                          const fuelSummary = summarizeLoadFuelExpenses(selectedLoad);
+                          const effectiveFuel = fuelSummary.effectiveFuel;
+                          const defAmt = selectedLoad.expenses?.def || 0;
+                          const payrollAmt = selectedLoad.expenses?.payroll || 0;
+                          const recurringAmt = selectedLoad.expenses?.recurring || 0;
+                          const trueNetProfit = selectedLoad.totalAgreedRate - effectiveFuel - defAmt - payrollAmt - recurringAmt;
+                          return (
+                            <>
+                              <tr>
+                                <td className="px-3 py-1.5 text-slate-600">
+                                  {fuelSummary.hasActualFuel ? 'Fuel (Actual) & DEF' : 'Fuel & DEF (Est.)'}
+                                </td>
+                                <td className="px-3 py-1.5 text-right text-rose-600">
+                                  -${(effectiveFuel + defAmt).toFixed(2)}
+                                </td>
+                              </tr>
+                              {fuelSummary.hasActualFuel && fuelSummary.estimatedFuel > 0 && (
+                                <tr>
+                                  <td className="px-3 py-1 text-[11px] text-slate-400">Est. Fuel (Replaced)</td>
+                                  <td className="px-3 py-1 text-right text-[11px] text-slate-400 line-through">
+                                    ${fuelSummary.estimatedFuel.toFixed(2)}
+                                  </td>
+                                </tr>
+                              )}
+                              <tr>
+                                <td className="px-3 py-1.5 text-slate-600">Payroll ({settings.payrollPercentage}%)</td>
+                                <td className="px-3 py-1.5 text-right text-rose-600">-${payrollAmt.toFixed(2)}</td>
+                              </tr>
 
-                      {/* Fleet Overhead — shown from stored load.expenses.recurring breakdown */}
-                      <tr>
-                        <td className="px-3 py-1.5 text-slate-600">Asset & Fleet Overhead (Share)</td>
-                        <td className="px-3 py-1.5 text-right text-rose-600">
-                          -${(selectedLoad.expenses?.recurring || 0).toFixed(2)}
-                        </td>
-                      </tr>
+                              {/* Fleet Overhead — shown from stored load.expenses.recurring breakdown */}
+                              <tr>
+                                <td className="px-3 py-1.5 text-slate-600">Asset & Fleet Overhead (Share)</td>
+                                <td className="px-3 py-1.5 text-right text-rose-600">
+                                  -${recurringAmt.toFixed(2)}
+                                </td>
+                              </tr>
 
-                      {/* Final Calculation */}
-                      <tr className="bg-blue-50 font-bold border-t border-blue-100">
-                        <td className="px-3 py-2 text-blue-800 text-sm">True Net Profit</td>
-                        <td className="px-3 py-2 text-right text-blue-800 text-sm">
-                          ${(
-                            selectedLoad.totalAgreedRate - 
-                            (selectedLoad.expenses?.fuel || 0) - 
-                            (selectedLoad.expenses?.def || 0) - 
-                            (selectedLoad.expenses?.payroll || 0) - 
-                            (selectedLoad.expenses?.recurring || 0)
-                          ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                      </tr>
+                              {/* Final Calculation */}
+                              <tr className="bg-blue-50 font-bold border-t border-blue-100">
+                                <td className="px-3 py-2 text-blue-800 text-sm">True Net Profit</td>
+                                <td className="px-3 py-2 text-right text-blue-800 text-sm">
+                                  ${trueNetProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                              </tr>
+                            </>
+                          );
+                        })()}
 
                       </tbody>
                     </table>

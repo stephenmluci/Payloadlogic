@@ -54,6 +54,7 @@ export function LogExpenseModal({ load, driverId, truckId, trailerId, isOpen, on
   const [customExpenseType, setCustomExpenseType] = useState<string>('');
   const [amount, setAmount] = useState<string>('');
   const [gallonsPurchased, setGallonsPurchased] = useState<string>('');
+  const [paymentMethod, setPaymentMethod] = useState<'fuel_card' | 'credit_card' | 'cash' | 'other'>('fuel_card');
   const [notes, setNotes] = useState<string>('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -70,6 +71,7 @@ export function LogExpenseModal({ load, driverId, truckId, trailerId, isOpen, on
     setCustomExpenseType('');
     setAmount('');
     setGallonsPurchased('');
+    setPaymentMethod('fuel_card');
     setNotes('');
     setReceiptFile(null);
     if (previewUrl && previewUrl.startsWith('blob:')) {
@@ -207,6 +209,7 @@ export function LogExpenseModal({ load, driverId, truckId, trailerId, isOpen, on
         category,
         amount: numericAmount,
         gallonsPurchased: parsedGallons,
+        ...(isFuel ? { paymentMethod } : {}),
         notes: fullNotes,
         receiptUrl: uploadedUrl, // Specifically the uploaded HTTPS URL
         receiptUploadedAt: new Date().toISOString(),
@@ -389,6 +392,37 @@ export function LogExpenseModal({ load, driverId, truckId, trailerId, isOpen, on
               <p className="text-[11px] text-amber-800 leading-tight">
                 Used to calculate quarterly fuel tax credits and route efficiency (MPG).
               </p>
+              <div className="pt-2 space-y-1.5">
+                <Label className="text-[11px] font-bold text-amber-950 uppercase tracking-wider">
+                  Payment Method
+                </Label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { value: 'fuel_card' as const, label: 'Fuel Card' },
+                    { value: 'credit_card' as const, label: 'Credit Card' },
+                    { value: 'cash' as const, label: 'Cash / Other' },
+                  ].map((pm) => (
+                    <button
+                      key={pm.value}
+                      type="button"
+                      disabled={isUploading}
+                      onClick={() => setPaymentMethod(pm.value)}
+                      className={`px-2 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                        paymentMethod === pm.value
+                          ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
+                          : 'bg-white text-amber-950 border-amber-200 hover:bg-amber-100/70'
+                      }`}
+                    >
+                      {pm.label}
+                    </button>
+                  ))}
+                </div>
+                {load && (
+                  <p className="text-[11px] text-amber-900 leading-tight">
+                    Replaces estimated fuel for this load without altering the customer rate.
+                  </p>
+                )}
+              </div>
             </div>
           )}
 

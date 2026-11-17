@@ -5,6 +5,7 @@ import { calculateTripMetrics, computeCargoLinearFootprint, calculateTimeProrate
 import { vehicleToEngineTruck, vehicleToEngineTrailer, loadToCargoItem } from '@/lib/logisticsAdapters';
 import { calculateHOSTransit } from '@/lib/hosEngine';
 import { computeCompliance } from '@/lib/complianceEngine';
+import { summarizeLoadFuelExpenses } from '@/lib/fuelExpense';
 import { HOSWarningBanner } from './HOSWarningBanner';
 import { ComplianceBadges } from './ComplianceBadges';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,7 @@ import {
   getDetentionFreeTimeMinutes,
   getDetentionFeeRate,
   formatDetentionDuration,
+  isLoadDetentionActive,
 } from '@/lib/detention';
 
 const CDL_THRESHOLD = 26_000; // lbs — 49 CFR § 383.91
@@ -184,7 +186,8 @@ export function LoadCard({
   const totalLoggedExpenses = actualExpensesList.reduce((sum, e) => sum + (e.amount || 0), 0);
 
   // Delivered Load Actual Expenses (dynamically integrated with sub-collection)
-  const actualFuelDelivered = loggedFuel > 0 ? loggedFuel : (load.expenses?.fuel || 0);
+  const deliveredFuelSummary = summarizeLoadFuelExpenses(load, 0);
+  const actualFuelDelivered = deliveredFuelSummary.effectiveFuel;
   const actualDefDelivered = loggedDef > 0 ? loggedDef : (load.expenses?.def || 0);
   const actualMaintenanceDelivered = loggedMaintenance > 0 ? loggedMaintenance : (load.expenses?.maintenance || 0);
   const actualRecurringDelivered = load.expenses?.recurring || 0;
@@ -234,11 +237,15 @@ export function LoadCard({
 
 
   const isErroneousArrival = isErroneousArrivalTimestamp(load, driver, loads || []);
-  const showDetentionBanner = (load.status === 'arrived' || (load as any).status === 'Arrived' || load.arrivedAt || load.arrivalTimestamp) && 
-    !isErroneousArrival && 
-    !isTrackingViaTelemetry && 
-    effectiveStatus !== 'dispatched' && 
-    effectiveStatus !== 'Deadheading';
+  const showDetentionBanner = isLoadDetentionActive({
+    status: effectiveStatus,
+    driverPhase: load.driverPhase,
+    detentionActive: load.detentionActive,
+    arrivedAt: load.arrivedAt,
+    arrivalTimestamp: load.arrivalTimestamp,
+  }) &&
+    !isErroneousArrival &&
+    !isTrackingViaTelemetry;
 
   const deckHeight = trailer?.deckHeight || 0;
   
@@ -406,6 +413,7 @@ export function LoadCard({
   let projectedProfit: number | null = null;
   let projectedPayroll = 0;
   let projectedFuelCost = 0;
+  let estimatedFuelCostRef = 0;
   let projectedDefCost = 0;
   let projectedTotalRecurring = 0;
   let projectedMaintenance = 0;
@@ -436,9 +444,12 @@ export function LoadCard({
     // ── Fuel ─────────────────────────────────────────────────────────────────
     const mpg = truck?.mpg ?? settings.truckMpg;
     const fuelPrice = truck?.avgFuelPrice ?? settings.defaultFuelCostPerGallon ?? 0;
-    projectedFuelCost = (totalTripMiles > 0 && mpg > 0 && fuelPrice > 0)
+    const mileageEstimatedFuel = (totalTripMiles > 0 && mpg > 0 && fuelPrice > 0)
       ? ((totalTripMiles / mpg) * fuelPrice) * costShare
       : 0;
+    const activeFuelSummary = summarizeLoadFuelExpenses(load, mileageEstimatedFuel);
+    estimatedFuelCostRef = activeFuelSummary.estimatedFuel;
+    projectedFuelCost = activeFuelSummary.effectiveFuel;
 
     // ── DEF: 2.5% of fuel volume × DEF cost per gallon ───────────────────
     const DEF_RATIO = 0.025;
@@ -697,7 +708,7 @@ export function LoadCard({
                   )}
                 </div>
               </div>
-              {(load.status === 'arrived' || (load as any).status === 'Arrived') && (
+              {showDetentionBanner && (
                 <Badge className="bg-teal-700 text-white hover:bg-teal-800 font-semibold text-[10px] shrink-0 w-fit">
                   Detention Active
                 </Badge>
@@ -918,7 +929,7 @@ export function LoadCard({
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                     <span>Est. Payroll:</span> <span className="text-right">${projectedPayroll.toFixed(2)}</span>
                     <span className="flex items-center gap-1">
-                      <span>Est. Fuel:</span>
+                      <span>{loggedFuel > 0 ? 'Fuel (Actual):' : 'Est. Fuel:'}</span>
                       {loggedFuel > 0 && (
                         <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1 rounded border border-amber-300">
                           Actual Logged
@@ -926,6 +937,15 @@ export function LoadCard({
                       )}
                     </span>
                     <span className="text-right font-medium">${projectedFuelCost.toFixed(2)}</span>
+
+                    {loggedFuel > 0 && estimatedFuelCostRef > 0 && (
+                      <>
+                        <span className="text-[11px] text-slate-500 pl-2">Est. Fuel (Replaced):</span>
+                        <span className="text-right text-[11px] text-slate-500 line-through">
+                          ${estimatedFuelCostRef.toFixed(2)}
+                        </span>
+                      </>
+                    )}
 
                     <span className="flex items-center gap-1">
                       <span>Est. DEF:</span>
@@ -1082,7 +1102,7 @@ export function LoadCard({
                 <span>Payroll:</span> <span className="text-right">${actualPayrollDelivered.toFixed(2)}</span>
                 <span>Recurring:</span> <span className="text-right">${actualRecurringDelivered.toFixed(2)}</span>
                 <span className="flex items-center gap-1">
-                  <span>Fuel:</span>
+                  <span>{loggedFuel > 0 ? 'Fuel (Actual):' : 'Fuel:'}</span>
                   {loggedFuel > 0 && (
                     <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1 rounded border border-amber-300">
                       Actual Logged
@@ -1090,6 +1110,15 @@ export function LoadCard({
                   )}
                 </span>
                 <span className="text-right font-medium">${actualFuelDelivered.toFixed(2)}</span>
+
+                {deliveredFuelSummary.hasActualFuel && deliveredFuelSummary.estimatedFuel > 0 && (
+                  <>
+                    <span className="text-[11px] text-slate-500 pl-2">Est. Fuel (Replaced):</span>
+                    <span className="text-right text-[11px] text-slate-500 line-through">
+                      ${deliveredFuelSummary.estimatedFuel.toFixed(2)}
+                    </span>
+                  </>
+                )}
 
                 <span className="flex items-center gap-1">
                   <span>DEF:</span>
@@ -1273,15 +1302,26 @@ export function LoadCard({
             )}
 
             {(effectiveStatus === 'approved' || effectiveStatus === 'client-request-approved') && (
-              <Button
-                size="sm"
-                onClick={() => onStatusChange(load.id!, 'dispatched')}
-                disabled={isUpdatingStatus || isDotWeightViolation}
-                className="px-3 h-8 text-xs sm:h-9 sm:text-sm bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs transition-colors"
-                title="Dispatch load to assigned driver and trigger alerts"
-              >
-                <Send className="h-3.5 w-3.5 mr-1.5 text-emerald-200" /> Dispatch to Driver
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled
+                  className="px-3 h-8 text-xs sm:h-9 sm:text-sm border-blue-200 bg-blue-50 text-blue-700 font-semibold opacity-100 cursor-default"
+                  title="Load has been approved"
+                >
+                  <CheckCircle className="h-3.5 w-3.5 mr-1.5 text-blue-600" /> Approved
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => onStatusChange(load.id!, 'dispatched')}
+                  disabled={isUpdatingStatus || isDotWeightViolation}
+                  className="px-3 h-8 text-xs sm:h-9 sm:text-sm bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs transition-colors"
+                  title="Dispatch load to assigned driver and trigger alerts"
+                >
+                  <Send className="h-3.5 w-3.5 mr-1.5 text-emerald-200" /> Dispatch to Driver
+                </Button>
+              </>
             )}
 
             {(effectiveStatus === 'dispatched' || effectiveStatus === 'Deadheading') && !isTrackingViaTelemetry && (

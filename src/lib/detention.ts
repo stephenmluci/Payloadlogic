@@ -3,6 +3,43 @@ import type { Settings } from '@/types';
 export const DEFAULT_DETENTION_FREE_TIME_MINUTES = 120;
 export const DEFAULT_DETENTION_FEE_RATE = 0;
 
+const DETENTION_ACTIVE_STATUSES = new Set([
+  'arrived-origin',
+  'arrived',
+]);
+
+const DETENTION_STOP_STATUSES = new Set([
+  'loading',
+  'in-transit',
+  'dispatched',
+  'deadheading',
+  'arrived-destination',
+  'unloading',
+  'delivered',
+  'completed',
+]);
+
+/**
+ * Returns true only while a load is actively at the pickup/origin facility
+ * and detention has not been stopped by departure/loading/transit.
+ * Preserved `arrivedAt` timestamps alone do not keep detention active.
+ */
+export function isLoadDetentionActive(load: {
+  status?: string | null;
+  driverPhase?: string | null;
+  detentionActive?: boolean | null;
+  arrivedAt?: string | null;
+  arrivalTimestamp?: string | null;
+}): boolean {
+  if (load.detentionActive === false) return false;
+  const status = (load.status || '').toLowerCase().trim();
+  if (DETENTION_STOP_STATUSES.has(status)) return false;
+  if (DETENTION_ACTIVE_STATUSES.has(status)) return true;
+  const phase = (load.driverPhase || '').toLowerCase().trim();
+  if (phase === 'arrived') return true;
+  return false;
+}
+
 export type LoadDetentionSummary = {
   elapsedMinutes: number;
   freeTimeMinutes: number;

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/hooks/use-toast';
+import { isLoadDetentionActive } from '@/lib/detention';
 import {
   computeDeckPositions,
   getNextStopForLoad,
@@ -550,8 +551,24 @@ export function DriverDashboard() {
         ? { driverNote: note, driverNoteUpdatedAt: nowIso } 
         : {};
       
+      const isArrivingAtOrigin = phase === 'arrived-origin' || (phase as string) === 'arrived';
+      const isStoppingDetention =
+        phase === 'loading' ||
+        phase === 'in-transit' ||
+        phase === 'dispatched' ||
+        phase === 'arrived-destination' ||
+        phase === 'unloading' ||
+        phase === 'delivered';
+
       await updateLoad(load.id, { 
         status: phase as Load['status'],
+        ...(isArrivingAtOrigin ? {
+          arrivedAt: load.arrivedAt || nowIso,
+          detentionActive: true,
+        } : {}),
+        ...(isStoppingDetention ? {
+          detentionActive: false,
+        } : {}),
         ...(isDelivering ? {
           driverPhase: 'Complete',
           deliveredAt: load.deliveredAt || nowIso,
@@ -1248,7 +1265,7 @@ export function DriverDashboard() {
 
                   <CardContent className="p-4 pl-5 space-y-3.5">
                     {/* Facility Detention Banner */}
-                    {(load.status === 'arrived' || (load as any).status === 'Arrived' || load.arrivedAt) && (
+                    {isLoadDetentionActive(load) && (
                       <div className="bg-teal-50 border border-teal-200 rounded-xl p-3 flex items-center justify-between text-xs text-teal-900 shadow-xs">
                         <div className="flex items-center gap-2">
                           <span className="flex h-2.5 w-2.5 rounded-full bg-teal-500 animate-ping shrink-0" />

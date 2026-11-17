@@ -27,7 +27,7 @@ export type HOSTransitOptions = {
   recentOnDutyHours?: number;
 };
 
-export type HOSResult = {
+export type HOSEstimate = {
   /** Loaded + deadhead combined */
   totalMiles: number;
   /** Average speed used for the estimate (mph) */
@@ -50,14 +50,17 @@ export type HOSResult = {
   totalTransitHours: number;
   /** pickupDateTime + totalTransitHours */
   earliestDelivery: Date;
+  /** The parsed pickup date */
+  pickupDate: Date;
+};
+
+export type HOSResult = HOSEstimate & {
   /** true when schedule has no HOS conflict (or fits within earliestDelivery) */
   isFeasible: boolean;
   /** Hours by which the requested delivery falls short (0 when feasible) */
   hoursShort: number;
   /** true when delivery is scheduled before pickup */
   isInverted: boolean;
-  /** The parsed pickup date */
-  pickupDate: Date;
   /** The parsed requested delivery date */
   requestedDeliveryDate: Date;
 };
@@ -72,26 +75,23 @@ export function toDateTimeLocal(date: Date): string {
 }
 
 /**
- * Estimates HOS transit requirements and checks for schedule conflicts based on
- * driver HOS availability and 72-hour reset requirements.
+ * Computes the earliest feasible delivery date/time and HOS transit breakdown
+ * from miles, pickup date/time, and driver HOS options.
  *
- * Returns null when inputs are insufficient (no miles entered, or invalid dates).
+ * Returns null when inputs are insufficient (no miles entered, or invalid pickup date).
  */
-export function calculateHOSTransit(
+export function calculateHOSTransitEstimate(
   loadedMiles: number,
   deadheadMiles: number,
   pickupDateTime: string,
-  requestedDeliveryDateTime: string,
   options?: HOSTransitOptions,
-): HOSResult | null {
+): HOSEstimate | null {
   const totalMiles = (loadedMiles || 0) + (deadheadMiles || 0);
 
-  if (totalMiles <= 0 || !pickupDateTime || !requestedDeliveryDateTime) return null;
+  if (totalMiles <= 0 || !pickupDateTime) return null;
 
-  const pickupDate        = new Date(pickupDateTime);
-  const requestedDelivery = new Date(requestedDeliveryDateTime);
-
-  if (isNaN(pickupDate.getTime()) || isNaN(requestedDelivery.getTime())) return null;
+  const pickupDate = new Date(pickupDateTime);
+  if (isNaN(pickupDate.getTime())) return null;
 
   // ── Drive time (distance ÷ average speed only, no dwell) ────────────────────
   const averageSpeedMph =
@@ -124,12 +124,6 @@ export function calculateHOSTransit(
   const earliestDeliveryMs = pickupDate.getTime() + totalTransitHours * 3_600_000;
   const earliestDelivery   = new Date(Math.ceil(earliestDeliveryMs / 60_000) * 60_000);
 
-  const diffMs       = requestedDelivery.getTime() - earliestDelivery.getTime();
-  const isInverted   = requestedDelivery.getTime() <= pickupDate.getTime();
-  const hasHosIssue  = exceedsAvailableHours || requiresReset;
-  const isFeasible   = !isInverted && !(hasHosIssue && diffMs < -60_000);
-  const hoursShort   = isFeasible ? 0 : Math.abs(diffMs) / 3_600_000;
-
   return {
     totalMiles,
     averageSpeedMph,
@@ -142,10 +136,47 @@ export function calculateHOSTransit(
     totalRestHours,
     totalTransitHours,
     earliestDelivery,
+    pickupDate,
+  };
+}
+
+/**
+ * Estimates HOS transit requirements and checks for schedule conflicts based on
+ * driver HOS availability and 72-hour reset requirements.
+ *
+ * Returns null when inputs are insufficient (no miles entered, or invalid dates).
+ */
+export function calculateHOSTransit(
+  loadedMiles: number,
+  deadheadMiles: number,
+  pickupDateTime: string,
+  requestedDeliveryDateTime: string,
+  options?: HOSTransitOptions,
+): HOSResult | null {
+  if (!requestedDeliveryDateTime) return null;
+
+  const requestedDelivery = new Date(requestedDeliveryDateTime);
+  if (isNaN(requestedDelivery.getTime())) return null;
+
+  const estimate = calculateHOSTransitEstimate(
+    loadedMiles,
+    deadheadMiles,
+    pickupDateTime,
+    options,
+  );
+  if (!estimate) return null;
+
+  const diffMs       = requestedDelivery.getTime() - estimate.earliestDelivery.getTime();
+  const isInverted   = requestedDelivery.getTime() <= estimate.pickupDate.getTime();
+  const hasHosIssue  = estimate.exceedsAvailableHours || estimate.requiresReset;
+  const isFeasible   = !isInverted && !(hasHosIssue && diffMs < -60_000);
+  const hoursShort   = isFeasible ? 0 : Math.abs(diffMs) / 3_600_000;
+
+  return {
+    ...estimate,
     isFeasible,
     hoursShort,
     isInverted,
-    pickupDate,
     requestedDeliveryDate: requestedDelivery,
   };
 }

@@ -96,6 +96,8 @@ export type Load = {
   expenses: {
     payroll: number;
     fuel: number;
+    estimatedFuel?: number;
+    actualFuel?: number;
     def: number;
     recurring: number;
     maintenance?: number;
@@ -186,6 +188,7 @@ export interface ActualExpense {
   category: ActualExpenseCategory;
   amount: number;
   gallonsPurchased?: number;
+  paymentMethod?: 'fuel_card' | 'credit_card' | 'cash' | 'other';
   notes?: string;
   receiptUrl?: string;
   receiptUploadedAt?: string;

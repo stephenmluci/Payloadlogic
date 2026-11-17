@@ -1771,14 +1771,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
 
     if (!editingLoadId) {
-      // Brand-new loads must always start in a pending/pre-delivery state, never Delivered
-      const rawStatus = String(dataWithCalculations.status || '').toLowerCase().trim();
-      if (!rawStatus || rawStatus === 'delivered' || rawStatus === 'completed') {
-        dataWithCalculations.status = 'pending_approval';
-      }
+      // Brand-new loads must always start as Pending Approval until explicitly approved.
+      dataWithCalculations.status = 'pending_approval';
       if (String(dataWithCalculations.driverPhase || '').toLowerCase().trim() === 'complete') {
         delete dataWithCalculations.driverPhase;
       }
+      delete (dataWithCalculations as any).approvedAt;
+      delete (dataWithCalculations as any).approvedBy;
       delete dataWithCalculations.deliveredAt;
       delete dataWithCalculations.paperworkStatus;
     } else if (loadForm.status === 'delivered' || loadForm.driverPhase === 'Complete') {
@@ -1843,9 +1842,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             const newLoadData = {
               ...initialLoadFormData,
               ...dataWithCalculations,
-              status: (!dataWithCalculations.status || String(dataWithCalculations.status).toLowerCase() === 'delivered' || String(dataWithCalculations.status).toLowerCase() === 'completed')
-                ? 'pending_approval'
-                : dataWithCalculations.status,
+              status: 'pending_approval' as const,
               loadNumber: newLoadNumber,
               id: `mock-load-${Date.now()}`
             } as Load;
@@ -1954,9 +1951,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
             const newLoadDataForFirestore = { 
               ...dataWithCalculations, 
-              status: dataWithCalculations.status || 'pending_approval',
+              status: 'pending_approval' as const,
               loadNumber: newLoadNumber, 
-              expenses: { payroll: 0, fuel: estFuelCost, def: 0, recurring: 0, maintenance: 0, calculated: estFuelCost > 0 } 
+              expenses: { payroll: 0, fuel: estFuelCost, estimatedFuel: estFuelCost, def: 0, recurring: 0, maintenance: 0, calculated: estFuelCost > 0 } 
             } as Omit<Load, 'id'>;
 
             const safeLoadData = sanitizeForFirestore(newLoadDataForFirestore);
@@ -1993,7 +1990,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                 }
 
                 const client = clients.find(c => c.id === finalSavedLoadData.clientId);
-                if (client && client.contactEmail) {
+                if (client && client.contactEmail && finalSavedLoadData.status === 'approved') {
                   try {
                     const emailSubject = `Load Approved: ${finalSavedLoadData.loadNumber || finalSavedLoadData.id}`;
                     const emailBody = `Dear ${client.contactName || client.companyName},<br><br>Your load request for ${formatAddress(finalSavedLoadData.origin, 'short')} to ${formatAddress(finalSavedLoadData.destination, 'short')} has been approved. Your Load ID is ${finalSavedLoadData.loadNumber || finalSavedLoadData.id}.<br><br>Thank you,<br>PayloadLogic`;
@@ -2150,15 +2147,35 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }
         
         // Automatic arrival / detention timestamp capture
-        const isTransitioningToArrived =
+        const isTransitioningToArrivedOrigin =
+          effectiveUpdates.status === 'arrived-origin' ||
           effectiveUpdates.status === 'arrived' ||
           (effectiveUpdates as any).status === 'Arrived' ||
-          effectiveUpdates.status === 'arrived-origin' ||
-          effectiveUpdates.status === 'arrived-destination' ||
           effectiveUpdates.driverPhase === 'Arrived';
 
-        if (isTransitioningToArrived) {
+        const isTransitioningToArrivedDest =
+          effectiveUpdates.status === 'arrived-destination';
+
+        if (isTransitioningToArrivedOrigin) {
           finalUpdates.arrivedAt = effectiveUpdates.arrivedAt || currentLoad.arrivedAt || new Date().toISOString();
+          finalUpdates.detentionActive = true;
+        } else if (isTransitioningToArrivedDest) {
+          finalUpdates.arrivedAt = effectiveUpdates.arrivedAt || currentLoad.arrivedAt || new Date().toISOString();
+          finalUpdates.detentionActive = false;
+        } else if (
+          effectiveUpdates.status === 'loading' ||
+          effectiveUpdates.status === 'in-transit' ||
+          effectiveUpdates.status === 'dispatched' ||
+          effectiveUpdates.status === 'Deadheading' ||
+          effectiveUpdates.status === 'unloading' ||
+          effectiveUpdates.status === 'delivered' ||
+          (effectiveUpdates.status as string) === 'completed' ||
+          effectiveUpdates.driverPhase === 'Getting Loaded' ||
+          effectiveUpdates.driverPhase === 'Enroute to Destination' ||
+          effectiveUpdates.driverPhase === 'Complete'
+        ) {
+          // Stop the live detention clock while preserving arrivedAt for records
+          finalUpdates.detentionActive = false;
         }
 
         // Post-Delivery & Paperwork Workflow: Timestamp drop-off ONLY when explicitly marking Delivered
@@ -2760,7 +2777,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       deliveryDateTime: cachedDraft?.deliveryDateTime || toDateTimeLocalInput(request.requestedDeliveryDateTime), 
       ratePerMile: cachedDraft?.ratePerMile ?? 0,
       distance: cachedDraft?.distance ?? 0,
-      status: cachedDraft?.status || 'pending',
+      status: 'pending_approval',
       cargoDescription: cachedDraft?.cargoDescription || request.cargoDescription,
       cargoQuantity: cachedDraft?.cargoQuantity ?? request.cargoQuantity ?? 1,
       cargoWeightNum: cachedDraft?.cargoWeightNum ?? request.cargoWeightNum,
@@ -3037,9 +3054,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const assignedDriver = load.assignedDriverId ? driverProfiles.find(p => p.uid === load.assignedDriverId) : null;
 
         const truckMpg = (assignedTruck && assignedTruck.mpg) ? assignedTruck.mpg : settings.truckMpg;
-        const fuelCost = manualFuelExpense ? manualFuelExpense.amount
-            : (totalTripMiles > 0 && truckMpg > 0 && settings.defaultFuelCostPerGallon > 0)
-            ? (totalTripMiles / truckMpg) * settings.defaultFuelCostPerGallon : 0;
+        const loggedActualFuel = (load.actualExpenses || [])
+          .filter(e => (e.category || '').toLowerCase() === 'fuel')
+          .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+        const mileageEstimatedFuel = (totalTripMiles > 0 && truckMpg > 0 && settings.defaultFuelCostPerGallon > 0)
+          ? (totalTripMiles / truckMpg) * settings.defaultFuelCostPerGallon : 0;
+        const originalEstimatedFuel = load.expenses?.estimatedFuel !== undefined
+          ? load.expenses.estimatedFuel
+          : parseFloat(mileageEstimatedFuel.toFixed(2));
+        const fuelCost = loggedActualFuel > 0
+          ? loggedActualFuel
+          : manualFuelExpense
+            ? manualFuelExpense.amount
+            : originalEstimatedFuel;
 
         const manualDefExpense = loadSpecificExpenses.find(exp => exp.category.toLowerCase() === 'def');
         // DEF = 2.5% of diesel volume × DEF price. Use mpg-based formula (consistent with LoadCard/LoadForm).
@@ -3148,6 +3175,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const newExpensesPayload = {
           payroll: parseFloat(payroll.toFixed(2)), 
           fuel: parseFloat(fuelCost.toFixed(2)),
+          estimatedFuel: originalEstimatedFuel,
+          ...(loggedActualFuel > 0 ? { actualFuel: parseFloat(loggedActualFuel.toFixed(2)) } : {}),
           def: parseFloat(defCost.toFixed(2)), 
           recurring: parseFloat(totalRecurringForLoad.toFixed(2)),
           maintenance: parseFloat(totalOperatingCost.toFixed(2)),
@@ -3160,6 +3189,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           !existingExpenses.calculated || 
           existingExpenses.payroll !== newExpensesPayload.payroll ||
           existingExpenses.fuel !== newExpensesPayload.fuel || 
+          existingExpenses.estimatedFuel !== newExpensesPayload.estimatedFuel ||
+          existingExpenses.actualFuel !== newExpensesPayload.actualFuel ||
           existingExpenses.def !== newExpensesPayload.def ||
           existingExpenses.recurring !== newExpensesPayload.recurring ||
           existingExpenses.maintenance !== newExpensesPayload.maintenance
@@ -4022,9 +4053,54 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (expenseData.gallonsPurchased !== undefined && expenseData.gallonsPurchased !== null && !isNaN(Number(expenseData.gallonsPurchased))) {
       cleanData.gallonsPurchased = Number(expenseData.gallonsPurchased);
     }
+    if (expenseData.paymentMethod) {
+      cleanData.paymentMethod = expenseData.paymentMethod;
+    }
     if (expenseData.notes) {
       cleanData.notes = expenseData.notes.trim();
     }
+
+    const buildUpdatedFuelExpenses = (targetLoad: Load | undefined, updatedActuals: ActualExpense[]) => {
+      if (cleanData.category !== 'Fuel') return undefined;
+      const totalActualFuel = parseFloat(
+        updatedActuals
+          .filter(e => (e.category || '').toLowerCase() === 'fuel')
+          .reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
+          .toFixed(2),
+      );
+      let originalEstimatedFuel = targetLoad?.expenses?.estimatedFuel;
+      if (originalEstimatedFuel === undefined) {
+        const hadPriorFuelReceipt = (targetLoad?.actualExpenses || []).some(
+          e => (e.category || '').toLowerCase() === 'fuel',
+        );
+        if (!hadPriorFuelReceipt && targetLoad?.expenses?.fuel && targetLoad.expenses.fuel > 0) {
+          originalEstimatedFuel = targetLoad.expenses.fuel;
+        } else if (targetLoad) {
+          const miles = (targetLoad.distance || 0) + (targetLoad.deadheadMiles || 0);
+          const truck = targetLoad.assignedTruckId
+            ? vehicles.find(v => v.id === targetLoad.assignedTruckId)
+            : undefined;
+          const mpg = truck?.mpg && truck.mpg > 0 ? truck.mpg : (settings.truckMpg || 10);
+          const fuelPrice = truck?.avgFuelPrice ?? settings.defaultFuelCostPerGallon ?? 0;
+          originalEstimatedFuel = miles > 0 && mpg > 0 && fuelPrice > 0
+            ? parseFloat(((miles / mpg) * fuelPrice).toFixed(2))
+            : 0;
+        } else {
+          originalEstimatedFuel = 0;
+        }
+      }
+      return {
+        payroll: targetLoad?.expenses?.payroll ?? 0,
+        def: targetLoad?.expenses?.def ?? 0,
+        recurring: targetLoad?.expenses?.recurring ?? 0,
+        maintenance: targetLoad?.expenses?.maintenance ?? 0,
+        calculated: targetLoad?.expenses?.calculated ?? false,
+        ...targetLoad?.expenses,
+        estimatedFuel: parseFloat((originalEstimatedFuel || 0).toFixed(2)),
+        actualFuel: totalActualFuel,
+        fuel: totalActualFuel,
+      };
+    };
 
     if (!loadId) {
       // Downtime expense: stored at users/{ownerUid}/actualExpenses (no load association)
@@ -4052,7 +4128,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setLoads(prev => prev.map(l => {
         if (l.id === loadId) {
           const existing = l.actualExpenses || [];
-          return { ...l, actualExpenses: [...existing, newExp] };
+          const updatedActuals = [...existing, newExp];
+          const updatedExpenses = buildUpdatedFuelExpenses(l, updatedActuals);
+          return {
+            ...l,
+            actualExpenses: updatedActuals,
+            ...(updatedExpenses ? { expenses: updatedExpenses } : {}),
+          };
         }
         return l;
       }));
@@ -4066,17 +4148,31 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const docRef = await addDoc(subcollRef, sanitizeForFirestore(cleanData));
       const newExp: ActualExpense = { id: docRef.id, ...cleanData };
 
-      // Also sync array to parent load document in Firestore for instant query & offline cache
+      const targetLoad = loads.find(l => l.id === loadId);
+      const updatedActualsForFuel = [
+        ...((targetLoad?.actualExpenses || []).filter(e => e.id !== docRef.id)),
+        newExp,
+      ];
+      const updatedExpensesForDoc = buildUpdatedFuelExpenses(targetLoad, updatedActualsForFuel);
+
+      // Also sync array (and replaced fuel expense if Fuel receipt) to parent load document
       const loadRef = doc(db, `users/${ownerUid}/loads`, loadId);
       await updateDoc(loadRef, {
         actualExpenses: arrayUnion(sanitizeForFirestore(newExp)),
+        ...(updatedExpensesForDoc ? { expenses: sanitizeForFirestore(updatedExpensesForDoc) } : {}),
       }).catch(e => console.warn('Could not arrayUnion to load doc:', e));
 
       // Update in local React state
       setLoads(prev => prev.map(l => {
         if (l.id === loadId) {
           const existing = (l.actualExpenses || []).filter(e => e.id !== docRef.id);
-          return { ...l, actualExpenses: [...existing, newExp] };
+          const nextActuals = [...existing, newExp];
+          const nextExpenses = buildUpdatedFuelExpenses(l, nextActuals);
+          return {
+            ...l,
+            actualExpenses: nextActuals,
+            ...(nextExpenses ? { expenses: nextExpenses } : {}),
+          };
         }
         return l;
       }));

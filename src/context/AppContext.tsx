@@ -1251,6 +1251,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [authUser, user, trialLoaded, trialRecord, trial.phase, trialClock, toast]);
 
   useEffect(() => {
+    if (!auth) {
+      setAuthUser(null);
+      setIsLoading(false);
+      setAppDisplayState('auth');
+      return;
+    }
     let isMounted = true;
     const unsubscribe = onAuthStateChanged(
       auth,
@@ -1964,10 +1970,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
                 const client = clients.find(c => c.id === finalSavedLoadData.clientId);
                 if (client && client.contactEmail) {
+                  try {
                     const emailSubject = `Load Approved: ${finalSavedLoadData.loadNumber || finalSavedLoadData.id}`;
                     const emailBody = `Dear ${client.contactName || client.companyName},<br><br>Your load request for ${formatAddress(finalSavedLoadData.origin, 'short')} to ${formatAddress(finalSavedLoadData.destination, 'short')} has been approved. Your Load ID is ${finalSavedLoadData.loadNumber || finalSavedLoadData.id}.<br><br>Thank you,<br>PayloadLogic`;
                     await sendNotificationEmail({ recipientEmail: client.contactEmail, subject: emailSubject, body: emailBody });
                     toast({ title: "Client Notification", description: `Approval notification sent to client for new load ${finalSavedLoadData.loadNumber}.` });
+                  } catch (emailErr) {
+                    console.warn("Non-fatal: failed to send client approval email:", emailErr);
+                  }
                 }
               }
 
@@ -1978,32 +1988,36 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                 finalSavedLoadData.assignedDriverId !== 'none' &&
                 (finalSavedLoadData.status === 'dispatched' || finalSavedLoadData.status === 'in-transit')
               ) {
-                const assignedDriver = driverProfiles.find(
-                  d => d.uid === finalSavedLoadData.assignedDriverId || d.authUid === finalSavedLoadData.assignedDriverId
-                );
-                const alertResult = dispatchDriverAssignmentAlert({
-                  driverId: finalSavedLoadData.assignedDriverId,
-                  driver: assignedDriver,
-                  loadId: finalSavedLoadData.id,
-                  loadData: finalSavedLoadData,
-                  isDispatched: finalSavedLoadData.status === 'dispatched',
-                });
+                try {
+                  const assignedDriver = driverProfiles.find(
+                    d => d.uid === finalSavedLoadData.assignedDriverId || d.authUid === finalSavedLoadData.assignedDriverId
+                  );
+                  const alertResult = dispatchDriverAssignmentAlert({
+                    driverId: finalSavedLoadData.assignedDriverId,
+                    driver: assignedDriver,
+                    loadId: finalSavedLoadData.id,
+                    loadData: finalSavedLoadData,
+                    isDispatched: finalSavedLoadData.status === 'dispatched',
+                  });
 
-                if (alertResult.smsUrl) {
-                  toast({
-                    title: 'Dispatch SMS Ready',
-                    description: `${alertResult.driverName}: ${alertResult.summaryMsg}`,
-                    action: (
-                      <ToastAction altText="Send SMS to driver" asChild>
-                        <a href={alertResult.smsUrl}>Send SMS</a>
-                      </ToastAction>
-                    ),
-                  });
-                } else {
-                  toast({
-                    title: 'In-App Driver Notification Sent',
-                    description: `${alertResult.driverName} notified in-app (${alertResult.summaryMsg})`,
-                  });
+                  if (alertResult.smsUrl) {
+                    toast({
+                      title: 'Dispatch SMS Ready',
+                      description: `${alertResult.driverName}: ${alertResult.summaryMsg}`,
+                      action: (
+                        <ToastAction altText="Send SMS to driver" asChild>
+                          <a href={alertResult.smsUrl}>Send SMS</a>
+                        </ToastAction>
+                      ),
+                    });
+                  } else {
+                    toast({
+                      title: 'In-App Driver Notification Sent',
+                      description: `${alertResult.driverName} notified in-app (${alertResult.summaryMsg})`,
+                    });
+                  }
+                } catch (alertErr) {
+                  console.warn("Non-fatal: failed to dispatch driver alert:", alertErr);
                 }
               }
             } catch (error: any) {

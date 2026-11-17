@@ -131,6 +131,7 @@ export function LoadForm({
   React.useEffect(() => { setExistingTripPicked(false); }, [editingLoadId]);
   const outboundFileInputRef = React.useRef<HTMLInputElement>(null);
 
+  const [formResetKey, setFormResetKey] = React.useState(0);
   const wasSubmittingRef = React.useRef(false);
   const resetLocalFormUiState = React.useCallback(() => {
     setDestinationClientId('');
@@ -143,6 +144,7 @@ export function LoadForm({
     setOpenSections(DEFAULT_OPEN_SECTIONS);
     lastAutoMappedReqIdRef.current = null;
     if (outboundFileInputRef.current) outboundFileInputRef.current.value = '';
+    setFormResetKey(k => k + 1);
   }, []);
 
   // After a successful load creation (isSubmitting: true -> false and form was cleared),
@@ -1697,6 +1699,7 @@ export function LoadForm({
       </CardHeader>
       <CardContent>
         <form
+          key={formResetKey}
           onSubmit={(e) => {
             if (existingTripPicked && (loadForm.tripId ?? 'none') === 'none') {
               e.preventDefault();

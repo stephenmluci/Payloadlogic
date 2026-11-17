@@ -20,6 +20,7 @@ export default function TermsOfServicePage() {
   const [eldAcknowledged, setEldAcknowledged] = useState(false);
 
   useEffect(() => {
+    if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
     });

@@ -1,5 +1,5 @@
 // PayloadLogic Service Worker (PWA Offline Support & Web Push)
-const CACHE_NAME = 'payloadlogic-pwa-v3';
+const CACHE_NAME = 'payloadlogic-pwa-v4';
 
 const PRECACHE_ASSETS = [
   '/',

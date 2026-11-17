@@ -32,6 +32,7 @@ export function LoadsPage() {
     expenses,
     loadForm, 
     setLoadForm, 
+    loadFormResetNonce,
     editingLoadId,
     handleSaveLoad,
     handleStartEditLoad,
@@ -350,6 +351,7 @@ export function LoadsPage() {
 
         <TabsContent value="createLoad">
           <LoadForm 
+            key={loadFormResetNonce}
             loadForm={loadForm}
             setLoadForm={setLoadForm}
             clients={clients}

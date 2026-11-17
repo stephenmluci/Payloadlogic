@@ -383,6 +383,7 @@ interface AppContextType {
   // Loads
   loadForm: Partial<Load>;
   setLoadForm: React.Dispatch<React.SetStateAction<Partial<Load>>>;
+  loadFormResetNonce: number;
   editingLoadId: string | null;
   setEditingLoadId: React.Dispatch<React.SetStateAction<string | null>>;
   handleSaveLoad: () => Promise<void>;
@@ -703,6 +704,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   });
 
   const [editingLoadId, setEditingLoadId] = useState<string | null>(null);
+  const [loadFormResetNonce, setLoadFormResetNonce] = useState<number>(0);
 
   const [expenseForm, setExpenseForm] = useState<Omit<Expense, 'id'>>({ 
     date: new Date().toISOString().split('T')[0], 
@@ -1629,16 +1631,34 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const createFreshLoadForm = (): Partial<Load> => ({
     ...initialLoadFormData,
+    assignedDriverName: '',
+    tripId: undefined,
+    cargoType: undefined,
+    vehicleTransportType: undefined,
+    cargoLength: undefined,
+    cargoWidth: undefined,
+    cargoHeight: undefined,
+    cargoWeightNum: undefined,
+    placementMode: undefined,
+    deckPercentageUsed: undefined,
+    outboundBolUrl: undefined,
+    outboundBolFileName: undefined,
+    outboundBolGeneratedAt: undefined,
+    totalAgreedRate: undefined,
+    originalClientRequestId: undefined,
+    requestedByClientName: undefined,
+    requestedByAuthUid: undefined,
     origin: { ...emptyAddress },
     destination: { ...emptyAddress },
   });
 
   const handleCancelEditLoad = () => {
-    setLoadForm(createFreshLoadForm());
     if (typeof window !== 'undefined') {
       try { localStorage.removeItem('agy_load_draft'); } catch {}
     }
+    setLoadForm(createFreshLoadForm());
     setEditingLoadId(null);
+    setLoadFormResetNonce(n => n + 1);
   };
 
   const isSavingLoadRef = React.useRef(false);
@@ -1705,11 +1725,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       ? { lat: loadForm.destination.lat, lng: loadForm.destination.lng }
       : null;
 
-    if (!originCoords && loadForm.origin?.city) {
-      originCoords = await geocodePhysicalAddress(loadForm.origin);
-    }
-    if (!destCoords && loadForm.destination?.city) {
-      destCoords = await geocodePhysicalAddress(loadForm.destination);
+    try {
+      if (!originCoords && loadForm.origin?.city) {
+        originCoords = await geocodePhysicalAddress(loadForm.origin);
+      }
+      if (!destCoords && loadForm.destination?.city) {
+        destCoords = await geocodePhysicalAddress(loadForm.destination);
+      }
+    } catch (geoErr) {
+      console.warn('Non-fatal geocoding error during save:', geoErr);
     }
 
     const sanitizedOrigin = sanitizeAddress(loadForm.origin);
@@ -4277,7 +4301,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     settingsForm, setSettingsForm, updateSettings,
     clientForm, setClientForm, addClient, updateClient, deleteClient,
     expenseForm, setExpenseForm, addExpense,
-    loadForm, setLoadForm, editingLoadId, setEditingLoadId, handleSaveLoad, updateLoad, handleDeleteLoad,
+    loadForm, setLoadForm, loadFormResetNonce, editingLoadId, setEditingLoadId, handleSaveLoad, updateLoad, handleDeleteLoad,
     handleStartEditLoad, handleCancelEditLoad, approveClientLoadRequest, rejectClientLoadRequest, generateAgreement, generateInvoice,
     updateLoadPhaseWithLocation, reportDriverException, updateDriverNote,
     trips, addTrip, updateTrip, handleDeleteTrip, getFuelOptimizationProfit,

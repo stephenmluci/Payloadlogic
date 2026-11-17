@@ -856,9 +856,15 @@ export function LoadForm({
   }, [loadForm]);
 
   // Ensure clientId and all fields are serialized to persistence layer right before unmount
+  // Only persist if a draft currently exists (do not resurrect a draft cleared on submit/reset).
   React.useEffect(() => {
     return () => {
       if (typeof window !== 'undefined' && loadFormRef.current) {
+        try {
+          if (localStorage.getItem(LS_LOAD_DRAFT) === null) return;
+        } catch {
+          return;
+        }
         const current = loadFormRef.current;
         const hasData = Boolean(
           current.clientId ||

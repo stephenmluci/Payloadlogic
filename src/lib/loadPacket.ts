@@ -241,12 +241,21 @@ export async function compileLoadPacketPdf(options: LoadPacketOptions): Promise<
   drawText('TOTAL DUE', boldFont, 9, width - margin - 70, yPos - 12, rgb(1, 1, 1));
   yPos -= 28;
 
-  // Row 1: Linehaul freight
+  // Row 1: Linehaul freight (Loaded miles)
   const baseRate = (load.distance || 0) * (load.ratePerMile || 0);
-  drawText(`Linehaul Freight Transport (${load.distance || 0} miles)`, font, 9.5, margin + 8, yPos);
+  drawText(`Linehaul Freight Transport (${load.distance || 0} loaded mi)`, font, 9.5, margin + 8, yPos);
   drawText(`$${(load.ratePerMile || 0).toFixed(2)}`, font, 9.5, width - margin - 150, yPos);
   drawText(`$${baseRate.toFixed(2)}`, boldFont, 9.5, width - margin - 70, yPos);
   yPos -= 18;
+
+  // Row 1b: Deadhead mileage charge (if applicable)
+  const deadheadCharge = (load.deadheadMiles || 0) * (load.ratePerMile || 0);
+  if ((load.deadheadMiles || 0) > 0) {
+    drawText(`Deadhead Transit (${load.deadheadMiles} deadhead mi)`, font, 9.5, margin + 8, yPos);
+    drawText(`$${(load.ratePerMile || 0).toFixed(2)}`, font, 9.5, width - margin - 150, yPos);
+    drawText(`$${deadheadCharge.toFixed(2)}`, boldFont, 9.5, width - margin - 70, yPos);
+    yPos -= 18;
+  }
 
   // Row 2: Tarping Fee (if applicable)
   if (load.requiresTarping && load.tarpingFee) {
@@ -256,8 +265,8 @@ export async function compileLoadPacketPdf(options: LoadPacketOptions): Promise<
     yPos -= 18;
   }
 
-  // Row 3: Special Terms or Fuel surcharges (if total differs from base + tarp)
-  const currentTotalCalculated = baseRate + (load.tarpingFee || 0);
+  // Row 3: Special Terms or Fuel surcharges (if total differs from base + deadhead + tarp)
+  const currentTotalCalculated = baseRate + deadheadCharge + (load.tarpingFee || 0);
   const diff = load.totalAgreedRate - currentTotalCalculated;
   if (Math.abs(diff) > 0.01) {
     drawText('Agreed Freight Adjustment / Accessorials', font, 9.5, margin + 8, yPos);

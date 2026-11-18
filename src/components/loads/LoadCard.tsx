@@ -6,6 +6,7 @@ import { vehicleToEngineTruck, vehicleToEngineTrailer, loadToCargoItem } from '@
 import { calculateHOSTransit } from '@/lib/hosEngine';
 import { computeCompliance } from '@/lib/complianceEngine';
 import { summarizeLoadFuelExpenses } from '@/lib/fuelExpense';
+import { calculateCustomerRateBreakdown } from '@/lib/loadPricing';
 import { HOSWarningBanner } from './HOSWarningBanner';
 import { ComplianceBadges } from './ComplianceBadges';
 import { Button } from '@/components/ui/button';
@@ -540,7 +541,7 @@ export function LoadCard({
     const effectiveAgreedRate =
       load.totalAgreedRate && load.totalAgreedRate > 0
         ? load.totalAgreedRate
-        : (load.distance || 0) * (load.ratePerMile || 0) + (load.tarpingFee || 0);
+        : calculateCustomerRateBreakdown(load).totalAgreedRate;
 
     projectedProfit = effectiveAgreedRate - totalProjectedExpenses;
   }
@@ -748,14 +749,27 @@ export function LoadCard({
                 Dest Contact: {load.destination.contactName} {load.destination.contactPhone ? `(${load.destination.contactPhone})` : ''}
               </div>
             )}
-            <div className="flex items-center text-muted-foreground">
-              <Milestone className="h-4 w-4 mr-2" />
-              Distance: {load.distance} miles
-            </div>
-            <div className="flex items-center text-muted-foreground">
-              <DollarSign className="h-4 w-4 mr-2" />
-              Rate/Mile: ${load.ratePerMile.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
+            {(() => {
+              const rateBreakdown = calculateCustomerRateBreakdown(load);
+              return (
+                <>
+                  <div className="flex items-center text-muted-foreground">
+                    <Milestone className="h-4 w-4 mr-2" />
+                    Loaded: {rateBreakdown.loadedMiles} mi (${rateBreakdown.loadedCharge.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                  </div>
+                  {rateBreakdown.deadheadMiles > 0 && (
+                    <div className="flex items-center text-muted-foreground">
+                      <Milestone className="h-4 w-4 mr-2 text-amber-600" />
+                      Deadhead: {rateBreakdown.deadheadMiles} mi (+${rateBreakdown.deadheadCharge.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                    </div>
+                  )}
+                  <div className="flex items-center text-muted-foreground">
+                    <DollarSign className="h-4 w-4 mr-2" />
+                    Rate/Mile: ${rateBreakdown.ratePerMile.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </>
+              );
+            })()}
              {(load.tarpingFee && load.tarpingFee > 0) && (
               <div className="flex items-center text-muted-foreground">
                 <DollarSign className="h-4 w-4 mr-2" />

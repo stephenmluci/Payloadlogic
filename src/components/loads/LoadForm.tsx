@@ -4,6 +4,7 @@ import { calculateTripMetrics, computeCargoLinearFootprint, calculateTimeProrate
 import { getDriverProfileId } from '@/lib/driverAssignment';
 import { vehicleToEngineTruck, vehicleToEngineTrailer, loadToCargoItem } from '@/lib/logisticsAdapters';
 import { calculateHOSTransit, calculateHOSTransitEstimate, toDateTimeLocal } from '@/lib/hosEngine';
+import { calculateCustomerRateBreakdown, getDriverGpsCoords, estimateRoadMilesBetweenCoords } from '@/lib/loadPricing';
 import { isVehicleCargo, calculateVehicleMarketReference } from '@/lib/vehicleMarketRates';
 import { computeCompliance } from '@/lib/complianceEngine';
 import { HOSWarningBanner } from './HOSWarningBanner';
@@ -429,22 +430,23 @@ export function LoadForm({
     if (driverId && driverId !== 'none') {
       const driver = driverProfiles.find(d => d.uid === driverId || d.id === driverId);
 
-      // 1. Current staging location from driver database profile
+      // 1. Most recent GPS coordinates from live telemetry or driver profile
+      const gps = getDriverGpsCoords(driver);
+      if (gps) {
+        return `${gps.lat},${gps.lng}`;
+      }
+
+      // 2. Current staging location from driver database profile
       if (driver?.currentStaging && driver.currentStaging.trim()) {
         return driver.currentStaging.trim();
       }
 
-      // 2. Live location from driver database profile (lastLocationCity & lastLocationState)
+      // 3. Live location from driver database profile (lastLocationCity & lastLocationState)
       if (driver?.lastLocationCity && driver?.lastLocationState) {
         return `${driver.lastLocationCity.trim()}, ${driver.lastLocationState.trim()}`;
       }
 
-      // 2. Live GPS coordinates from driver database profile
-      if (driver?.currentLat && driver?.currentLng) {
-        return `${driver.currentLat},${driver.currentLng}`;
-      }
-
-      // 3. Fallback to destination of most recently completed load
+      // 4. Fallback to destination of most recently completed load
       const completedLoads = effectiveLoads
         .filter(l => l.id !== editingLoadId && (l.assignedDriverId === driverId || (l as any).driverId === driverId) && (['delivered', 'completed'].includes(String(l.status || '').toLowerCase())))
         .sort((a, b) => new Date(b.deliveryDateTime || (b as any).lastCompletionTimestamp || 0).getTime() - new Date(a.deliveryDateTime || (a as any).lastCompletionTimestamp || 0).getTime());
@@ -726,6 +728,22 @@ export function LoadForm({
 
     if (key !== lastCalculatedDriver) {
       setLastCalculatedDriver(key);
+      const driverGps = getDriverGpsCoords(assignedDriverObj);
+      const applyFallbackEstimate = () => {
+        if (driverGps && typeof o.lat === 'number' && typeof o.lng === 'number') {
+          const estDh = estimateRoadMilesBetweenCoords(driverGps.lat, driverGps.lng, o.lat, o.lng);
+          setLoadForm(prev => {
+            if (prev.deadheadMiles !== undefined && prev.deadheadMiles !== null && prev.deadheadMiles > 0) {
+              return prev;
+            }
+            return { ...prev, deadheadMiles: estDh };
+          });
+          if (estDh > 0) {
+            toast({ title: 'Deadhead Estimated', description: `Deadhead miles estimated: ${estDh} mi from driver GPS` });
+          }
+        }
+      };
+
       fetch(`/api/distance?origin=${encodeURIComponent(driverLoc)}&destination=${encodeURIComponent(oStr)}`)
         .then(r => r.ok ? r.json() : null)
         .then(data => {
@@ -741,9 +759,12 @@ export function LoadForm({
                });
                toast({ title: 'Deadhead Calculated', description: `Deadhead miles auto-calculated: ${dh} mi from driver location` });
              }
+          } else {
+            applyFallbackEstimate();
           }
         }).catch(err => {
           console.warn('Auto deadhead fetch skipped or failed:', err);
+          applyFallbackEstimate();
         });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1535,7 +1556,12 @@ export function LoadForm({
 
     // Manual Rate Checks & Margin Warning Alert
     const manualRatePerMile = loadForm.ratePerMile || 0;
-    const manualGrossRevenue = loadedMiles * manualRatePerMile + tarpingFee;
+    const manualGrossRevenue = calculateCustomerRateBreakdown({
+      distance: loadedMiles,
+      deadheadMiles,
+      ratePerMile: manualRatePerMile,
+      tarpingFee,
+    }).totalAgreedRate;
     const assignedDriver = assignedDriverObj;
 
     let driverPay = 0;
@@ -2523,7 +2549,7 @@ export function LoadForm({
                 <span className="flex items-center gap-3"><StepBadge n={4} /><DollarSign className="h-5 w-5 text-emerald-600" /> Rate &amp; Pricing</span>
               </AccordionTrigger>
               <AccordionContent className="pt-2 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
                     <Label htmlFor="distance">Loaded Miles</Label>
                     <div className="relative">
@@ -2540,7 +2566,29 @@ export function LoadForm({
                         required
                       />
                     </div>
-                    <p className="text-[11px] text-muted-foreground mt-1">Total revenue-generating loaded miles.</p>
+                    <p className="text-[11px] text-muted-foreground mt-1">Origin to destination loaded miles.</p>
+                  </div>
+                  <div>
+                    <Label htmlFor="deadheadMiles">Deadhead Miles</Label>
+                    <div className="relative">
+                      <Milestone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-amber-500" />
+                      <Input 
+                        id="deadheadMiles"
+                        name="deadheadMiles"
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={loadForm.deadheadMiles !== undefined && loadForm.deadheadMiles !== null ? loadForm.deadheadMiles : ''} 
+                        onChange={handleInputChange} 
+                        placeholder="0 (or auto from GPS)"
+                        className="pl-10 bg-white" 
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      {getDriverGpsCoords(assignedDriverObj)
+                        ? 'Estimated from driver GPS to pickup (editable).'
+                        : 'No driver GPS on file — enter manually or leave 0.'}
+                    </p>
                   </div>
                   <div>
                     <Label htmlFor="ratePerMile">Rate per Mile ($)</Label>
@@ -2599,6 +2647,57 @@ export function LoadForm({
                     )}
                   </div>
                 </div>
+
+                {/* ── Customer-Facing Rate Breakdown (Loaded + Deadhead + Tarping) ── */}
+                {(() => {
+                  const customerBreakdown = calculateCustomerRateBreakdown({
+                    distance: loadForm.distance,
+                    deadheadMiles: loadForm.deadheadMiles,
+                    ratePerMile: loadForm.ratePerMile,
+                    tarpingFee: loadForm.tarpingFee,
+                  });
+                  if (customerBreakdown.ratePerMile <= 0 && customerBreakdown.loadedMiles <= 0 && customerBreakdown.deadheadMiles <= 0) {
+                    return null;
+                  }
+                  return (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                          Customer-Facing Rate Breakdown
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          Rate: ${customerBreakdown.ratePerMile.toFixed(2)}/mi
+                        </span>
+                      </div>
+                      <div className="space-y-1 text-xs">
+                        <div className="flex items-center justify-between text-slate-700">
+                          <span>
+                            Loaded Miles ({customerBreakdown.loadedMiles.toLocaleString()} mi &times; ${customerBreakdown.ratePerMile.toFixed(2)}/mi)
+                          </span>
+                          <span className="font-semibold">${customerBreakdown.loadedCharge.toFixed(2)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-700">
+                          <span>
+                            Deadhead Miles ({customerBreakdown.deadheadMiles.toLocaleString()} mi &times; ${customerBreakdown.ratePerMile.toFixed(2)}/mi)
+                          </span>
+                          <span className="font-semibold">
+                            {customerBreakdown.deadheadCharge > 0 ? `+$${customerBreakdown.deadheadCharge.toFixed(2)}` : '$0.00'}
+                          </span>
+                        </div>
+                        {customerBreakdown.tarpingFee > 0 && (
+                          <div className="flex items-center justify-between text-slate-700">
+                            <span>Tarping Fee</span>
+                            <span className="font-semibold">+${customerBreakdown.tarpingFee.toFixed(2)}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-sm font-bold text-slate-900">
+                        <span>Total Quoted Price (Customer)</span>
+                        <span className="text-emerald-700">${customerBreakdown.totalAgreedRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* ── Suggested Rate Panel ─────────────────────────────────────────── */}
                 {!isFinancialProfileComplete ? (
@@ -2777,34 +2876,17 @@ export function LoadForm({
                   >
                     <span className="flex items-center gap-2">
                       <Sliders className="h-3.5 w-3.5 text-emerald-600" />
-                      Additional Pricing &amp; Load Options (Deadhead Miles, Tarping, Status)
+                      Additional Pricing &amp; Load Options (Tarping, Status)
                     </span>
-                    {(showAdvancedPricing || Boolean(loadForm.deadheadMiles) || Boolean(loadForm.requiresTarping) || Boolean(loadForm.tarpingFee && loadForm.tarpingFee > 0) || (loadForm.status && loadForm.status !== 'pending' && loadForm.status !== 'pending_approval')) ? (
+                    {(showAdvancedPricing || Boolean(loadForm.requiresTarping) || Boolean(loadForm.tarpingFee && loadForm.tarpingFee > 0) || (loadForm.status && loadForm.status !== 'pending' && loadForm.status !== 'pending_approval')) ? (
                       <ChevronUp className="h-4 w-4 text-slate-500" />
                     ) : (
                       <ChevronDown className="h-4 w-4 text-slate-500" />
                     )}
                   </button>
 
-                  {(showAdvancedPricing || Boolean(loadForm.deadheadMiles) || Boolean(loadForm.requiresTarping) || Boolean(loadForm.tarpingFee && loadForm.tarpingFee > 0) || (loadForm.status && loadForm.status !== 'pending' && loadForm.status !== 'pending_approval')) && (
+                  {(showAdvancedPricing || Boolean(loadForm.requiresTarping) || Boolean(loadForm.tarpingFee && loadForm.tarpingFee > 0) || (loadForm.status && loadForm.status !== 'pending' && loadForm.status !== 'pending_approval')) && (
                     <div className="p-4 border-t border-slate-200 bg-white space-y-4 animate-in fade-in duration-150">
-                      <div>
-                        <Label htmlFor="deadheadMiles">Deadhead Miles (Empty transit to pickup)</Label>
-                        <div className="relative">
-                          <Milestone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                          <Input 
-                            id="deadheadMiles"
-                            name="deadheadMiles"
-                            type="number"
-                            step="any"
-                            value={loadForm.deadheadMiles !== undefined && loadForm.deadheadMiles !== null ? loadForm.deadheadMiles : ''} 
-                            onChange={handleInputChange} 
-                            placeholder="e.g., 50"
-                            className="pl-10 bg-white" 
-                          />
-                        </div>
-                        <p className="text-[11px] text-muted-foreground mt-1">Miles driven empty before reaching the pickup facility.</p>
-                      </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
                         <div className="flex items-center space-x-2 pt-2">

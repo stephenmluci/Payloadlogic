@@ -26,6 +26,7 @@ import { normalizeLoadDriverAssignment, isLoadAssignedToDriver, getDriverProfile
 import { resolveCoordinates } from '@/lib/routeUtils';
 import { getDetentionFreeTimeMinutes, getDetentionFeeRate, formatFreeTimeLabel } from '@/lib/detention';
 import { deduplicateLoads, getLoadDuplicateKey, isLoadCompleted } from '@/lib/loadStatus';
+import { calculateCustomerRateBreakdown } from '@/lib/loadPricing';
 
 
 
@@ -1704,7 +1705,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
     setIsSubmitting(true);
 
-    const calculatedTotalRate = (loadForm.distance || 0) * (loadForm.ratePerMile || 0) + (loadForm.tarpingFee || 0);
+    const calculatedTotalRate = calculateCustomerRateBreakdown({
+      distance: loadForm.distance,
+      deadheadMiles: loadForm.deadheadMiles,
+      ratePerMile: loadForm.ratePerMile,
+      tarpingFee: loadForm.tarpingFee,
+    }).totalAgreedRate;
     const totalTripMilesForTime = (loadForm.distance || 0) + (loadForm.deadheadMiles || 0);
     const calculatedDriveTime = totalTripMilesForTime > 0
         ? totalTripMilesForTime / 55
@@ -2117,11 +2123,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     
     const calculateFinalUpdates = (currentLoad: Load): Partial<Load> => {
         let finalUpdates = { ...effectiveUpdates };
-        if (effectiveUpdates.distance !== undefined || effectiveUpdates.ratePerMile !== undefined || effectiveUpdates.tarpingFee !== undefined) {
-            const newDistance = effectiveUpdates.distance ?? currentLoad.distance;
-            const newRatePerMile = effectiveUpdates.ratePerMile ?? currentLoad.ratePerMile;
-            const newTarpingFee = effectiveUpdates.tarpingFee ?? (currentLoad.tarpingFee || 0);
-            finalUpdates.totalAgreedRate = (newDistance * newRatePerMile) + newTarpingFee;
+        if (
+          effectiveUpdates.distance !== undefined ||
+          effectiveUpdates.deadheadMiles !== undefined ||
+          effectiveUpdates.ratePerMile !== undefined ||
+          effectiveUpdates.tarpingFee !== undefined
+        ) {
+            finalUpdates.totalAgreedRate = calculateCustomerRateBreakdown({
+              distance: effectiveUpdates.distance ?? currentLoad.distance,
+              deadheadMiles: effectiveUpdates.deadheadMiles ?? currentLoad.deadheadMiles,
+              ratePerMile: effectiveUpdates.ratePerMile ?? currentLoad.ratePerMile,
+              tarpingFee: effectiveUpdates.tarpingFee ?? currentLoad.tarpingFee,
+            }).totalAgreedRate;
         }
         if (effectiveUpdates.distance !== undefined) {
             finalUpdates.estimatedDriveTimeHours = (effectiveUpdates.distance || 0) / 55;
@@ -3278,9 +3291,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       yPos = drawTextLine(destAddressLine || 'N/A', font, fontSize, margin + 40, yPos);
 
       yPos = drawTextLine(`Cargo: ${loadData.cargoDescription || 'N/A'}`, font, fontSize, margin + 20, yPos);
-      if (loadData.requiresTarping && loadData.tarpingFee) {
-        yPos = drawTextLine(`Base Rate: $${((loadData.distance || 0) * (loadData.ratePerMile || 0)).toFixed(2)}`, font, fontSize, margin + 20, yPos);
-        yPos = drawTextLine(`Tarping Fee: $${loadData.tarpingFee.toFixed(2)}`, font, fontSize, margin + 20, yPos);
+      const agreementBreakdown = calculateCustomerRateBreakdown(loadData);
+      if (agreementBreakdown.deadheadMiles > 0 || (loadData.requiresTarping && loadData.tarpingFee)) {
+        yPos = drawTextLine(`Loaded Linehaul (${agreementBreakdown.loadedMiles} mi @ $${agreementBreakdown.ratePerMile.toFixed(2)}/mi): $${agreementBreakdown.loadedCharge.toFixed(2)}`, font, fontSize, margin + 20, yPos);
+        if (agreementBreakdown.deadheadMiles > 0) {
+          yPos = drawTextLine(`Deadhead Transit (${agreementBreakdown.deadheadMiles} mi @ $${agreementBreakdown.ratePerMile.toFixed(2)}/mi): $${agreementBreakdown.deadheadCharge.toFixed(2)}`, font, fontSize, margin + 20, yPos);
+        }
+        if (loadData.requiresTarping && loadData.tarpingFee) {
+          yPos = drawTextLine(`Tarping Fee: $${loadData.tarpingFee.toFixed(2)}`, font, fontSize, margin + 20, yPos);
+        }
       }
       yPos = drawTextLine(`Total Agreed Rate: $${loadData.totalAgreedRate.toFixed(2)}`, boldFont, fontSize, margin + 20, yPos);
 
@@ -3423,11 +3442,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       drawTextLine('AMOUNT', boldFont, 10, width - margin - 60, yPos + 5);
       yPos -= 30;
 
-      // Base Rate
-      const baseRate = (loadData.distance || 0) * (loadData.ratePerMile || 0);
-      drawTextLine(`Freight Charges: ${loadData.distance} miles @ $${loadData.ratePerMile.toFixed(2)}/mi`, font, fontSize, margin + 5, yPos);
-      drawTextLine(`$${baseRate.toFixed(2)}`, font, fontSize, width - margin - 60, yPos);
+      // Base Rate (Loaded + Deadhead kept separate)
+      const invoiceBreakdown = calculateCustomerRateBreakdown(loadData);
+      drawTextLine(`Freight Charges (Loaded): ${invoiceBreakdown.loadedMiles} miles @ $${invoiceBreakdown.ratePerMile.toFixed(2)}/mi`, font, fontSize, margin + 5, yPos);
+      drawTextLine(`$${invoiceBreakdown.loadedCharge.toFixed(2)}`, font, fontSize, width - margin - 60, yPos);
       yPos -= lineSpacing;
+
+      if (invoiceBreakdown.deadheadMiles > 0) {
+        drawTextLine(`Deadhead Mileage: ${invoiceBreakdown.deadheadMiles} miles @ $${invoiceBreakdown.ratePerMile.toFixed(2)}/mi`, font, fontSize, margin + 5, yPos);
+        drawTextLine(`$${invoiceBreakdown.deadheadCharge.toFixed(2)}`, font, fontSize, width - margin - 60, yPos);
+        yPos -= lineSpacing;
+      }
 
       // Tarping
       if (loadData.requiresTarping && loadData.tarpingFee) {

@@ -988,6 +988,12 @@ export function DriverDashboard() {
             <div className="flex items-center gap-2 shrink-0">
               <NotificationBell
                 driverId={targetDriverId || driverProfile.uid}
+                driverIds={[
+                  targetDriverId,
+                  driverProfile.uid,
+                  (driverProfile as any).authUid,
+                  user?.uid,
+                ].filter(Boolean) as string[]}
                 onSelectLoad={(loadId) => {
                   document.getElementById(`driver-load-${loadId}`)?.scrollIntoView({
                     behavior: 'smooth',

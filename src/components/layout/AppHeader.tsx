@@ -13,6 +13,7 @@ import {
 import { useApp } from '@/context/AppContext';
 import { RoleToggle } from '@/components/layout/RoleToggle';
 import { PayloadLogicLogo } from '@/components/brand/PayloadLogicLogo';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 
 
 
@@ -25,7 +26,12 @@ export function AppHeader({ userEmail, onSignOut }: AppHeaderProps) {
   const userInitials = userEmail ? userEmail.substring(0, 2).toUpperCase() : 'JD';
   const userName = userEmail ? userEmail.split('@')[0] : 'User';
 
-  const { clientLoadRequests, setActiveTab, activeTab, goBackInApp, setViewClientRequestId, user, openHelpTopic, previewRole, setPreviewRole } = useApp();
+  const { clientLoadRequests, setActiveTab, activeTab, goBackInApp, setViewClientRequestId, user, openHelpTopic, previewRole, setPreviewRole, driverProfiles } = useApp();
+
+  const isDriverViewActive = user?.role === 'driver' || previewRole === 'driver';
+  const activeDriverForHeader = isDriverViewActive
+    ? (driverProfiles.find((d) => d.uid === (user?.driverProfileId || user?.uid) || (d as any).authUid === user?.uid) ?? driverProfiles[0])
+    : undefined;
 
   // Role-aware subtitle shown next to the avatar
   const roleLabel =
@@ -55,6 +61,22 @@ export function AppHeader({ userEmail, onSignOut }: AppHeaderProps) {
           <span>Help &amp; Guides</span>
         </Link>
 
+        {isDriverViewActive && activeDriverForHeader ? (
+          <NotificationBell
+            driverId={activeDriverForHeader.uid}
+            driverIds={[
+              activeDriverForHeader.uid,
+              (activeDriverForHeader as any).authUid,
+              user?.uid,
+            ].filter(Boolean) as string[]}
+            onSelectLoad={(loadId) => {
+              document.getElementById(`driver-load-${loadId}`)?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center',
+              });
+            }}
+          />
+        ) : (
         <Popover>
           <PopoverTrigger asChild>
             <button
@@ -137,6 +159,7 @@ export function AppHeader({ userEmail, onSignOut }: AppHeaderProps) {
             </div>
           </PopoverContent>
         </Popover>
+        )}
 
         {/* Driver View preview toggle — admin only, visible on sm and up */}
         <div className="hidden sm:block">

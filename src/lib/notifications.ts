@@ -189,25 +189,47 @@ export async function markNotificationAsRead(notificationId: string): Promise<vo
 }
 
 /**
+ * Marks multiple notifications as read in Firestore.
+ */
+export async function markAllNotificationsAsRead(notificationIds: string[]): Promise<void> {
+  const uniqueIds = Array.from(new Set(notificationIds.filter(Boolean)));
+  if (uniqueIds.length === 0) return;
+  await Promise.all(
+    uniqueIds.map((id) =>
+      updateDoc(doc(db, 'notifications', id), { isRead: true }).catch((err) =>
+        console.warn('Failed to mark notification as read:', err)
+      )
+    )
+  );
+}
+
+/**
  * Real-time listener for a driver's notifications using onSnapshot.
- * Listens to `notifications` where driverId == targetDriverId.
+ * Accepts a single driverId or an array of candidate IDs (e.g. profile uid + authUid)
+ * and merges/deduplicates results sorted newest first.
  */
 export function subscribeToDriverNotifications(
-  driverId: string,
+  driverIdOrIds: string | string[],
   onUpdate: (notifications: AppNotification[]) => void,
   onError?: (error: any) => void
 ): () => void {
-  if (!driverId) {
+  const ids = Array.from(
+    new Set(
+      (Array.isArray(driverIdOrIds) ? driverIdOrIds : [driverIdOrIds])
+        .map((id) => (id || '').trim())
+        .filter((id) => Boolean(id) && id !== 'none')
+    )
+  );
+
+  if (ids.length === 0) {
     onUpdate([]);
     return () => {};
   }
 
   const colRef = collection(db, 'notifications');
-  const q = query(
-    colRef,
-    where('driverId', '==', driverId),
-    limit(50)
-  );
+  const q = ids.length === 1
+    ? query(colRef, where('driverId', '==', ids[0]), limit(50))
+    : query(colRef, where('driverId', 'in', ids.slice(0, 10)), limit(50));
 
   const unsubscribe = onSnapshot(
     q,
@@ -216,7 +238,7 @@ export function subscribeToDriverNotifications(
         const data = docSnap.data();
         return {
           id: docSnap.id,
-          driverId: data.driverId || driverId,
+          driverId: data.driverId || ids[0],
           title: data.title || '',
           message: data.message || '',
           isRead: Boolean(data.isRead),

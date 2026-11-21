@@ -1,36 +1,40 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { AppNotification } from '@/types';
-import { subscribeToDriverNotifications, markNotificationAsRead } from '@/lib/notifications';
+import {
+  subscribeToDriverNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+} from '@/lib/notifications';
 import { registerServiceWorker, subscribeUserToPush } from '@/lib/webPushClient';
 import { useApp } from '@/context/AppContext';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Bell, Check, CheckCheck, Clock, ExternalLink, Inbox, Package, Smartphone } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 
 interface NotificationBellProps {
   driverId: string;
+  /** Optional additional candidate IDs (e.g. authUid) to include in the subscription. */
+  driverIds?: string[];
   onSelectLoad?: (loadId: string) => void;
 }
 
-export function NotificationBell({ driverId, onSelectLoad }: NotificationBellProps) {
+export function NotificationBell({ driverId, driverIds, onSelectLoad }: NotificationBellProps) {
   const { updateDriverProfile } = useApp();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [pushStatus, setPushStatus] = useState<'prompt' | 'granted' | 'denied' | 'unsupported'>('prompt');
   const [isSubscribingPush, setIsSubscribingPush] = useState(false);
 
+  const subscriptionKey = useMemo(() => {
+    const all = [driverId, ...(driverIds || [])]
+      .map((id) => (id || '').trim())
+      .filter((id) => Boolean(id) && id !== 'none');
+    return Array.from(new Set(all)).join('|');
+  }, [driverId, driverIds]);
+
   useEffect(() => {
-    // Register the service worker on mount
     registerServiceWorker();
 
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -52,15 +56,12 @@ export function NotificationBell({ driverId, onSelectLoad }: NotificationBellPro
       const sub = await subscribeUserToPush();
       if (sub) {
         setPushStatus('granted');
-        // Save the web push subscription JSON into the driver profile
         const subJson = sub.toJSON();
         await updateDriverProfile(driverId, {
           webPushSubscription: subJson,
         });
-      } else {
-        if (typeof window !== 'undefined' && 'Notification' in window) {
-          setPushStatus(Notification.permission as any);
-        }
+      } else if (typeof window !== 'undefined' && 'Notification' in window) {
+        setPushStatus(Notification.permission as any);
       }
     } catch (err) {
       console.warn('Error enabling web push:', err);
@@ -70,21 +71,31 @@ export function NotificationBell({ driverId, onSelectLoad }: NotificationBellPro
   };
 
   useEffect(() => {
-    if (!driverId) return;
+    if (!subscriptionKey) {
+      setNotifications([]);
+      return;
+    }
 
-    // Real-time Firestore onSnapshot subscription
-    const unsubscribe = subscribeToDriverNotifications(driverId, (items) => {
+    const ids = subscriptionKey.split('|');
+    const unsubscribe = subscribeToDriverNotifications(ids, (items) => {
       setNotifications(items);
     });
 
     return () => unsubscribe();
-  }, [driverId]);
+  }, [subscriptionKey]);
 
-  // Unread count
   const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+  const markLocalAsRead = (idsToMark: string[]) => {
+    const idSet = new Set(idsToMark);
+    setNotifications((prev) =>
+      prev.map((n) => (idSet.has(n.id) ? { ...n, isRead: true } : n))
+    );
+  };
 
   const handleNotificationClick = async (notif: AppNotification) => {
     if (!notif.isRead) {
+      markLocalAsRead([notif.id]);
       await markNotificationAsRead(notif.id).catch((err) =>
         console.warn('Failed to mark notification as read:', err)
       );
@@ -98,43 +109,48 @@ export function NotificationBell({ driverId, onSelectLoad }: NotificationBellPro
     setIsOpen(false);
   };
 
-  const handleMarkAllAsRead = async () => {
-    const unreadList = notifications.filter((n) => !n.isRead);
-    await Promise.all(
-      unreadList.map((n) =>
-        markNotificationAsRead(n.id).catch((err) =>
-          console.warn('Failed to mark read:', err)
-        )
-      )
+  const handleMarkSingleRead = async (e: React.MouseEvent, notifId: string) => {
+    e.stopPropagation();
+    markLocalAsRead([notifId]);
+    await markNotificationAsRead(notifId).catch((err) =>
+      console.warn('Failed to mark notification as read:', err)
     );
   };
 
+  const handleMarkAllAsRead = async () => {
+    const unreadIds = notifications.filter((n) => !n.isRead).map((n) => n.id);
+    if (unreadIds.length === 0) return;
+    markLocalAsRead(unreadIds);
+    await markAllNotificationsAsRead(unreadIds);
+  };
+
   return (
-    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
-      <DropdownMenuTrigger asChild>
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <PopoverTrigger asChild>
         <button
           type="button"
           aria-label="Driver Notifications"
-          className="relative p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-all border border-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+          aria-expanded={isOpen}
+          className="relative p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-all border border-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500/50 cursor-pointer"
         >
           <Bell className="w-5 h-5" />
           {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-extrabold text-white ring-2 ring-slate-900 animate-in zoom-in-75 duration-150">
+            <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-extrabold text-white ring-2 ring-slate-900">
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}
         </button>
-      </DropdownMenuTrigger>
+      </PopoverTrigger>
 
-      <DropdownMenuContent
+      <PopoverContent
         align="end"
         sideOffset={8}
-        className="w-[340px] sm:w-[380px] p-0 rounded-2xl bg-white border border-slate-200 shadow-xl overflow-hidden z-50 animate-in fade-in-0 zoom-in-95"
+        className="w-[min(92vw,380px)] p-0 rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden z-[200]"
       >
         {/* Header */}
-        <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Bell className="w-4 h-4 text-amber-400" />
+        <div className="bg-slate-900 text-white p-3.5 sm:p-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Bell className="w-4 h-4 text-amber-400 shrink-0" />
             <h4 className="text-sm font-bold tracking-tight text-white">Notifications</h4>
             {unreadCount > 0 ? (
               <Badge className="bg-red-500/20 text-red-300 border border-red-500/40 text-[10px] px-1.5 py-0">
@@ -151,10 +167,10 @@ export function NotificationBell({ driverId, onSelectLoad }: NotificationBellPro
             <button
               type="button"
               onClick={handleMarkAllAsRead}
-              className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1 transition-colors"
+              className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1 transition-colors shrink-0 cursor-pointer"
             >
               <CheckCheck className="w-3.5 h-3.5" />
-              <span>Mark all read</span>
+              <span>Clear / Mark read</span>
             </button>
           )}
         </div>
@@ -178,13 +194,13 @@ export function NotificationBell({ driverId, onSelectLoad }: NotificationBellPro
         )}
 
         {/* Notification List */}
-        <div className="max-h-[380px] overflow-y-auto divide-y divide-slate-100">
+        <div className="max-h-[min(60vh,380px)] overflow-y-auto divide-y divide-slate-100">
           {notifications.length === 0 ? (
             <div className="p-8 text-center bg-slate-50/50">
               <Inbox className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-xs font-semibold text-slate-600">No notifications yet</p>
+              <p className="text-xs font-semibold text-slate-600">No new notifications</p>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                New load assignments and dispatch updates will appear here.
+                Load assignments, status updates, and dispatch notes will appear here.
               </p>
             </div>
           ) : (
@@ -219,7 +235,7 @@ export function NotificationBell({ driverId, onSelectLoad }: NotificationBellPro
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1 mb-0.5">
+                    <div className="flex items-center justify-between gap-2 mb-0.5">
                       <p
                         className={`text-xs truncate ${
                           notif.isRead
@@ -227,10 +243,18 @@ export function NotificationBell({ driverId, onSelectLoad }: NotificationBellPro
                             : 'font-bold text-slate-900'
                         }`}
                       >
-                        {notif.title}
+                        {notif.title || 'Dispatch Notification'}
                       </p>
                       {!notif.isRead && (
-                        <span className="w-2 h-2 rounded-full bg-red-600 shrink-0" />
+                        <button
+                          type="button"
+                          onClick={(e) => handleMarkSingleRead(e, notif.id)}
+                          title="Mark as read"
+                          className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded shrink-0 cursor-pointer"
+                        >
+                          <Check className="w-2.5 h-2.5" />
+                          Read
+                        </button>
                       )}
                     </div>
 
@@ -255,7 +279,7 @@ export function NotificationBell({ driverId, onSelectLoad }: NotificationBellPro
             })
           )}
         </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </PopoverContent>
+    </Popover>
   );
 }

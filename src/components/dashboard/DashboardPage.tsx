@@ -6,6 +6,7 @@ import { MetricCard } from './MetricCard';
 import { NeedsAttentionPanel } from './NeedsAttentionPanel';
 import { SetupCompleteBanner } from './SetupCompleteBanner';
 import { summarizeLoadFuelExpenses } from '@/lib/fuelExpense';
+import { getUnifiedLoadStatusDisplay } from '@/lib/loadStatus';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
@@ -638,20 +639,18 @@ export function DashboardPage() {
                     <td className="px-6 py-4 font-bold text-slate-800">${load.totalAgreedRate.toLocaleString()}</td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-1 items-start">
-                        {/* Primary status pill */}
-                        <span className={cn(
-                          "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                          load.status === 'delivered' ? "bg-teal-700 text-white" :
-                          load.status === 'approved' ? "bg-blue-600 text-white" :
-                          load.status === 'in-transit' ? "bg-emerald-600 text-white" :
-                          (load.status === 'loading' || load.status === 'unloading') ? "bg-blue-100 text-blue-800" :
-                          load.status === 'waiting' ? "bg-orange-100 text-orange-800" :
-                          (load.status === 'on-break' || load.status === 'idle') ? "bg-slate-100 text-slate-700" :
-                          load.status === 'client-request-approved' ? "bg-teal-500 text-white" :
-                          "bg-yellow-500 text-white" // pending
-                        )}>
-                          {load.status === 'pending_approval' ? 'Pending Approval' : load.status.replace(/[-_]/g, ' ')}
-                        </span>
+                        {/* Primary status pill (unified with Loads page & Driver view) */}
+                        {(() => {
+                          const statusDisplay = getUnifiedLoadStatusDisplay(load);
+                          return (
+                            <span className={cn(
+                              "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                              statusDisplay.color,
+                            )}>
+                              {statusDisplay.label}
+                            </span>
+                          );
+                        })()}
                         {load.driverExceptionFlag && (
                           <Badge className="bg-red-100 text-red-700 border-red-200 text-[9px] px-1.5 py-0 font-bold uppercase">
                             ⚠ {load.driverExceptionFlag}

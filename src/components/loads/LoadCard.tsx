@@ -27,7 +27,7 @@ import { useApp } from '@/context/AppContext';
 import { ShareLoadPacketModal } from './ShareLoadPacketModal';
 import { SignedBolUpload } from './SignedBolUpload';
 import { getDriverProfileId } from '@/lib/driverAssignment';
-import { normalizeLoadStatus, isLoadCompleted } from '@/lib/loadStatus';
+import { normalizeLoadStatus, isLoadCompleted, hasLoadPod } from '@/lib/loadStatus';
 import {
   calculateLoadDetention,
   getDetentionFreeTimeMinutes,
@@ -93,10 +93,15 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
 /** Returns a concise unified label for the dispatcher badge */
 export function getDispatcherStatusLabel(statusKey: string, load?: Load): { label: string; color: string } {
   const norm = (statusKey || '').toLowerCase();
-  if (norm === 'delivered' || norm === 'complete' || norm === 'delivered / completed') {
-    const hasBol = Boolean(load?.signedBolUrl || load?.paperworkStatus === 'pod_uploaded' || load?.paperworkStatus === 'invoiced' || load?.paperworkStatus === 'closed');
-    if (hasBol) {
-      return { label: 'Delivered (POD Verified)', color: 'bg-emerald-700 text-white' };
+  if (
+    norm === 'delivered' ||
+    norm === 'complete' ||
+    norm === 'completed' ||
+    norm === 'delivered / completed' ||
+    (load && isLoadCompleted(load))
+  ) {
+    if (hasLoadPod(load)) {
+      return { label: 'Delivered / Completed', color: 'bg-emerald-700 text-white' };
     }
     return { label: 'Delivered (Pending POD)', color: 'bg-amber-600 text-white' };
   }

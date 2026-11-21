@@ -40,10 +40,11 @@ const CDL_THRESHOLD = 26_000; // lbs — 49 CFR § 383.91
 
 const emptyAddress = { street: '', city: '', state: '', zip: '', contactName: '', contactPhone: '' };
 const blankLoadForm = {
-  clientId: '', origin: emptyAddress, destination: emptyAddress,
+  clientId: '', clientName: '', companyName: '', origin: emptyAddress, destination: emptyAddress,
   pickupDateTime: '', deliveryDateTime: '',
-  ratePerMile: 0, distance: 0, deadheadMiles: 0, status: 'pending' as const,
-  cargoDescription: '', specialTerms: '', requiresTarping: false, tarpingFee: 0,
+  ratePerMile: 0, distance: 0, deadheadMiles: 0, status: 'pending_approval' as const,
+  cargoDescription: '', cargoDimensions: '', cargoWeight: '', specialTerms: '',
+  requiresTarping: false, tarpingFee: 0,
   tripDuration: undefined, assignedTruckId: '', assignedTrailerId: '', assignedDriverId: '',
   cargoQuantity: 1,
   bolSource: 'broker' as const,
@@ -894,6 +895,8 @@ export function LoadForm({
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
+    // Never pollute the Create Load draft while editing an existing load
+    if (Boolean(editingLoadId)) return;
     const current = loadForm;
     const hasData = Boolean(
       current.clientId ||
@@ -902,16 +905,22 @@ export function LoadForm({
       current.cargoDescription ||
       (current.origin as Address)?.city ||
       (current.destination as Address)?.city ||
+      current.pickupDateTime ||
+      current.deliveryDateTime ||
+      (current.distance && current.distance > 0) ||
+      (current.ratePerMile && current.ratePerMile > 0) ||
       current.originalClientRequestId
     );
-    if (hasData) {
-      try {
+    try {
+      if (hasData) {
         localStorage.setItem(LS_LOAD_DRAFT, JSON.stringify(current));
-      } catch (e) {
-        console.warn('Failed to save load draft', e);
+      } else {
+        localStorage.removeItem(LS_LOAD_DRAFT);
       }
+    } catch (e) {
+      console.warn('Failed to update load draft', e);
     }
-  }, [loadForm]);
+  }, [loadForm, editingLoadId]);
 
   // Ensure clientId and all fields are serialized to persistence layer right before unmount
   // Only persist if a draft currently exists (do not resurrect a draft cleared on submit/reset).

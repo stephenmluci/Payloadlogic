@@ -58,7 +58,97 @@ export function isLoadCompleted(
     return true;
   }
   if (Boolean(load.deliveredAt)) return true;
+  const pw = (load.paperworkStatus || '').toLowerCase().trim();
+  if (pw === 'pod_uploaded' || pw === 'invoiced' || pw === 'closed') return true;
   return false;
+}
+
+/**
+ * Returns true if the load has a Proof of Delivery (signed BOL / e-POD) on file
+ * or has already been invoiced, paid, or closed out.
+ */
+export function hasLoadPod(
+  load?: (Partial<Pick<Load, 'signedBolUrl' | 'paperworkStatus'>> & {
+    podUrl?: string | null;
+    paymentStatus?: string | null;
+    isPaid?: boolean;
+    paidAt?: string | null;
+  }) | null,
+): boolean {
+  if (!load) return false;
+  const pw = (load.paperworkStatus || '').toLowerCase().trim();
+  const pay = (load.paymentStatus || '').toLowerCase().trim();
+  return Boolean(
+    load.signedBolUrl ||
+    load.podUrl ||
+    pw === 'pod_uploaded' ||
+    pw === 'invoiced' ||
+    pw === 'closed' ||
+    pay === 'paid' ||
+    load.isPaid ||
+    load.paidAt,
+  );
+}
+
+/**
+ * Single source of truth for displaying a load's status pill across Overview,
+ * Loads page, LoadCard, and Driver view.
+ */
+export function getUnifiedLoadStatusDisplay(
+  load: Pick<Load, 'status' | 'driverPhase' | 'deliveredAt' | 'paperworkStatus' | 'signedBolUrl'> & {
+    podUrl?: string | null;
+    paymentStatus?: string | null;
+    isPaid?: boolean;
+    paidAt?: string | null;
+  },
+): { statusKey: Load['status']; label: string; color: string } {
+  if (isLoadCompleted(load)) {
+    if (hasLoadPod(load)) {
+      return {
+        statusKey: 'delivered',
+        label: 'Delivered / Completed',
+        color: 'bg-emerald-700 text-white',
+      };
+    }
+    return {
+      statusKey: 'delivered',
+      label: 'Delivered (Pending POD)',
+      color: 'bg-amber-600 text-white',
+    };
+  }
+
+  const norm = normalizeLoadStatus(load.status);
+  switch (norm) {
+    case 'pending_approval':
+    case 'pending':
+      return { statusKey: norm, label: 'Pending Approval', color: 'bg-amber-500 text-white' };
+    case 'approved':
+      return { statusKey: norm, label: 'Approved', color: 'bg-blue-600 text-white' };
+    case 'client-request-approved':
+      return { statusKey: norm, label: 'Req. Approved', color: 'bg-teal-500 text-white' };
+    case 'dispatched':
+      return { statusKey: norm, label: 'Dispatched', color: 'bg-indigo-600 text-white' };
+    case 'Deadheading':
+      return { statusKey: norm, label: 'Deadheading', color: 'bg-indigo-600 text-white' };
+    case 'arrived-origin':
+      return { statusKey: norm, label: 'Arrived at Origin', color: 'bg-cyan-600 text-white' };
+    case 'loading':
+      return { statusKey: norm, label: 'Loading', color: 'bg-blue-100 text-blue-800' };
+    case 'in-transit':
+      return { statusKey: norm, label: 'In Transit (Loaded)', color: 'bg-emerald-600 text-white' };
+    case 'arrived-destination':
+      return { statusKey: norm, label: 'Arrived at Destination', color: 'bg-teal-600 text-white' };
+    case 'unloading':
+      return { statusKey: norm, label: 'Unloading', color: 'bg-amber-100 text-amber-800' };
+    case 'waiting':
+      return { statusKey: norm, label: 'Waiting / Detention', color: 'bg-orange-100 text-orange-800' };
+    case 'on-break':
+      return { statusKey: norm, label: 'On Break', color: 'bg-slate-100 text-slate-700' };
+    case 'idle':
+      return { statusKey: norm, label: 'Idle / Staging', color: 'bg-slate-100 text-slate-700' };
+    default:
+      return { statusKey: 'pending_approval', label: 'Pending Approval', color: 'bg-amber-500 text-white' };
+  }
 }
 
 /**

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/hooks/use-toast';
 import { isLoadDetentionActive } from '@/lib/detention';
+import { hasLoadPod } from '@/lib/loadStatus';
 import { ShareLiveLocationToggle } from './ShareLiveLocationToggle';
 import {
   computeDeckPositions,
@@ -449,9 +450,8 @@ export function DriverDashboard() {
   const assignedTruck   = vehicles.find((v) => v.id === driverProfile?.assignedTruckId);
   const assignedTrailer = vehicles.find((v) => v.id === driverProfile?.assignedTrailerId);
 
-  // A load is closed out when a valid signed BOL is present and paperwork is recorded for billing
-  const isPaperworkClosedOut = (l: Load) =>
-    Boolean(l.signedBolUrl) && (l.paperworkStatus === 'pod_uploaded' || l.paperworkStatus === 'invoiced' || l.paperworkStatus === 'closed');
+  // A load is closed out when a valid POD is on file or paperwork/payment is closed
+  const isPaperworkClosedOut = (l: Load) => hasLoadPod(l);
 
   // A load is awaiting paperwork if drop-off is recorded/delivered but paperwork is not closed out
   const isAwaitingPaperwork = (l: Load) =>

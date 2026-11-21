@@ -25,7 +25,7 @@ import { isErroneousArrivalTimestamp, isDriverBroadcastingGPS } from '@/lib/tele
 import { normalizeLoadDriverAssignment, isLoadAssignedToDriver, getDriverProfileId } from '@/lib/driverAssignment';
 import { resolveCoordinates } from '@/lib/routeUtils';
 import { getDetentionFreeTimeMinutes, getDetentionFeeRate, formatFreeTimeLabel } from '@/lib/detention';
-import { deduplicateLoads, getLoadDuplicateKey, isLoadCompleted } from '@/lib/loadStatus';
+import { deduplicateLoads, getLoadDuplicateKey, isLoadCompleted, hasLoadPod } from '@/lib/loadStatus';
 import { calculateCustomerRateBreakdown } from '@/lib/loadPricing';
 
 
@@ -1637,8 +1637,30 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const createFreshLoadForm = (): Partial<Load> => ({
     ...initialLoadFormData,
+    id: undefined,
+    loadNumber: undefined,
+    status: 'pending_approval',
+    clientId: '',
+    clientName: '',
+    companyName: '',
+    pickupDateTime: '',
+    deliveryDateTime: '',
+    distance: 0,
+    deadheadMiles: 0,
+    ratePerMile: 0,
+    tarpingFee: 0,
+    requiresTarping: false,
+    tripDuration: undefined,
+    estimatedDriveTimeHours: undefined,
+    assignedTruckId: '',
+    assignedTrailerId: '',
+    assignedDriverId: '',
     assignedDriverName: '',
     tripId: undefined,
+    cargoDescription: '',
+    cargoDimensions: '',
+    cargoWeight: '',
+    cargoQuantity: 1,
     cargoType: undefined,
     vehicleTransportType: undefined,
     cargoLength: undefined,
@@ -1647,13 +1669,29 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     cargoWeightNum: undefined,
     placementMode: undefined,
     deckPercentageUsed: undefined,
+    specialTerms: '',
+    bolSource: 'broker',
     outboundBolUrl: undefined,
     outboundBolFileName: undefined,
     outboundBolGeneratedAt: undefined,
+    signedBolUrl: undefined,
+    signedBolUploadedAt: undefined,
     totalAgreedRate: undefined,
     originalClientRequestId: undefined,
     requestedByClientName: undefined,
     requestedByAuthUid: undefined,
+    originLat: undefined,
+    originLng: undefined,
+    destinationLat: undefined,
+    destinationLng: undefined,
+    driverPhase: undefined,
+    arrivedAt: undefined,
+    arrivalTimestamp: undefined,
+    deliveredAt: undefined,
+    paperworkStatus: undefined,
+    manualOverrideAt: undefined,
+    detentionActive: undefined,
+    actualExpenses: undefined,
     origin: { ...emptyAddress },
     destination: { ...emptyAddress },
   });
@@ -2208,8 +2246,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             finalUpdates.driverPhase = 'Complete';
           }
           finalUpdates.deliveredAt = effectiveUpdates.deliveredAt || currentLoad.deliveredAt || new Date().toISOString();
-          const hasSignedBol = Boolean(currentLoad.signedBolUrl || effectiveUpdates.signedBolUrl || updates.signedBolUrl);
-          finalUpdates.paperworkStatus = hasSignedBol ? 'pod_uploaded' : 'pending_pod';
+          const alreadyHasPod = hasLoadPod({
+            ...currentLoad,
+            ...effectiveUpdates,
+            ...updates,
+          });
+          finalUpdates.paperworkStatus = alreadyHasPod
+            ? (effectiveUpdates.paperworkStatus || currentLoad.paperworkStatus || 'pod_uploaded')
+            : 'pending_pod';
+
+          // Clear stale create-load form if not currently editing an existing load
+          if (!editingLoadId && (loadForm.id === id || (currentLoad.loadNumber && loadForm.loadNumber === currentLoad.loadNumber))) {
+            handleCancelEditLoad();
+          }
         }
 
         if (effectiveUpdates.signedBolUrl || updates.signedBolUrl) {
@@ -4069,9 +4118,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // For admin users: writes to users/{adminUid}/pods/{loadId}
   // For driver users: writes to users/{driverOwnerId}/pods/{loadId}
   const savePOD = async (pod: import('@/types').ProofOfDelivery): Promise<void> => {
+    const nowIso = new Date().toISOString();
+    const podLoadUpdates: Partial<Load> = {
+      status: 'delivered',
+      driverPhase: 'Complete',
+      paperworkStatus: 'pod_uploaded',
+      deliveredAt: nowIso,
+      detentionActive: false,
+      ...((pod as any).signedBolUrl ? { signedBolUrl: (pod as any).signedBolUrl, signedBolUploadedAt: nowIso } : {}),
+    };
+
     if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user?.uid === mockReviewUser.uid)) {
-      // In review mode, just log — no Firestore write
-      console.info('[Review Mode] POD saved (not persisted):', pod.loadId);
+      setLoads(prev => prev.map(l => l.id === pod.loadId ? {
+        ...l,
+        ...podLoadUpdates,
+        deliveredAt: l.deliveredAt || nowIso,
+      } : l));
+      console.info('[Review Mode] POD saved locally:', pod.loadId);
       return;
     }
     if (!user) throw new Error('Not authenticated');
@@ -4083,6 +4146,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       submittedByDriverId: user.uid,
       createdAt: serverTimestamp(),
     });
+
+    // Also sync completion & POD status to the parent load document so all views agree immediately
+    const existingLoad = loads.find(l => l.id === pod.loadId);
+    const mergedLoadUpdates: Partial<Load> = {
+      ...podLoadUpdates,
+      deliveredAt: existingLoad?.deliveredAt || nowIso,
+    };
+    try {
+      await updateDoc(doc(db, `users/${ownerUid}/loads`, pod.loadId), sanitizeForFirestore(mergedLoadUpdates));
+    } catch (syncErr) {
+      console.warn('Could not sync POD status to load doc:', syncErr);
+    }
+    setLoads(prev => prev.map(l => l.id === pod.loadId ? { ...l, ...mergedLoadUpdates } : l));
   };
 
   // ── IN-TRANSIT EXPENSE LOGGING ──────────────────────────────────────────

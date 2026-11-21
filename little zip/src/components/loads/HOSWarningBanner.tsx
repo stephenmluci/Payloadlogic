@@ -30,7 +30,6 @@ export function HOSWarningBanner({ hosResult, onUpdateDelivery }: HOSWarningBann
     totalTransitHours,
     totalDriveHours,
     restBreaksNeeded,
-    dwellHours,
     earliestDelivery,
     hoursShort,
     isInverted,
@@ -38,6 +37,7 @@ export function HOSWarningBanner({ hosResult, onUpdateDelivery }: HOSWarningBann
     requestedDeliveryDate,
     totalMiles,
   } = hosResult;
+  const dwellHours = (hosResult as HOSResult & { dwellHours?: number }).dwellHours ?? 0;
 
   const handleUpdate = () => {
     onUpdateDelivery?.(toDateTimeLocal(earliestDelivery));
@@ -73,9 +73,11 @@ export function HOSWarningBanner({ hosResult, onUpdateDelivery }: HOSWarningBann
                     <span className="font-semibold">Mandatory HOS Sleeper Rest:</span> {restBreaksNeeded * 10} hrs (required after 11 hrs driving)
                   </li>
                 )}
-                <li>
-                  <span className="font-semibold">Shipper/Receiver Dwell:</span> {dwellHours.toFixed(1)} hrs (1.5 hrs pickup + 1.5 hrs delivery)
-                </li>
+                {dwellHours > 0 && (
+                  <li>
+                    <span className="font-semibold">Shipper/Receiver Dwell:</span> {dwellHours.toFixed(1)} hrs (1.5 hrs pickup + 1.5 hrs delivery)
+                  </li>
+                )}
               </ul>
               <p className="text-amber-800 text-xs mt-2 font-bold">
                 Verdict: Delivery deadline must be set at or after {formatDate(earliestDelivery, 'MMM d, yyyy, h:mm a')}.

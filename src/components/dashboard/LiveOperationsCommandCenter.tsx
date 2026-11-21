@@ -5,6 +5,7 @@ import { useApp } from '@/context/AppContext';
 import { vehicleToEngineTruck, vehicleToEngineTrailer, loadToCargoItem } from '@/lib/logisticsAdapters';
 import { calculateTripMetrics, computeCargoLinearFootprint } from '@/lib/logisticsEngine';
 import { deduplicateLoads, isLoadCompleted } from '@/lib/loadStatus';
+import { calculateHOSTripPlan, calculateHOSAwareProgress } from '@/lib/hosEngine';
 import {
   buildDriverProgressLegs,
   calculateLegProgress,
@@ -44,7 +45,7 @@ import {
 import { TransitMapModal } from './TransitMapModal';
 import { ShareLoadPacketModal } from '@/components/loads/ShareLoadPacketModal';
 import { SignedBolUpload } from '@/components/loads/SignedBolUpload';
-import { DriverFleetMap, type DriverFleetMapItem, type DriverFleetStatus } from './DriverFleetMap';
+import { DriverFleetMap, isDriverLiveGps, type DriverFleetMapItem, type DriverFleetStatus } from './DriverFleetMap';
 import { LocationDisclaimerNotice } from '@/components/common/LocationDisclaimerNotice';
 import { findCandidateNextLoads, type NextLoadCandidate } from '@/lib/dispatchSuggestions';
 import { geocodePhysicalAddress } from '@/lib/geocoding';
@@ -390,7 +391,18 @@ export function LiveOperationsCommandCenter() {
         ? load.estimatedDriveTimeHours
         : (loadedDistance > 0 ? loadedDistance / avgSpeed : 4);
 
-      const durationMs = Math.max(1800000, Math.round(driveHours * 3600 * 1000));
+      const hosTripPlan = calculateHOSTripPlan(
+        loadedDistance,
+        0,
+        pickupMs > 0 ? new Date(pickupMs) : null,
+        {
+          averageSpeedMph: avgSpeed,
+          availableHosHours: driver?.estimatedHosRemaining,
+          recentOnDutyHours: (driver as any)?.recentOnDutyHours,
+        },
+      );
+      const totalTransitHours = hosTripPlan ? hosTripPlan.totalTransitHours : driveHours;
+      const durationMs = Math.max(1800000, Math.round(totalTransitHours * 3600 * 1000));
 
       let transitFraction = 0;
       let isFutureScheduled = false;
@@ -411,7 +423,11 @@ export function LiveOperationsCommandCenter() {
       } else if (pickupMs > 0 && !isNaN(pickupMs)) {
         if (nowMs >= pickupMs) {
           elapsedMs = nowMs - pickupMs;
-          transitFraction = Math.min(0.98, Math.max(0.05, elapsedMs / durationMs));
+          if (hosTripPlan?.requiresMandatoryBreak) {
+            transitFraction = Math.min(0.98, Math.max(0.05, calculateHOSAwareProgress(hosTripPlan, elapsedMs / 3_600_000).transitFraction));
+          } else {
+            transitFraction = Math.min(0.98, Math.max(0.05, elapsedMs / durationMs));
+          }
         } else {
           isFutureScheduled = true;
           elapsedMs = 0;
@@ -421,6 +437,10 @@ export function LiveOperationsCommandCenter() {
         transitFraction = 0.40;
         elapsedMs = Math.round(durationMs * transitFraction);
       }
+
+      const hosProgress = hosTripPlan?.requiresMandatoryBreak && !isFutureScheduled && load.status !== 'delivered'
+        ? calculateHOSAwareProgress(hosTripPlan, elapsedMs / 3_600_000)
+        : null;
 
       let progressPct: number;
       if (load.status === 'delivered') {
@@ -437,8 +457,8 @@ export function LiveOperationsCommandCenter() {
         progressPct = Math.min(95, Math.max(15, Math.round(15 + transitFraction * 80)));
       }
 
-      const estMilesCovered = Math.round(loadedDistance * transitFraction);
-      const estMilesRemaining = Math.max(0, loadedDistance - estMilesCovered);
+      const estMilesCovered = hosProgress ? hosProgress.coveredMiles : Math.round(loadedDistance * transitFraction);
+      const estMilesRemaining = hosProgress ? hosProgress.remainingMiles : Math.max(0, loadedDistance - estMilesCovered);
 
       let etaFormatted = '—';
       let estArrivalTimestamp = nowMs + durationMs;
@@ -450,12 +470,14 @@ export function LiveOperationsCommandCenter() {
         } else if (load.status === 'unloading') {
           etaFormatted = 'Arrived (Unloading)';
         } else if (isFutureScheduled && pickupMs > 0) {
-          const scheduledEta = pickupMs + durationMs;
+          const scheduledEta = hosTripPlan?.adjustedEta ? hosTripPlan.adjustedEta.getTime() : (pickupMs + durationMs);
           estArrivalTimestamp = scheduledEta;
           etaFormatted = new Date(scheduledEta).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         } else {
-          const remainingDriveHours = estMilesRemaining / avgSpeed;
-          const remainingMs = Math.max(60000, Math.round(remainingDriveHours * 3600 * 1000));
+          const remainingTotalHours = hosProgress
+            ? hosProgress.remainingTotalHours
+            : (estMilesRemaining / avgSpeed);
+          const remainingMs = Math.max(60000, Math.round(remainingTotalHours * 3600 * 1000));
           estArrivalTimestamp = nowMs + remainingMs;
           etaFormatted = new Date(estArrivalTimestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         }
@@ -501,7 +523,7 @@ export function LiveOperationsCommandCenter() {
         transitFraction, estMilesCovered, estMilesRemaining,
         etaFormatted, elapsedFormatted,
         estArrivalTimestamp,
-        liveLocationStatus, progressLegs, legProgress,
+        liveLocationStatus, progressLegs, legProgress, hosTripPlan, hosProgress,
       };
     });
   }, [activeLoads, vehicles, driverProfiles, clients, settings, defaultMonthlyMiles, currentTime, trips, loads]);
@@ -586,6 +608,8 @@ export function LiveOperationsCommandCenter() {
           originName: load.origin?.city ? `${load.origin.city}, ${load.origin.state || ''}` : 'Pickup',
           destName: load.destination?.city ? `${load.destination.city}, ${load.destination.state || ''}` : 'Delivery',
           isDeadhead: legProgress.isDeadhead,
+          isLiveGps: isDriverLiveGps(driver),
+          liveGpsUpdatedAt: driver.telemetry?.updatedAt,
         };
       }
 
@@ -614,9 +638,11 @@ export function LiveOperationsCommandCenter() {
         locationName,
         etaFormatted: undefined,
         remainingMiles: undefined,
+        isLiveGps: isDriverLiveGps(driver),
+        liveGpsUpdatedAt: driver.telemetry?.updatedAt,
       };
     });
-  }, [driverProfiles, enrichedLoads, vehicles, settings]);
+  }, [driverProfiles, enrichedLoads, vehicles, settings, currentTime]);
 
   // Set default selected driver if none selected
   useEffect(() => {
@@ -1109,6 +1135,17 @@ export function LiveOperationsCommandCenter() {
                           <strong className="text-emerald-700 font-bold">{Math.round(selectedEnrichedLoad.legProgress.legFraction * 100)}%</strong>
                         </div>
                       </div>
+
+                      {selectedEnrichedLoad.hosTripPlan?.requiresMandatoryBreak && selectedEnrichedLoad.hosTripPlan.breaks[0] && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-900 flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold">
+                            ☕ Mandatory 10-hr HOS Break @ Mile {selectedEnrichedLoad.hosTripPlan.breaks[0].atMiles.toLocaleString()} ({selectedEnrichedLoad.hosTripPlan.breaks[0].atDriveHours}h driven)
+                          </span>
+                          <span className="text-amber-800 font-medium">
+                            Multi-shift &bull; Adj. ETA: {selectedEnrichedLoad.etaFormatted}
+                          </span>
+                        </div>
+                      )}
 
                       {/* Waypoint Action Buttons */}
                       <div className="pt-2 flex items-center justify-between gap-2 flex-wrap border-t border-slate-200/60">

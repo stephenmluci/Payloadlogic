@@ -368,6 +368,8 @@ export type DriverProfile = {
   lastCompletionTimestamp?: string;
   currentLat?: number;
   currentLng?: number;
+  /** True while the driver has "Share Live Location" switched on */
+  liveLocationSharing?: boolean;
   /** Live driver GPS and route telemetry */
   telemetry?: {
     status?: 'Deadheading' | 'In Transit' | 'Arrived' | 'Unloading' | 'Available' | 'Off Duty' | string;
@@ -375,6 +377,7 @@ export type DriverProfile = {
     lat?: number;
     lng?: number;
     heading?: number;
+    accuracy?: number;
     updatedAt?: string;
   };
   /** Estimated Hours of Service remaining (defaults to 11.0 daily drive limit) */

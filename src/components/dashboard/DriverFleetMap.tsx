@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import type { DriverProfile, Load, Vehicle } from '@/types';
 import { type Coordinates, resolveLocationCoordinates } from '@/lib/routeUtils';
+import { calculateHOSTripPlan, calculateHOSAwareProgress, type HOSTripBreak } from '@/lib/hosEngine';
 import {
   Truck,
   Navigation,
@@ -12,6 +13,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Clock,
+  Coffee,
   Gauge,
   Route,
   Activity,
@@ -43,6 +45,19 @@ export interface DriverFleetMapItem {
   originName?: string;
   destName?: string;
   isDeadhead?: boolean;
+  /** True when the driver is sharing live GPS and the last fix is recent (< 5 min). */
+  isLiveGps?: boolean;
+  /** ISO timestamp of the last live GPS fix, when available. */
+  liveGpsUpdatedAt?: string;
+}
+
+/** A live fix older than this is treated as stale (driver offline / app backgrounded). */
+export const LIVE_GPS_FRESH_MS = 5 * 60 * 1000;
+
+export function isDriverLiveGps(driver?: DriverProfile | null, nowMs: number = Date.now()): boolean {
+  if (!driver?.liveLocationSharing) return false;
+  const ts = driver.telemetry?.updatedAt ? new Date(driver.telemetry.updatedAt).getTime() : 0;
+  return ts > 0 && nowMs - ts < LIVE_GPS_FRESH_MS;
 }
 
 interface DriverFleetMapProps {
@@ -65,6 +80,11 @@ function calculateMathematicalProgress(item: DriverFleetMapItem, avgSpeed = 55) 
       totalMiles: 0,
       coveredMiles: 0,
       remainingMiles: 0,
+      hosBreaks: [] as HOSTripBreak[],
+      isResting: false,
+      activeBreak: null as HOSTripBreak | null,
+      breakRemainingHours: 0,
+      requiresMandatoryBreak: false,
       formulaDisplay: 'Off Duty • Telemetry paused',
     };
   }
@@ -78,6 +98,11 @@ function calculateMathematicalProgress(item: DriverFleetMapItem, avgSpeed = 55) 
       totalMiles: 0,
       coveredMiles: 0,
       remainingMiles: 0,
+      hosBreaks: [] as HOSTripBreak[],
+      isResting: false,
+      activeBreak: null as HOSTripBreak | null,
+      breakRemainingHours: 0,
+      requiresMandatoryBreak: false,
       formulaDisplay: 'Standby • No active transit load assigned',
     };
   }
@@ -104,7 +129,28 @@ function calculateMathematicalProgress(item: DriverFleetMapItem, avgSpeed = 55) 
     elapsedHours = (nowMs - departureMs) / (1000 * 60 * 60);
   }
 
+  const hosPlan = calculateHOSTripPlan(
+    load.distance || 0,
+    0,
+    departureMs > 0 ? new Date(departureMs) : null,
+    {
+      averageSpeedMph: estimatedSpeed,
+      availableHosHours: item.driver?.estimatedHosRemaining,
+      recentOnDutyHours: (item.driver as any)?.recentOnDutyHours,
+      originCoords: item.originCoords,
+      destCoords: item.destCoords,
+    },
+  );
+  const hosBreaks = hosPlan?.breaks ?? [];
+  const requiresMandatoryBreak = Boolean(hosPlan?.requiresMandatoryBreak);
+
   let progressPct = 0;
+  let coveredMiles = 0;
+  let remainingMiles = totalMiles;
+  let isResting = false;
+  let activeBreak: HOSTripBreak | null = null;
+  let breakRemainingHours = 0;
+
   if (item.status === 'Arrived' || load.status === 'arrived' || (load as any).status === 'Arrived' || load.driverPhase === 'Arrived') {
     const arrivalTime = load.arrivedAt
       ? new Date(load.arrivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -116,27 +162,49 @@ function calculateMathematicalProgress(item: DriverFleetMapItem, avgSpeed = 55) 
       totalMiles,
       coveredMiles: totalMiles,
       remainingMiles: 0,
+      hosBreaks,
+      isResting: false,
+      activeBreak: null,
+      breakRemainingHours: 0,
+      requiresMandatoryBreak,
       formulaDisplay: arrivalTime
         ? `Arrived at Facility • Stationary / Detention Active (Arrived ${arrivalTime})`
         : 'Arrived at Facility • Stationary / Detention Clock Active',
     };
   } else if (load.status === 'delivered') {
     progressPct = 100;
+    coveredMiles = totalMiles;
+    remainingMiles = 0;
   } else if (load.status === 'unloading') {
     progressPct = 95;
+    coveredMiles = Math.round(0.95 * totalMiles);
+    remainingMiles = Math.max(0, totalMiles - coveredMiles);
   } else if (load.status === 'loading') {
     progressPct = 5;
+    coveredMiles = Math.round(0.05 * totalMiles);
+    remainingMiles = Math.max(0, totalMiles - coveredMiles);
+  } else if (hosPlan && requiresMandatoryBreak) {
+    const hosProgress = calculateHOSAwareProgress(hosPlan, elapsedHours);
+    progressPct = hosProgress.progressPct;
+    coveredMiles = hosProgress.coveredMiles;
+    remainingMiles = hosProgress.remainingMiles;
+    isResting = hosProgress.isResting;
+    activeBreak = hosProgress.activeBreak;
+    breakRemainingHours = hosProgress.breakRemainingHours;
   } else {
     // Strict mathematical interpolation:
     // (Elapsed Transit Time * Estimated Speed / Total Route Mileage = Current Progress Percentage)
     const rawProgress = (elapsedHours * estimatedSpeed) / totalMiles;
     progressPct = Math.min(98, Math.max(2, Math.round(rawProgress * 100)));
+    coveredMiles = Math.round((progressPct / 100) * totalMiles);
+    remainingMiles = Math.max(0, totalMiles - coveredMiles);
   }
 
-  const coveredMiles = Math.round((progressPct / 100) * totalMiles);
-  const remainingMiles = Math.max(0, totalMiles - coveredMiles);
-
-  const formulaDisplay = `(${elapsedHours.toFixed(1)}h elapsed × ${estimatedSpeed} mph) / ${totalMiles} mi = ${progressPct}% Progress`;
+  const formulaDisplay = isResting && activeBreak
+    ? `HOS 10-hr Rest Break @ Mile ${activeBreak.atMiles} (${breakRemainingHours.toFixed(1)}h remaining) • Progress paused at ${progressPct}%`
+    : requiresMandatoryBreak
+      ? `(${elapsedHours.toFixed(1)}h elapsed incl. 10h HOS break × ${estimatedSpeed} mph) / ${totalMiles} mi = ${progressPct}% Progress`
+      : `(${elapsedHours.toFixed(1)}h elapsed × ${estimatedSpeed} mph) / ${totalMiles} mi = ${progressPct}% Progress`;
 
   return {
     progressPct,
@@ -145,6 +213,11 @@ function calculateMathematicalProgress(item: DriverFleetMapItem, avgSpeed = 55) 
     totalMiles,
     coveredMiles,
     remainingMiles,
+    hosBreaks,
+    isResting,
+    activeBreak,
+    breakRemainingHours,
+    requiresMandatoryBreak,
     formulaDisplay,
   };
 }
@@ -422,9 +495,9 @@ export function GoogleMap({
         icon: {
           path: googleMaps.SymbolPath.CIRCLE,
           scale: isSelected ? 12 : 8,
-          fillColor: color,
+          fillColor: d.isLiveGps ? '#22c55e' : color,
           fillOpacity: 1,
-          strokeColor: isSelected ? '#ffffff' : '#0f172a',
+          strokeColor: isSelected ? '#ffffff' : d.isLiveGps ? '#15803d' : '#0f172a',
           strokeWeight: isSelected ? 3 : 2,
         },
       });
@@ -432,7 +505,7 @@ export function GoogleMap({
       const infoWindow = new googleMaps.InfoWindow({
         content: `
           <div style="color: #0f172a; font-family: sans-serif; padding: 6px 8px; min-width: 170px;">
-            <div style="font-weight: 700; font-size: 13px; margin-bottom: 2px;">${d.driver.name}</div>
+            <div style="font-weight: 700; font-size: 13px; margin-bottom: 2px;">${d.driver.name}${d.isLiveGps ? ' <span style="color:#059669;font-size:10px;font-weight:700;">● LIVE GPS</span>' : ''}</div>
             <div style="font-size: 11px; color: #475569; margin-bottom: 4px;">Status: <b>${d.status}</b> ${!isAvailableOrOffDuty ? `(${math.progressPct}%)` : ''}</div>
             ${!isAvailableOrOffDuty ? `<div style="font-size: 10px; color: #64748b;">${d.originName || 'Origin'} &rarr; ${d.destName || 'Destination'}</div>` : ''}
             <div style="font-size: 11px; color: #0284c7; margin-top: 3px;">📍 ${isAvailableOrOffDuty ? `Current Staging: <b>${stagingText}</b>` : d.locationName}</div>
@@ -459,6 +532,41 @@ export function GoogleMap({
       }
 
       markersRef.current.push(marker);
+
+      if (isSelected && math.hosBreaks.length > 0) {
+        math.hosBreaks.forEach((brk) => {
+          if (!brk.coordinates) return;
+          const restMarker = new googleMaps.Marker({
+            position: brk.coordinates,
+            map,
+            title: brk.label,
+            zIndex: 998,
+            icon: {
+              path: googleMaps.SymbolPath.CIRCLE,
+              scale: 9,
+              fillColor: '#f59e0b',
+              fillOpacity: 1,
+              strokeColor: '#ffffff',
+              strokeWeight: 2,
+            },
+          });
+          const restInfo = new googleMaps.InfoWindow({
+            content: `
+              <div style="color: #0f172a; font-family: sans-serif; padding: 6px 8px; min-width: 180px;">
+                <div style="font-weight: 700; font-size: 12px; color: #b45309;">☕ Mandatory 10-hr HOS Rest Stop</div>
+                <div style="font-size: 11px; color: #334155; margin-top: 2px;">Stop at <b>Mile ${brk.atMiles.toLocaleString()}</b> (${brk.atDriveHours}h driven)</div>
+                ${brk.startTime && brk.endTime ? `<div style="font-size: 10px; color: #64748b; margin-top: 2px;">Est. Window: ${brk.startTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} – ${brk.endTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>` : ''}
+              </div>
+            `,
+          });
+          restMarker.addListener('click', () => {
+            if (activeInfoWindowRef.current) activeInfoWindowRef.current.close();
+            restInfo.open(map, restMarker);
+            activeInfoWindowRef.current = restInfo;
+          });
+          markersRef.current.push(restMarker);
+        });
+      }
     });
   }, [drivers, selectedItem, onSelectDriver, isVisible]);
 
@@ -625,6 +733,12 @@ export function DriverFleetMap({
                           <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${getStatusBadge(selectedItem.status).bg}`}>
                             {selectedItem.status}
                           </span>
+                          {selectedItem.isLiveGps && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold border bg-emerald-500/20 text-emerald-300 border-emerald-500/40 flex items-center gap-1">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              Live GPS
+                            </span>
+                          )}
                         </div>
                         <p className="text-[11px] text-slate-400">
                           {selectedItem.truck ? `Unit #${selectedItem.truck.unitNumber || selectedItem.truck.name}` : 'Truck Assigned'}
@@ -668,6 +782,23 @@ export function DriverFleetMap({
                           }`} />
                           <span className="text-[9px] text-slate-400 font-mono mt-3">
                             {pct}%
+                          </span>
+                        </div>
+                      ))}
+
+                      {/* Mandatory HOS Rest Break Markers */}
+                      {selectedMath?.hosBreaks.map(brk => (
+                        <div
+                          key={`hos-brk-${brk.breakIndex}`}
+                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-10 flex flex-col items-center"
+                          style={{ left: `${Math.round(brk.routeFraction * 100)}%` }}
+                          title={brk.label}
+                        >
+                          <div className="p-1.5 rounded-full bg-amber-500 border-2 border-white shadow-md text-slate-950">
+                            <Coffee className="h-3 w-3" />
+                          </div>
+                          <span className="text-[9px] font-bold text-amber-300 bg-slate-950/90 px-1.5 py-0.5 rounded border border-amber-500/40 whitespace-nowrap mt-1">
+                            10h HOS Break (Mi {brk.atMiles})
                           </span>
                         </div>
                       ))}
@@ -726,6 +857,41 @@ export function DriverFleetMap({
                       </div>
                     </div>
                   </div>
+                  {/* Trip Timeline (with Mandatory HOS Rest Stops) */}
+                  {selectedMath && selectedMath.hosBreaks.length > 0 && (
+                    <div className="pt-3 border-t border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                          <Coffee className="h-3.5 w-3.5 text-amber-400" />
+                          Mandatory HOS Rest Stops ({selectedMath.hosBreaks.length} &times; 10h)
+                        </span>
+                        <span className="text-slate-400">Multi-shift trip (exceeds 11h HOS)</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {selectedMath.hosBreaks.map(brk => (
+                          <div
+                            key={`timeline-brk-${brk.breakIndex}`}
+                            className={`rounded-lg border px-3 py-2 text-xs ${
+                              selectedMath.activeBreak?.breakIndex === brk.breakIndex
+                                ? 'border-amber-400 bg-amber-500/15 text-amber-200'
+                                : 'border-slate-800 bg-slate-950/60 text-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between font-semibold">
+                              <span>Stop #{brk.breakIndex}: Mile {brk.atMiles.toLocaleString()} ({Math.round(brk.routeFraction * 100)}%)</span>
+                              <span className="text-amber-300">{brk.durationHours}h Rest</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">
+                              After {brk.atDriveHours}h driven
+                              {brk.startTime && brk.endTime
+                                ? ` • ${brk.startTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} → ${brk.endTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+                                : ''}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Mathematical Telemetry Stats Grid */}
@@ -804,10 +970,23 @@ export function DriverFleetMap({
                       className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 rounded-full"
                       style={{ width: `${math.progressPct}%` }}
                     />
+                    {math.hosBreaks.map(brk => (
+                      <div
+                        key={`tl-brk-${brk.breakIndex}`}
+                        className="absolute top-0 bottom-0 w-1.5 bg-amber-400"
+                        style={{ left: `${Math.round(brk.routeFraction * 100)}%` }}
+                        title={brk.label}
+                      />
+                    ))}
                   </div>
 
-                  <div className="flex justify-between items-center mt-2 text-[10px] text-slate-400 font-mono">
+                  <div className="flex flex-wrap justify-between items-center gap-2 mt-2 text-[10px] text-slate-400 font-mono">
                     <span>Covered: {math.coveredMiles} mi</span>
+                    {math.hosBreaks.length > 0 && (
+                      <span className="text-amber-300 font-sans font-semibold">
+                        ☕ {math.hosBreaks.length}&times;10h HOS Break @ Mi {math.hosBreaks[0].atMiles}
+                      </span>
+                    )}
                     <span>Speed: {math.estimatedSpeed} mph</span>
                     <span>Remaining: {math.remainingMiles} mi</span>
                   </div>

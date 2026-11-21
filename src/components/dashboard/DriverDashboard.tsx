@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/hooks/use-toast';
 import { isLoadDetentionActive } from '@/lib/detention';
+import { ShareLiveLocationToggle } from './ShareLiveLocationToggle';
 import {
   computeDeckPositions,
   getNextStopForLoad,
@@ -1010,6 +1011,11 @@ export function DriverDashboard() {
             </div>
           </div>
         </div>
+
+        {/* ── Live Location Sharing (drivers only) ─────────────────── */}
+        {!isAdminOrDispatcher && user?.role === 'driver' && driverProfile?.uid && (
+          <ShareLiveLocationToggle driverUid={driverProfile.uid} />
+        )}
 
         {/* ── Active Dispatches ────────────────────────────────────── */}
         <div className="space-y-4">

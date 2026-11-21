@@ -360,6 +360,11 @@ interface AppContextType {
   // Driver Profiles
   addDriverProfile: (profile: DriverProfile) => Promise<void>;
   updateDriverProfile: (uid: string, updates: Partial<DriverProfile>) => Promise<void>;
+  /** Quiet (no toast / no submitting flag) live GPS write used by "Share Live Location". */
+  updateDriverLiveLocation: (
+    uid: string,
+    fix: { lat: number; lng: number; speed?: number | null; heading?: number | null; accuracy?: number | null } | null,
+  ) => Promise<void>;
   deleteDriverProfile: (uid: string, skipConfirm?: boolean) => Promise<void>;
   revokeDriverAccess: (driver: DriverProfile, restore?: boolean) => Promise<void>;
 
@@ -3873,6 +3878,47 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setIsSubmitting(false);
   };
 
+  const updateDriverLiveLocation = useCallback(async (
+    uid: string,
+    fix: { lat: number; lng: number; speed?: number | null; heading?: number | null; accuracy?: number | null } | null,
+  ) => {
+    if (!user || !uid) return;
+    const nowIso = new Date().toISOString();
+    const existing = driverProfiles.find(p => p.uid === uid || (p as any).id === uid);
+
+    // fix === null means the driver stopped sharing: keep last known coords, flip the flag only.
+    let updates: Partial<DriverProfile>;
+    if (fix) {
+      updates = {
+        currentLat: fix.lat,
+        currentLng: fix.lng,
+        liveLocationSharing: true,
+        telemetry: {
+          ...(existing?.telemetry || {}),
+          lat: fix.lat,
+          lng: fix.lng,
+          ...(typeof fix.speed === 'number' ? { speed: Math.round(fix.speed * 2.23694) } : {}), // m/s -> mph
+          ...(typeof fix.heading === 'number' ? { heading: Math.round(fix.heading) } : {}),
+          ...(typeof fix.accuracy === 'number' ? { accuracy: Math.round(fix.accuracy) } : {}),
+          updatedAt: nowIso,
+        },
+      };
+    } else {
+      updates = { liveLocationSharing: false };
+    }
+
+    setDriverProfiles(prev => prev.map(p => (p.uid === uid || (p as any).id === uid) ? { ...p, ...updates } : p));
+    if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) return;
+
+    try {
+      const ownerId = (user.role === 'driver' && driverOwnerId) ? driverOwnerId : user.uid;
+      await updateDoc(doc(db, `users/${ownerId}/driverProfiles`, uid), sanitizeForFirestore(updates)).catch(console.error);
+      await updateDoc(doc(db, 'drivers', uid), sanitizeForFirestore(updates)).catch(() => {});
+    } catch (err) {
+      console.warn('Live location write failed:', err);
+    }
+  }, [user, driverProfiles, driverOwnerId, isTrialSession]);
+
   const updateDriverProfile = async (uid: string, updates: Partial<DriverProfile>) => {
     setIsSubmitting(true);
     if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user?.uid === mockReviewUser.uid)) {
@@ -4426,7 +4472,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     handleStartEditLoad, handleCancelEditLoad, approveClientLoadRequest, rejectClientLoadRequest, generateAgreement, generateInvoice,
     updateLoadPhaseWithLocation, reportDriverException, updateDriverNote,
     trips, addTrip, updateTrip, handleDeleteTrip, getFuelOptimizationProfit,
-    addVehicle, updateVehicle, deleteVehicle, addDriverProfile, updateDriverProfile, deleteDriverProfile, revokeDriverAccess,
+    addVehicle, updateVehicle, deleteVehicle, addDriverProfile, updateDriverProfile, updateDriverLiveLocation, deleteDriverProfile, revokeDriverAccess,
     calculateVehicleCPM, archiveVehicleCPM,
     previewRole, setPreviewRole,
     savePOD, createDriverAccount,

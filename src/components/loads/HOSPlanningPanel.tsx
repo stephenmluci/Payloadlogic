@@ -187,20 +187,22 @@ export function HOSPlanningPanel({
           )}
 
           {/* ── Multi-segment / over-limit notice ── */}
-          {(plan.fitness === 'over_limit' || plan.fitness === 'needs_rest_day') && (
-            <div className="flex items-start gap-2 rounded-md bg-orange-50 border border-orange-100 px-3 py-2.5">
-              <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-orange-800">
-                <span className="font-semibold">Multi-segment trip:</span>{' '}
-                Estimated drive time exceeds the 11-hour driving limit.
-                {plan.estimatedDays > 1
-                  ? ` Plan for approx. ${plan.estimatedDays} days of driving.`
-                  : ''}{' '}
-                Coordinate rest stops and overnight scheduling with the driver directly.
-                Always verify on ELD.
-              </p>
-            </div>
-          )}
+          {(plan.fitness === 'over_limit' || plan.fitness === 'needs_rest_day') && (() => {
+            const firstStopMiles = Math.min(distanceMiles ?? 0, Math.round(11 * (averageSpeedMph > 0 ? averageSpeedMph : 55)));
+            return (
+              <div className="flex items-start gap-2 rounded-md bg-orange-50 border border-orange-100 px-3 py-2.5">
+                <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-orange-800">
+                  <span className="font-semibold">Mandatory 10-hr HOS Rest Stop:</span>{' '}
+                  Estimated drive time exceeds the 11-hour driving limit (cannot be completed in a single shift).
+                  {firstStopMiles > 0 ? ` Earliest required stop at ~Mile ${firstStopMiles.toLocaleString()} (11.0h driven) for a 10-hour rest break.` : ''}
+                  {plan.estimatedDays > 1
+                    ? ` Plan for approx. ${plan.estimatedDays} days of driving.`
+                    : ''}
+                </p>
+              </div>
+            );
+          })()}
 
           {/* ── 70-hour awareness ── */}
           {plan.weeklyHoursWarning && (

@@ -336,3 +336,246 @@ export const HOS_DISCLAIMER =
   'Official Hours of Service must be recorded and followed on your certified Electronic ' +
   'Logging Device (ELD). PayloadLogic is not an ELD and does not replace any required ' +
   'logging or compliance obligations.';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MANDATORY HOS REST BREAK TRIP PLANNER & PROGRESS SIMULATOR
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type HOSTripBreak = {
+  breakIndex: number;
+  /** Cumulative driving hours at which the driver must stop */
+  atDriveHours: number;
+  /** Cumulative miles covered along the route when the stop begins */
+  atMiles: number;
+  /** Elapsed trip hours (including prior breaks) when the stop begins */
+  startElapsedHours: number;
+  /** Elapsed trip hours when the 10-hr break ends and driving resumes */
+  endElapsedHours: number;
+  /** Fraction of total route distance [0..1] for corridor / map placement */
+  routeFraction: number;
+  /** Duration of the mandatory rest break in hours (10) */
+  durationHours: number;
+  /** Estimated wall-clock start time of the break (if departure time known) */
+  startTime: Date | null;
+  /** Estimated wall-clock end time of the break (if departure time known) */
+  endTime: Date | null;
+  /** Linearly interpolated GPS coordinates along origin → destination */
+  coordinates: { lat: number; lng: number } | null;
+  /** Human-readable label for timeline & map markers */
+  label: string;
+};
+
+export type HOSTripPlan = {
+  totalMiles: number;
+  averageSpeedMph: number;
+  totalDriveHours: number;
+  availableHosHours: number;
+  requiresMandatoryBreak: boolean;
+  isSingleShiftCompletable: boolean;
+  breaks: HOSTripBreak[];
+  totalRestHours: number;
+  requiresReset: boolean;
+  resetHours: number;
+  totalTransitHours: number;
+  departureDate: Date | null;
+  adjustedEta: Date | null;
+};
+
+export type HOSAwareProgress = {
+  completedDriveHours: number;
+  coveredMiles: number;
+  remainingMiles: number;
+  progressPct: number;
+  transitFraction: number;
+  isResting: boolean;
+  activeBreak: HOSTripBreak | null;
+  breakRemainingHours: number;
+  remainingDriveHours: number;
+  remainingRestHours: number;
+  remainingTotalHours: number;
+};
+
+/**
+ * Builds an HOS-compliant trip plan that inserts mandatory 10-hour rest breaks
+ * whenever driving time exceeds the driver's available HOS hours (FMCSA 11-hr limit).
+ */
+export function calculateHOSTripPlan(
+  loadedMiles: number,
+  deadheadMiles: number = 0,
+  departureDateTime?: string | number | Date | null,
+  options?: HOSTransitOptions & {
+    originCoords?: { lat: number; lng: number } | null;
+    destCoords?: { lat: number; lng: number } | null;
+  },
+): HOSTripPlan | null {
+  const totalMiles = (loadedMiles || 0) + (deadheadMiles || 0);
+  if (totalMiles <= 0) return null;
+
+  const averageSpeedMph =
+    options?.averageSpeedMph && options.averageSpeedMph > 0
+      ? options.averageSpeedMph
+      : HOS_AVG_SPEED_MPH;
+  const totalDriveHours = totalMiles / averageSpeedMph;
+  const availableHosHours =
+    options?.availableHosHours !== undefined
+      ? Math.max(0, options.availableHosHours)
+      : HOS_MAX_DRIVE_HOURS;
+
+  const requiresMandatoryBreak = totalDriveHours > availableHosHours;
+  const isSingleShiftCompletable = !requiresMandatoryBreak;
+
+  const requiresReset =
+    totalDriveHours > HOS_CYCLE_HOURS ||
+    (options?.recentOnDutyHours !== undefined &&
+      options.recentOnDutyHours + totalDriveHours > HOS_CYCLE_HOURS);
+  const resetHours = requiresReset ? HOS_RESET_HOURS : 0;
+
+  let departureDate: Date | null = null;
+  if (departureDateTime) {
+    const d = departureDateTime instanceof Date ? departureDateTime : new Date(departureDateTime);
+    if (!isNaN(d.getTime())) departureDate = d;
+  }
+
+  const breaks: HOSTripBreak[] = [];
+  if (requiresMandatoryBreak) {
+    let cumulativeDrive = availableHosHours;
+    let breakIndex = 1;
+    // Cap at 10 breaks as a safety guard against extreme/invalid inputs
+    while (cumulativeDrive < totalDriveHours - 1e-6 && breakIndex <= 10) {
+      const atMiles = Math.min(totalMiles, Math.round(cumulativeDrive * averageSpeedMph));
+      const routeFraction = Math.min(0.98, Math.max(0.02, atMiles / totalMiles));
+      const priorBreakHours = (breakIndex - 1) * HOS_REST_BREAK_HOURS;
+      const startElapsedHours = cumulativeDrive + priorBreakHours;
+      const endElapsedHours = startElapsedHours + HOS_REST_BREAK_HOURS;
+
+      const startTime = departureDate
+        ? new Date(departureDate.getTime() + startElapsedHours * 3_600_000)
+        : null;
+      const endTime = departureDate
+        ? new Date(departureDate.getTime() + endElapsedHours * 3_600_000)
+        : null;
+
+      let coordinates: { lat: number; lng: number } | null = null;
+      if (options?.originCoords && options?.destCoords) {
+        coordinates = {
+          lat: parseFloat(
+            (
+              options.originCoords.lat +
+              (options.destCoords.lat - options.originCoords.lat) * routeFraction
+            ).toFixed(5),
+          ),
+          lng: parseFloat(
+            (
+              options.originCoords.lng +
+              (options.destCoords.lng - options.originCoords.lng) * routeFraction
+            ).toFixed(5),
+          ),
+        };
+      }
+
+      breaks.push({
+        breakIndex,
+        atDriveHours: parseFloat(cumulativeDrive.toFixed(1)),
+        atMiles,
+        startElapsedHours: parseFloat(startElapsedHours.toFixed(2)),
+        endElapsedHours: parseFloat(endElapsedHours.toFixed(2)),
+        routeFraction,
+        durationHours: HOS_REST_BREAK_HOURS,
+        startTime,
+        endTime,
+        coordinates,
+        label: `Mandatory 10-hr HOS Rest Break (Mile ${atMiles.toLocaleString()})`,
+      });
+
+      cumulativeDrive += HOS_MAX_DRIVE_HOURS;
+      breakIndex += 1;
+    }
+  }
+
+  const totalRestHours = breaks.length * HOS_REST_BREAK_HOURS;
+  const totalTransitHours = totalDriveHours + totalRestHours + resetHours;
+  const adjustedEta = departureDate
+    ? new Date(Math.ceil((departureDate.getTime() + totalTransitHours * 3_600_000) / 60_000) * 60_000)
+    : null;
+
+  return {
+    totalMiles,
+    averageSpeedMph,
+    totalDriveHours,
+    availableHosHours,
+    requiresMandatoryBreak,
+    isSingleShiftCompletable,
+    breaks,
+    totalRestHours,
+    requiresReset,
+    resetHours,
+    totalTransitHours,
+    departureDate,
+    adjustedEta,
+  };
+}
+
+/**
+ * Simulates route progress along an HOS trip plan given elapsed hours since departure:
+ * driving pauses during mandatory 10-hour rest breaks and resumes afterward.
+ */
+export function calculateHOSAwareProgress(
+  tripPlan: HOSTripPlan,
+  elapsedHoursSinceDeparture: number,
+): HOSAwareProgress {
+  const elapsed = Math.max(0, elapsedHoursSinceDeparture);
+
+  let isResting = false;
+  let activeBreak: HOSTripBreak | null = null;
+  let breakRemainingHours = 0;
+  let completedRestHours = 0;
+
+  for (const brk of tripPlan.breaks) {
+    if (elapsed >= brk.startElapsedHours && elapsed < brk.endElapsedHours) {
+      isResting = true;
+      activeBreak = brk;
+      breakRemainingHours = Math.max(0, brk.endElapsedHours - elapsed);
+      completedRestHours += elapsed - brk.startElapsedHours;
+      break;
+    } else if (elapsed >= brk.endElapsedHours) {
+      completedRestHours += brk.durationHours;
+    }
+  }
+
+  const rawCompletedDrive = isResting && activeBreak
+    ? activeBreak.atDriveHours
+    : Math.max(0, elapsed - completedRestHours);
+
+  const completedDriveHours = Math.min(tripPlan.totalDriveHours, rawCompletedDrive);
+  const coveredMiles = Math.min(
+    tripPlan.totalMiles,
+    Math.round(completedDriveHours * tripPlan.averageSpeedMph),
+  );
+  const remainingMiles = Math.max(0, tripPlan.totalMiles - coveredMiles);
+  const transitFraction =
+    tripPlan.totalDriveHours > 0
+      ? Math.min(1, Math.max(0, completedDriveHours / tripPlan.totalDriveHours))
+      : 0;
+  const progressPct =
+    tripPlan.totalMiles > 0
+      ? Math.min(98, Math.max(2, Math.round(transitFraction * 100)))
+      : 0;
+
+  const remainingDriveHours = Math.max(0, tripPlan.totalDriveHours - completedDriveHours);
+  const remainingRestHours = Math.max(0, tripPlan.totalRestHours - completedRestHours);
+  const remainingTotalHours = remainingDriveHours + remainingRestHours;
+
+  return {
+    completedDriveHours,
+    coveredMiles,
+    remainingMiles,
+    progressPct,
+    transitFraction,
+    isResting,
+    activeBreak,
+    breakRemainingHours,
+    remainingDriveHours,
+    remainingRestHours,
+    remainingTotalHours,
+  };
+}

@@ -6,7 +6,7 @@ import { format as formatDate } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { HOSResult } from '@/lib/hosEngine';
-import { toDateTimeLocal } from '@/lib/hosEngine';
+import { toDateTimeLocal, calculateHOSTripPlan } from '@/lib/hosEngine';
 
 type HOSWarningBannerProps = {
   hosResult: HOSResult | null;
@@ -87,12 +87,22 @@ export function HOSWarningBanner({ hosResult, onUpdateDelivery }: HOSWarningBann
                     ? ` (exceeded by ${(totalDriveHours - availableHosHours).toFixed(1)} hrs)`
                     : ''}
                 </li>
-                {restBreaksNeeded > 0 && (
-                  <li>
-                    <span className="font-semibold">Estimated Rest Breaks:</span>{' '}
-                    {totalRestHours} hrs ({restBreaksNeeded} &times; 10-hr rest)
-                  </li>
-                )}
+                {restBreaksNeeded > 0 && (() => {
+                  const plan = calculateHOSTripPlan(totalMiles, 0, pickupDate, {
+                    averageSpeedMph,
+                    availableHosHours,
+                  });
+                  const firstStop = plan?.breaks[0];
+                  return (
+                    <li>
+                      <span className="font-semibold">Mandatory HOS Rest Breaks:</span>{' '}
+                      {totalRestHours} hrs ({restBreaksNeeded} &times; 10-hr rest)
+                      {firstStop ? ` — earliest required stop at Mile ${firstStop.atMiles.toLocaleString()} (${firstStop.atDriveHours}h driven` : ''}
+                      {firstStop?.startTime ? `, ~${formatDate(firstStop.startTime, 'MMM d, h:mm a')}` : ''}
+                      {firstStop ? ')' : ''}
+                    </li>
+                  );
+                })()}
                 {requiresReset && (
                   <li>
                     <span className="font-semibold">Estimated 72-Hour Reset:</span>{' '}

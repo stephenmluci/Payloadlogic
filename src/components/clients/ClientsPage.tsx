@@ -591,7 +591,6 @@ export function ClientsPage() {
                   }))}
                   hideCompany={true}
                   hideContact={true}
-                  enableAutocomplete={true}
                 />
               </div>
             </div>

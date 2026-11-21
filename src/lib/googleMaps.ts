@@ -27,7 +27,7 @@ export function loadGoogleMapsScript(): Promise<void> {
     }
 
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry,routes`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry,routes`;
     script.async = true;
     script.defer = true;
     script.onload = () => resolve();

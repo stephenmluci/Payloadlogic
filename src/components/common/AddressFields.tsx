@@ -1,5 +1,5 @@
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,6 @@ type AddressFieldsProps = {
   hideCompany?: boolean;
   hideContact?: boolean;
   onCompanyParsed?: (company: string) => void;
-  enableAutocomplete?: boolean;
 };
 
 function parseCityStateZip(raw: string): { city?: string; state?: string; zip?: string } | null {
@@ -280,86 +279,13 @@ export function parseAddressBlock(raw: string, hideCompany?: boolean): Partial<A
   return null;
 }
 
-export function AddressFields({ label, prefix: customPrefix, address, onChange, required, hideCompany, hideContact, onCompanyParsed, enableAutocomplete }: AddressFieldsProps) {
+export function AddressFields({ label, prefix: customPrefix, address, onChange, required, hideCompany, hideContact, onCompanyParsed }: AddressFieldsProps) {
   const safeAddress = address || { street: '', city: '', state: '', zip: '' };
   const prefix = customPrefix || label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const streetInputRef = useRef<HTMLInputElement>(null);
   const [pasteNotice, setPasteNotice] = useState(false);
   const [showPasteBox, setShowPasteBox] = useState(false);
   const [pasteDraft, setPasteDraft] = useState('');
-
-  useEffect(() => {
-    if (!enableAutocomplete || !streetInputRef.current) return;
-    if (typeof window === 'undefined' || !(window as any).google?.maps?.places) return;
-
-    try {
-      const autocomplete = new (window as any).google.maps.places.Autocomplete(streetInputRef.current, {
-        types: ['address'],
-        componentRestrictions: { country: 'us' },
-      });
-
-      autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        if (!place || !place.address_components) return;
-
-        let streetNumber = '';
-        let route = '';
-        let city = '';
-        let state = '';
-        let zip = '';
-
-        place.address_components.forEach((comp: any) => {
-          const types = comp.types;
-          if (types.includes('street_number')) streetNumber = comp.long_name;
-          if (types.includes('route')) route = comp.short_name || comp.long_name;
-          if (types.includes('locality')) city = comp.long_name;
-          if (types.includes('sublocality_level_1') && !city) city = comp.long_name;
-          if (types.includes('administrative_area_level_1')) state = comp.short_name;
-          if (types.includes('postal_code')) zip = comp.long_name;
-        });
-
-        let streetAddress = `${streetNumber} ${route}`.trim();
-        // If street_number and route were not in address_components, parse from formatted_address rather than taking place.name (which is often a dealership/company name)
-        if (!streetAddress && place.formatted_address) {
-          const firstPart = place.formatted_address.split(',')[0]?.trim();
-          // Only use if it looks like a street (has a digit) or doesn't match place.name
-          if (firstPart && (!place.name || firstPart.toLowerCase() !== place.name.toLowerCase())) {
-            streetAddress = firstPart;
-          }
-        }
-        if (!streetAddress && place.name && !place.address_components?.some((c: any) => c.types.includes('establishment'))) {
-          streetAddress = place.name;
-        }
-
-        if (streetAddress) onChange('street', streetAddress);
-        if (city) onChange('city', city);
-        if (state) onChange('state', state);
-        if (zip) onChange('zip', zip);
-
-        // Programmatic updates on HTML inputs don't fire React synthetic onChange.
-        // Explicitly dispatch native input events so React & listeners pick up the full string immediately.
-        setTimeout(() => {
-          if (streetInputRef.current) {
-            const form = streetInputRef.current.form || streetInputRef.current.closest('div.space-y-3');
-            if (form) {
-              const cityEl = form.querySelector<HTMLInputElement>(`input[name="${prefix}-city"]`);
-              const stateEl = form.querySelector<HTMLInputElement>(`input[name="${prefix}-state"]`);
-              const zipEl = form.querySelector<HTMLInputElement>(`input[name="${prefix}-zip"]`);
-
-              [streetInputRef.current, cityEl, stateEl, zipEl].forEach(input => {
-                if (input) {
-                  input.dispatchEvent(new Event('input', { bubbles: true }));
-                  input.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-              });
-            }
-          }
-        }, 50);
-      });
-    } catch (err) {
-      console.warn('Google Places Autocomplete initialization error:', err);
-    }
-  }, [enableAutocomplete, onChange, prefix]);
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatPhoneNumber(e.target.value);

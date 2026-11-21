@@ -1008,7 +1008,6 @@ export function SettingsPage() {
                   onChange={handleCarrierAddressChange}
                   hideCompany={true}
                   hideContact={true}
-                  enableAutocomplete={true}
                 />
               </div>
             </div>

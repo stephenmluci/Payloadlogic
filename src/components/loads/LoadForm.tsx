@@ -1949,7 +1949,6 @@ export function LoadForm({
                       onChange={(field, value) => handleAddressChange('destination', field, value)}
                       required
                       hideCompany
-                      enableAutocomplete
                     />
                   </div>
                 </div>

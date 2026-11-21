@@ -1,4 +1,3 @@
-import Script from 'next/script';
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
@@ -46,8 +45,6 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -71,12 +68,6 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet" />
       </head>
       <body className="font-body antialiased" suppressHydrationWarning>
-        {googleMapsApiKey && (
-          <Script
-            src={`https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places,geometry,routes`}
-            strategy="afterInteractive"
-          />
-        )}
         <AppProvider>
           <ErrorBoundary>
             {children}

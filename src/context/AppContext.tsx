@@ -20,7 +20,7 @@ import { sendNotificationEmail, type SendNotificationEmailInput } from '@/ai/flo
 import { formatAddress } from '@/lib/utils';
 import { geocodePhysicalAddress } from '@/lib/geocoding';
 import { sendDriverPushNotification } from '@/lib/pushNotification';
-import { dispatchDriverAssignmentAlert } from '@/lib/notifications';
+import { dispatchDriverAssignmentAlert, dispatchDriverNoteAlert } from '@/lib/notifications';
 import { isErroneousArrivalTimestamp, isDriverBroadcastingGPS } from '@/lib/telemetrySync';
 import { normalizeLoadDriverAssignment, isLoadAssignedToDriver, getDriverProfileId } from '@/lib/driverAssignment';
 import { resolveCoordinates } from '@/lib/routeUtils';
@@ -2639,6 +2639,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             description: `${alertResult.driverName} notified in-app (${alertResult.summaryMsg})`,
           });
         }
+      } else if (
+        user.role !== 'driver' &&
+        newlyAssignedDriverId &&
+        newlyAssignedDriverId !== 'none' &&
+        typeof updates.specialTerms === 'string' &&
+        updates.specialTerms.trim() &&
+        updates.specialTerms.trim() !== (currentLoad.specialTerms || '').trim()
+      ) {
+        const assignedDriver = driverProfiles.find(
+          d => d.uid === newlyAssignedDriverId || d.authUid === newlyAssignedDriverId
+        );
+        dispatchDriverNoteAlert({
+          driverId: newlyAssignedDriverId,
+          driver: assignedDriver,
+          loadId: id,
+          loadNumber: currentLoad.loadNumber,
+          note: updates.specialTerms.trim(),
+        });
       }
 
       toast({ title: "Load Updated", description: toastMessage });
@@ -2774,7 +2792,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       };
       await updateDoc(loadRef, firestoreUpdates);
       setLoads(prev => prev.map(l => l.id === loadId ? { ...l, ...updates } : l));
-      toast({ title: 'Note Sent', description: cleanNote ? 'Note sent to dispatcher.' : 'Note cleared.' });
+      if (user.role !== 'driver' && cleanNote) {
+        const targetLoad = loads.find(l => l.id === loadId);
+        const assignedDriverId = targetLoad?.assignedDriverId;
+        if (assignedDriverId && assignedDriverId !== 'none') {
+          const assignedDriver = driverProfiles.find(
+            d => d.uid === assignedDriverId || d.authUid === assignedDriverId
+          );
+          dispatchDriverNoteAlert({
+            driverId: assignedDriverId,
+            driver: assignedDriver,
+            loadId,
+            loadNumber: targetLoad?.loadNumber,
+            note: cleanNote,
+          });
+        }
+      }
+      toast({ title: 'Note Sent', description: cleanNote ? 'Note sent.' : 'Note cleared.' });
     } catch (error) {
       console.error('Error updating driver note:', error);
       toast({ variant: 'destructive', title: 'Error', description: 'Could not save note.' });

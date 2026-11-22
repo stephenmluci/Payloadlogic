@@ -136,6 +136,9 @@ export function dispatchDriverAssignmentAlert(params: {
       originCity: loadData.origin?.city,
       originState: loadData.origin?.state,
       clickActionUrl: driverLoadUrl,
+      title: isDispatched ? 'Load Dispatched to You' : 'New Load Assigned',
+      message: `${summaryMsg} Tap to open Driver View.`,
+      loadId,
     }).catch((err) => console.warn('Failed to send push driver notification:', err));
   }
 
@@ -145,6 +148,44 @@ export function dispatchDriverAssignmentAlert(params: {
     driverName: driver?.name || 'Driver',
     driverLoadUrl,
   };
+}
+
+/**
+ * Sends both an in-app bell notification and a Web Push notification when a
+ * dispatcher sends a note or instruction update to an assigned driver.
+ */
+export function dispatchDriverNoteAlert(params: {
+  driverId: string;
+  driver?: DriverProfile | null;
+  loadId: string;
+  loadNumber?: string;
+  note: string;
+}): void {
+  const { driverId, driver, loadId, loadNumber, note } = params;
+  const cleanNote = note.trim();
+  if (!driverId || driverId === 'none' || !cleanNote) return;
+
+  const loadLabel = loadNumber || loadId.substring(0, 8);
+  const title = `Dispatch Note • Load #${loadLabel}`;
+  const driverLoadUrl = buildDriverLoadViewUrl(driver, loadId);
+
+  sendDriverNotification({
+    driverId,
+    title,
+    message: cleanNote,
+    loadId,
+    actionUrl: driverLoadUrl,
+  }).catch((err) => console.warn('Failed to send in-app note notification:', err));
+
+  if (driver) {
+    sendDriverPushNotification({
+      driver,
+      clickActionUrl: driverLoadUrl,
+      title,
+      message: cleanNote,
+      loadId,
+    }).catch((err) => console.warn('Failed to send push note notification:', err));
+  }
 }
 
 /**

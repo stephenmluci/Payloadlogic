@@ -5,6 +5,7 @@ import { useApp } from '@/context/AppContext';
 import { useToast } from '@/hooks/use-toast';
 import { isLoadDetentionActive } from '@/lib/detention';
 import { hasLoadPod } from '@/lib/loadStatus';
+import { registerServiceWorker, subscribeUserToPush } from '@/lib/webPushClient';
 import { ShareLiveLocationToggle } from './ShareLiveLocationToggle';
 import {
   computeDeckPositions,
@@ -302,50 +303,112 @@ export function DriverDashboard() {
     );
   }, [targetDriverId, driverProfiles, user, isAdminOrDispatcher]);
 
-  // FCM Token Registration for Drivers
+  // Web Push + FCM Registration & First-Use Permission Prompt for Drivers
+  const [pushBannerState, setPushBannerState] = useState<'hidden' | 'prompt' | 'denied'>('hidden');
+  const [isEnablingPush, setIsEnablingPush] = useState(false);
+
   useEffect(() => {
     let isSubscribed = true;
 
-    async function registerFCM() {
-      // Only register for actual driver users or when targetDriverId is present and supported
+    async function syncPushRegistration() {
       if (!driverProfile?.uid || typeof window === 'undefined') return;
       if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
 
-      try {
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') return;
+      await registerServiceWorker();
 
-        // Register service worker if needed
+      if (Notification.permission === 'default') {
+        const dismissedKey = `push_prompt_dismissed_${driverProfile.uid}`;
+        const dismissed = localStorage.getItem(dismissedKey);
+        if (!dismissed && !isAdminOrDispatcher && isSubscribed) {
+          setPushBannerState('prompt');
+        }
+        return;
+      }
+
+      if (Notification.permission === 'denied') {
+        if (!isAdminOrDispatcher && isSubscribed) {
+          const dismissedKey = `push_prompt_dismissed_${driverProfile.uid}`;
+          if (!localStorage.getItem(dismissedKey)) {
+            setPushBannerState('denied');
+          }
+        }
+        return;
+      }
+
+      // Permission already granted — sync Web Push subscription silently
+      try {
+        const sub = await subscribeUserToPush();
+        if (sub && isSubscribed) {
+          const subJson = sub.toJSON();
+          const existingEndpoint = (driverProfile.webPushSubscription as any)?.endpoint;
+          if (existingEndpoint !== subJson.endpoint) {
+            await updateDriverProfile(driverProfile.uid, { webPushSubscription: subJson });
+          }
+        }
+      } catch (wpErr) {
+        console.warn('Web Push subscription sync failed:', wpErr);
+      }
+
+      // Also sync FCM token if configured
+      try {
         const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
         await navigator.serviceWorker.ready;
-
         const { getFirebaseMessaging } = await import('@/lib/firebase');
         const messaging = await getFirebaseMessaging();
         if (!messaging) return;
-
         const { getToken } = await import('firebase/messaging');
         const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
         const currentToken = await getToken(messaging, {
           serviceWorkerRegistration: registration,
           ...(vapidKey ? { vapidKey } : {})
         });
-
-        if (currentToken && isSubscribed) {
-          if (driverProfile.fcmToken !== currentToken) {
-            await updateDriverProfile(driverProfile.uid, { fcmToken: currentToken });
-          }
+        if (currentToken && isSubscribed && driverProfile.fcmToken !== currentToken) {
+          await updateDriverProfile(driverProfile.uid, { fcmToken: currentToken });
         }
       } catch (err) {
         console.warn('FCM registration encountered an error:', err);
       }
     }
 
-    registerFCM();
+    syncPushRegistration();
 
     return () => {
       isSubscribed = false;
     };
-  }, [driverProfile?.uid, driverProfile?.fcmToken, updateDriverProfile]);
+  }, [driverProfile?.uid, driverProfile?.fcmToken, driverProfile?.webPushSubscription, isAdminOrDispatcher, updateDriverProfile]);
+
+  const handleEnableDriverPush = async () => {
+    if (!driverProfile?.uid) return;
+    setIsEnablingPush(true);
+    try {
+      const sub = await subscribeUserToPush();
+      if (sub) {
+        await updateDriverProfile(driverProfile.uid, { webPushSubscription: sub.toJSON() });
+        setPushBannerState('hidden');
+        toast({
+          title: 'Dispatch Push Alerts Enabled',
+          description: 'You will receive alerts for load assignments and dispatch notes.',
+        });
+      } else if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'denied') {
+        setPushBannerState('denied');
+        toast({
+          title: 'Notifications Blocked',
+          description: 'Alerts will appear in your in-app notification bell instead.',
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to enable push:', err);
+    } finally {
+      setIsEnablingPush(false);
+    }
+  };
+
+  const handleDismissPushBanner = () => {
+    if (driverProfile?.uid && typeof window !== 'undefined') {
+      localStorage.setItem(`push_prompt_dismissed_${driverProfile.uid}`, '1');
+    }
+    setPushBannerState('hidden');
+  };
 
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', phone: '', assignedTruckId: 'none', assignedTrailerId: 'none' });
@@ -1017,6 +1080,50 @@ export function DriverDashboard() {
             </div>
           </div>
         </div>
+
+        {/* ── First-Use Web Push Permission Prompt (drivers only) ──── */}
+        {!isAdminOrDispatcher && user?.role === 'driver' && pushBannerState !== 'hidden' && (
+          <div className={`rounded-2xl border p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs ${
+            pushBannerState === 'denied'
+              ? 'border-slate-200 bg-slate-50 text-slate-700'
+              : 'border-amber-300 bg-amber-50 text-amber-950'
+          }`}>
+            <div className="min-w-0">
+              <p className="text-sm font-bold leading-tight">
+                {pushBannerState === 'denied'
+                  ? 'Push notifications are blocked — using in-app bell'
+                  : 'Enable dispatch push alerts'}
+              </p>
+              <p className="text-[11px] opacity-85 mt-0.5 leading-snug">
+                {pushBannerState === 'denied'
+                  ? 'New load assignments and dispatch notes will still appear in your notification bell above.'
+                  : 'Get alerted about new load assignments and dispatch notes even when the app is closed.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {pushBannerState === 'prompt' && (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isEnablingPush}
+                  onClick={handleEnableDriverPush}
+                  className="h-9 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs"
+                >
+                  {isEnablingPush ? 'Enabling...' : 'Enable Alerts'}
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={handleDismissPushBanner}
+                className="h-9 px-2.5 text-xs"
+              >
+                {pushBannerState === 'denied' ? 'Dismiss' : 'Not now'}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* ── Live Location Sharing (drivers only) ─────────────────── */}
         {!isAdminOrDispatcher && user?.role === 'driver' && driverProfile?.uid && (

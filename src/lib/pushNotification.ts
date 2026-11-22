@@ -5,6 +5,9 @@ interface SendDriverPushParams {
   originCity?: string;
   originState?: string;
   clickActionUrl?: string;
+  title?: string;
+  message?: string;
+  loadId?: string;
 }
 
 /**
@@ -15,12 +18,17 @@ export async function sendDriverPushNotification({
   originCity,
   originState,
   clickActionUrl,
+  title,
+  message,
+  loadId,
 }: SendDriverPushParams): Promise<boolean> {
   const originText = [originCity, originState].filter(Boolean).join(', ') || 'Assigned Location';
   const defaultUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/dashboard?tab=driver-dashboard`
     : '/dashboard?tab=driver-dashboard';
   const targetUrl = clickActionUrl || defaultUrl;
+  const pushTitle = title || 'New Load Assigned';
+  const pushBody = message || `Pickup: ${originText}. Tap to view route.`;
 
   let sent = false;
 
@@ -32,9 +40,10 @@ export async function sendDriverPushNotification({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           subscription: driver.webPushSubscription,
-          title: 'New Load Assigned',
-          message: `Pickup: ${originText}. Click to view route.`,
+          title: pushTitle,
+          message: pushBody,
           url: targetUrl,
+          loadId,
         }),
       });
       if (wpRes.ok) {
@@ -55,8 +64,8 @@ export async function sendDriverPushNotification({
         },
         body: JSON.stringify({
           fcmToken: driver.fcmToken,
-          title: 'New Load Assigned',
-          body: `Pickup: ${originText}. Click to view route.`,
+          title: pushTitle,
+          body: pushBody,
           click_action: targetUrl,
         }),
       });

@@ -2,9 +2,7 @@
 import React, { useRef, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { MapPin, ClipboardPaste, Check } from 'lucide-react';
+import { MapPin, Check } from 'lucide-react';
 import type { Address } from '@/types';
 import { sanitizePhoneDigits, handlePhonePaste, formatPhoneNumber } from '@/lib/utils';
 
@@ -284,8 +282,6 @@ export function AddressFields({ label, prefix: customPrefix, address, onChange, 
   const prefix = customPrefix || label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const streetInputRef = useRef<HTMLInputElement>(null);
   const [pasteNotice, setPasteNotice] = useState(false);
-  const [showPasteBox, setShowPasteBox] = useState(false);
-  const [pasteDraft, setPasteDraft] = useState('');
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatPhoneNumber(e.target.value);
@@ -314,25 +310,7 @@ export function AddressFields({ label, prefix: customPrefix, address, onChange, 
       onChange('contactPhone', parsed.contactPhone || '');
     }
     setPasteNotice(true);
-    setShowPasteBox(false);
-    setPasteDraft('');
     setTimeout(() => setPasteNotice(false), 2500);
-  };
-
-  const handleSmartPasteButton = async () => {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
-      try {
-        const clipText = await navigator.clipboard.readText();
-        const parsed = clipText ? parseAddressBlock(clipText, hideCompany) : null;
-        if (parsed) {
-          applyParsedAddress(parsed);
-          return;
-        }
-      } catch {
-        // Clipboard permission denied or unsupported — fall back to inline paste box
-      }
-    }
-    setShowPasteBox((prev) => !prev);
   };
 
   /** Fire when the user pastes into Company Name, Street, or Contact — try to parse a full or partial address. */
@@ -382,61 +360,8 @@ export function AddressFields({ label, prefix: customPrefix, address, onChange, 
               <Check className="h-3 w-3" /> Filled
             </span>
           )}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleSmartPasteButton}
-            className="h-7 px-2 text-xs text-slate-600 hover:text-slate-900"
-            title="Paste a full address block to auto-fill fields"
-          >
-            <ClipboardPaste className="h-3.5 w-3.5 mr-1" />
-            Paste Address
-          </Button>
         </div>
       </div>
-
-      {showPasteBox && (
-        <div className="p-2.5 rounded-lg border border-blue-200 bg-blue-50/50 space-y-2">
-          <Textarea
-            value={pasteDraft}
-            onChange={(e) => {
-              const val = e.target.value;
-              setPasteDraft(val);
-              const parsed = parseAddressBlock(val, hideCompany);
-              if (parsed) {
-                applyParsedAddress(parsed);
-              }
-            }}
-            placeholder={"Paste address block here...\ne.g.\nA.R.M. (USA) Inc.\n1506 Fernwood Road\nWintersville, OH 43953\nOffice: 740.264.6599"}
-            rows={4}
-            className="bg-white text-xs"
-            autoFocus
-          />
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => { setShowPasteBox(false); setPasteDraft(''); }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => {
-                const parsed = parseAddressBlock(pasteDraft, hideCompany);
-                if (parsed) applyParsedAddress(parsed);
-              }}
-            >
-              Fill Fields
-            </Button>
-          </div>
-        </div>
-      )}
 
       <div className="space-y-3">
         {/* Company / Business Name */}

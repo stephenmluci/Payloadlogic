@@ -28,6 +28,7 @@ import { ShareLoadPacketModal } from './ShareLoadPacketModal';
 import { SignedBolUpload } from './SignedBolUpload';
 import { getDriverProfileId } from '@/lib/driverAssignment';
 import { normalizeLoadStatus, isLoadCompleted, hasLoadPod } from '@/lib/loadStatus';
+import { getLoadDeliveryStops, isMultiDropLoad } from '@/lib/loadStops';
 import {
   calculateLoadDetention,
   getDetentionFreeTimeMinutes,
@@ -566,9 +567,19 @@ export function LoadCard({
             <div className="flex items-start break-words leading-snug">
               <span className="mr-2 mt-[2px] flex-shrink-0 text-[11px]">🔴</span>
               <span title={`Destination: ${formatAddress(load.destination)}`}>
-                <span className="text-slate-500 font-bold">Destination:</span> {formatAddress(load.destination)}
+                <span className="text-slate-500 font-bold">{isMultiDropLoad(load) ? 'Stop 1:' : 'Destination:'}</span> {formatAddress(load.destination)}
               </span>
             </div>
+            {isMultiDropLoad(load) && getLoadDeliveryStops(load).slice(1).map((stop) => (
+              <div key={stop.id} className="flex items-start break-words leading-snug text-xs text-slate-700 pl-4">
+                <span className="mr-1.5 font-bold text-blue-700 shrink-0">Stop {stop.stopNumber}:</span>
+                <span>
+                  {formatAddress(stop.address)}
+                  {stop.legMiles ? <span className="text-slate-400 ml-1">(+{stop.legMiles} mi)</span> : null}
+                  {stop.cargoDescription ? <span className="text-slate-500 ml-1">— {stop.cargoDescription}</span> : null}
+                </span>
+              </div>
+            ))}
           </CardTitle>
 
           <div className="flex flex-col items-end gap-1 flex-shrink-0">

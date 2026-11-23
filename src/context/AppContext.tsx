@@ -27,6 +27,7 @@ import { resolveCoordinates } from '@/lib/routeUtils';
 import { getDetentionFreeTimeMinutes, getDetentionFeeRate, formatFreeTimeLabel } from '@/lib/detention';
 import { deduplicateLoads, getLoadDuplicateKey, isLoadCompleted, hasLoadPod } from '@/lib/loadStatus';
 import { calculateCustomerRateBreakdown } from '@/lib/loadPricing';
+import { cleanStopsForSave } from '@/lib/loadStops';
 
 
 
@@ -1692,6 +1693,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     manualOverrideAt: undefined,
     detentionActive: undefined,
     actualExpenses: undefined,
+    additionalStops: undefined,
+    firstLegMiles: undefined,
     origin: { ...emptyAddress },
     destination: { ...emptyAddress },
   });
@@ -1817,6 +1820,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
     if ((loadForm.status === 'arrived' || (loadForm as any).status === 'Arrived' || loadForm.driverPhase === 'Arrived') && !dataWithCalculations.arrivedAt) {
       dataWithCalculations.arrivedAt = new Date().toISOString();
+    }
+
+    // Multi-drop: persist cleaned additional stops (single-destination loads store none)
+    const cleanedStops = cleanStopsForSave(loadForm.additionalStops);
+    if (cleanedStops.length > 0) {
+      dataWithCalculations.additionalStops = cleanedStops;
+      if (typeof loadForm.firstLegMiles === 'number') dataWithCalculations.firstLegMiles = loadForm.firstLegMiles;
+      else delete (dataWithCalculations as any).firstLegMiles;
+    } else {
+      delete (dataWithCalculations as any).additionalStops;
+      delete (dataWithCalculations as any).firstLegMiles;
     }
 
     if (!editingLoadId) {

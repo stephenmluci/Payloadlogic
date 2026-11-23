@@ -5,6 +5,7 @@ import { useApp } from '@/context/AppContext';
 import { useToast } from '@/hooks/use-toast';
 import { isLoadDetentionActive } from '@/lib/detention';
 import { hasLoadPod } from '@/lib/loadStatus';
+import { getLoadDeliveryStops, isMultiDropLoad } from '@/lib/loadStops';
 import { registerServiceWorker, subscribeUserToPush } from '@/lib/webPushClient';
 import { ShareLiveLocationToggle } from './ShareLiveLocationToggle';
 import {
@@ -1357,6 +1358,75 @@ export function DriverDashboard() {
                           )}
                         </div>
                       </div>
+
+                      {/* Multi-Drop Stops (ordered with individual navigation) */}
+                      {isMultiDropLoad(load) && (
+                        <div className="mt-2.5 pt-2.5 border-t border-slate-200/80 space-y-2">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-blue-700">
+                            Delivery Stops ({getLoadDeliveryStops(load).length} stops in order)
+                          </div>
+                          <div className="space-y-1.5">
+                            {getLoadDeliveryStops(load).map((stop) => {
+                              const stopNavUrl = getNextStopGoogleMapsUrl(
+                                stop.address,
+                                driverProfile?.currentLat && driverProfile?.currentLng
+                                  ? { lat: driverProfile.currentLat, lng: driverProfile.currentLng }
+                                  : null
+                              );
+                              const stopAddr = [
+                                stop.address.street,
+                                [stop.address.city, stop.address.state].filter(Boolean).join(', '),
+                                stop.address.zip,
+                              ].filter(Boolean).join(', ');
+                              return (
+                                <div
+                                  key={stop.id}
+                                  className="rounded-lg bg-white border border-slate-200 p-2 flex items-center justify-between gap-2 text-xs"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="inline-flex h-5 px-1.5 items-center justify-center rounded bg-blue-600 text-white text-[10px] font-bold shrink-0">
+                                        Stop {stop.stopNumber}
+                                      </span>
+                                      <span className="font-semibold text-slate-900 truncate">
+                                        {stopAddr || 'Delivery Stop'}
+                                      </span>
+                                    </div>
+                                    {(stop.cargoDescription || stop.cargoQuantity || stop.cargoWeight) && (
+                                      <p className="text-[11px] text-slate-600 mt-0.5 truncate">
+                                        Drop: {[
+                                          stop.cargoDescription,
+                                          stop.cargoQuantity ? `Qty ${stop.cargoQuantity}` : null,
+                                          stop.cargoWeight ? `${stop.cargoWeight.toLocaleString()} lbs` : null,
+                                        ].filter(Boolean).join(' • ')}
+                                      </p>
+                                    )}
+                                    {(stop.address.contactName || stop.address.contactPhone) && (
+                                      <p className="text-[10px] text-slate-500 mt-0.5">
+                                        {stop.address.contactName ? `${stop.address.contactName} ` : ''}
+                                        {stop.address.contactPhone ? (
+                                          <a href={`tel:${stop.address.contactPhone}`} className="text-blue-600 font-semibold hover:underline">
+                                            {stop.address.contactPhone}
+                                          </a>
+                                        ) : null}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <a
+                                    href={stopNavUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shrink-0"
+                                  >
+                                    <Navigation2 className="w-3 h-3" />
+                                    Navigate
+                                  </a>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Cargo Summary Chips */}
                       <div className="mt-2.5 pt-2 border-t border-slate-200/80 flex flex-wrap items-center gap-1.5 text-xs text-slate-600">

@@ -173,7 +173,27 @@ export type Load = {
   driverDeclineReason?: string;
   /** In-transit actual expenses logged by driver or admin with receipts, stored in sub-collection actualExpenses */
   actualExpenses?: ActualExpense[];
+  /**
+   * Multi-drop support: delivery stops AFTER the primary `destination` (Stop 1), in delivery order.
+   * Absent / empty for ordinary single-destination loads.
+   */
+  additionalStops?: LoadStop[];
+  /** Loaded miles for origin → primary destination only (set when additionalStops exist). `distance` is the total across all legs. */
+  firstLegMiles?: number;
 };
+
+/** One extra delivery stop on a multi-drop load (Stop 2, Stop 3, ...). */
+export interface LoadStop {
+  id: string;
+  address: Address;
+  /** What is dropped at this stop */
+  cargoDescription?: string;
+  cargoQuantity?: number;
+  /** Weight dropped at this stop (lbs) */
+  cargoWeight?: number;
+  /** Loaded miles from the previous stop to this stop */
+  legMiles?: number;
+}
 
 export type ActualExpenseCategory = 'Fuel' | 'DEF' | 'Maintenance/Repair' | 'Parts' | 'Tow/Recovery' | 'Tire Repair' | 'Oil Change' | 'Deadhead' | 'Tolls' | 'Scale Ticket' | 'Other';
 

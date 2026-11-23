@@ -329,6 +329,25 @@ export function buildChronologicalTripStops(loads: Load[]): ChronologicalTripSto
         cargoDescription: load.cargoDescription,
       });
     }
+
+    if (Array.isArray(load.additionalStops)) {
+      load.additionalStops.forEach((extraStop, idx) => {
+        const extraAddr = cleanSearchableAddress(extraStop.address);
+        if (!extraAddr) return;
+        rawStops.push({
+          type: 'dropoff',
+          searchableAddress: extraAddr,
+          location: extraAddr,
+          rawAddress: extraStop.address,
+          dateObj: deliveryDateObj,
+          timestamp: deliveryTime + idx + 1,
+          dateTimeStr: String(rawDeliveryDate || ''),
+          loadId: load.id || '',
+          loadNumber: load.loadNumber,
+          cargoDescription: extraStop.cargoDescription || load.cargoDescription,
+        });
+      });
+    }
   }
 
   // Step 2: Chronological Sort strictly by JavaScript Date objects

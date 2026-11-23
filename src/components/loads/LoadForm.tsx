@@ -48,11 +48,16 @@ const blankLoadForm = {
   tripDuration: undefined, assignedTruckId: '', assignedTrailerId: '', assignedDriverId: '',
   cargoQuantity: 1,
   bolSource: 'broker' as const,
+  additionalStops: undefined,
+  firstLegMiles: undefined,
 };
 
 import { AddressFields } from '../common/AddressFields';
 import { DispatcherDateTimePicker } from '../common/DispatcherDateTimePicker';
 import { calculateRoadDistance, calculateRoadDistanceWithCoords } from '@/lib/googleMaps';
+import { Plus } from 'lucide-react';
+import { createEmptyStop, getAdditionalStops, computeTotalLoadedMiles, sumStopLegMiles, isStopAddressRoutable } from '@/lib/loadStops';
+import type { LoadStop } from '@/types';
 import { geocodePhysicalAddress } from '@/lib/geocoding';
 import { generateGoogleMapsUrl, buildChronologicalTripGoogleMapsUrl } from '@/lib/routeUtils';
 import { formatPhoneNumber } from '@/lib/utils';
@@ -153,6 +158,7 @@ export function LoadForm({
     setShowAdvancedPricing(false);
     setOpenSections(DEFAULT_OPEN_SECTIONS);
     lastAutoMappedReqIdRef.current = null;
+    stopLegKeysRef.current = {};
     if (outboundFileInputRef.current) outboundFileInputRef.current.value = '';
     setFormResetKey(k => k + 1);
   }, []);
@@ -521,8 +527,29 @@ export function LoadForm({
       const routeKey = `${exactOrigin}|${exactDestination}`;
       setLastCalculatedRoute(routeKey);
 
+      // Multi-drop: calculate each following leg (previous stop → next stop)
+      const legUpdates: Record<string, number> = {};
+      let prevLegStr = exactDestination;
+      for (const stop of getAdditionalStops(loadForm)) {
+        if (!isStopAddressRoutable(stop.address)) continue;
+        const toStr = getFormattedAddressStr(stop.address);
+        try {
+          const legMiles = await calculateRoadDistance(prevLegStr, toStr);
+          if (legMiles > 0) legUpdates[stop.id] = legMiles;
+        } catch (legErr) {
+          console.warn('Stop leg distance failed:', legErr);
+        }
+        prevLegStr = toStr;
+      }
+
       // Single atomic update to state: write Loaded Miles and exact physical coordinates
-      setLoadForm(prev => ({
+      let totalLoadedMilesForToast = loadedMilesVal;
+      setLoadForm(prev => {
+        const nextStops = getAdditionalStops(prev).map(s => (legUpdates[s.id] ? { ...s, legMiles: legUpdates[s.id] } : s));
+        const hasStops = nextStops.length > 0;
+        const totalMiles = hasStops ? computeTotalLoadedMiles(loadedMilesVal, nextStops) : loadedMilesVal;
+        totalLoadedMilesForToast = totalMiles;
+        return {
         ...prev,
         origin: {
           ...(prev.origin || {}),
@@ -538,12 +565,16 @@ export function LoadForm({
         originLng: resolvedOrigCoords?.lng ?? (prev as any).originLng,
         destinationLat: resolvedDestCoords?.lat ?? (prev as any).destinationLat,
         destinationLng: resolvedDestCoords?.lng ?? (prev as any).destinationLng,
-        distance: loadedMilesVal,
-      }));
+        distance: totalMiles,
+        ...(hasStops ? { additionalStops: nextStops, firstLegMiles: loadedMilesVal } : {}),
+        };
+      });
 
       toast({
         title: "Route & Mileage Calculated",
         description: `Loaded Miles: ${loadedMilesVal} mi` + (
+          getAdditionalStops(loadForm).length > 0 ? ` (+${Object.keys(legUpdates).length} more leg${Object.keys(legUpdates).length === 1 ? '' : 's'} calculated)` : ''
+        ) + (
           loadForm.deadheadMiles ? ` | Deadhead: ${loadForm.deadheadMiles} mi` : ''
         )
       });
@@ -670,22 +701,26 @@ export function LoadForm({
             if (!oCoords) oCoords = await geocodePhysicalAddress(oStr) || undefined;
             if (!dCoords) dCoords = await geocodePhysicalAddress(dStr) || undefined;
 
-            setLoadForm(prev => ({
-              ...prev,
-              distance: res.miles,
-              origin: {
-                ...(prev.origin || {}),
-                ...(oCoords ? { lat: oCoords.lat, lng: oCoords.lng } : {})
-              } as Address,
-              destination: {
-                ...(prev.destination || {}),
-                ...(dCoords ? { lat: dCoords.lat, lng: dCoords.lng } : {})
-              } as Address,
-              originLat: oCoords?.lat ?? (prev as any).originLat,
-              originLng: oCoords?.lng ?? (prev as any).originLng,
-              destinationLat: dCoords?.lat ?? (prev as any).destinationLat,
-              destinationLng: dCoords?.lng ?? (prev as any).destinationLng,
-            }));
+            setLoadForm(prev => {
+              const hasStops = getAdditionalStops(prev).length > 0;
+              return {
+                ...prev,
+                distance: hasStops ? computeTotalLoadedMiles(res.miles, prev.additionalStops) : res.miles,
+                ...(hasStops ? { firstLegMiles: res.miles } : {}),
+                origin: {
+                  ...(prev.origin || {}),
+                  ...(oCoords ? { lat: oCoords.lat, lng: oCoords.lng } : {})
+                } as Address,
+                destination: {
+                  ...(prev.destination || {}),
+                  ...(dCoords ? { lat: dCoords.lat, lng: dCoords.lng } : {})
+                } as Address,
+                originLat: oCoords?.lat ?? (prev as any).originLat,
+                originLng: oCoords?.lng ?? (prev as any).originLng,
+                destinationLat: dCoords?.lat ?? (prev as any).destinationLat,
+                destinationLng: dCoords?.lng ?? (prev as any).destinationLng,
+              };
+            });
             toast({ title: 'Route Calculated', description: `Loaded miles auto-calculated: ${res.miles} mi` });
           }
         }).catch(err => {
@@ -693,6 +728,82 @@ export function LoadForm({
         });
     }
   }, [loadForm.origin, loadForm.destination, lastCalculatedRoute, setLoadForm, toast, getFormattedAddressStr]);
+
+  // ── Multi-drop: per-stop leg mileage (previous point → this stop) ───────────
+  const stopLegKeysRef = React.useRef<Record<string, string>>({});
+  React.useEffect(() => {
+    const stops = getAdditionalStops(loadForm);
+    if (stops.length === 0) return;
+
+    let prevAddr: Address | undefined = loadForm.destination as Address;
+    stops.forEach((stop) => {
+      const fromAddr = prevAddr;
+      prevAddr = stop.address;
+      if (!fromAddr || !isStopAddressRoutable(fromAddr) || !isStopAddressRoutable(stop.address)) return;
+
+      const fromStr = getFormattedAddressStr(fromAddr);
+      const toStr = getFormattedAddressStr(stop.address);
+      const key = `${fromStr}|${toStr}`;
+      if (stopLegKeysRef.current[stop.id] === key) return;
+      stopLegKeysRef.current[stop.id] = key;
+
+      calculateRoadDistance(fromStr, toStr)
+        .then((miles) => {
+          if (!(miles > 0)) return;
+          setLoadForm((prev) => {
+            const nextStops = getAdditionalStops(prev).map((s) => (s.id === stop.id ? { ...s, legMiles: miles } : s));
+            const first = prev.firstLegMiles ?? Math.max(0, (prev.distance || 0) - sumStopLegMiles(getAdditionalStops(prev)));
+            return {
+              ...prev,
+              additionalStops: nextStops,
+              firstLegMiles: first,
+              distance: computeTotalLoadedMiles(first, nextStops),
+            };
+          });
+        })
+        .catch((err) => console.warn('Stop leg distance skipped or failed:', err?.message || err));
+    });
+  }, [loadForm.additionalStops, loadForm.destination, setLoadForm, getFormattedAddressStr]);
+
+  const handleAddStop = () => {
+    setLoadForm((prev) => {
+      const existing = getAdditionalStops(prev);
+      return {
+        ...prev,
+        firstLegMiles: existing.length === 0 ? (prev.firstLegMiles ?? prev.distance ?? 0) : prev.firstLegMiles,
+        additionalStops: [...existing, createEmptyStop()],
+      };
+    });
+  };
+
+  const handleRemoveStop = (stopId: string) => {
+    delete stopLegKeysRef.current[stopId];
+    setLoadForm((prev) => {
+      const nextStops = getAdditionalStops(prev).filter((s) => s.id !== stopId);
+      if (nextStops.length === 0) {
+        // Back to a normal single-destination load
+        return { ...prev, additionalStops: undefined, distance: prev.firstLegMiles ?? prev.distance, firstLegMiles: undefined };
+      }
+      const first = prev.firstLegMiles ?? 0;
+      return { ...prev, additionalStops: nextStops, distance: computeTotalLoadedMiles(first, nextStops) };
+    });
+  };
+
+  const handleStopAddressChange = (stopId: string, field: keyof Address, value: string) => {
+    setLoadForm((prev) => ({
+      ...prev,
+      additionalStops: getAdditionalStops(prev).map((s) =>
+        s.id === stopId ? { ...s, address: { ...s.address, [field]: value } } : s,
+      ),
+    }));
+  };
+
+  const handleStopFieldChange = (stopId: string, patch: Partial<LoadStop>) => {
+    setLoadForm((prev) => ({
+      ...prev,
+      additionalStops: getAdditionalStops(prev).map((s) => (s.id === stopId ? { ...s, ...patch } : s)),
+    }));
+  };
 
   React.useEffect(() => {
     const o = loadForm.origin as Address;
@@ -1943,7 +2054,7 @@ export function LoadForm({
                   </div>
                   <div className="space-y-3">
                     <AddressFields 
-                      label="Destination (Delivery)"
+                      label={getAdditionalStops(loadForm).length > 0 ? 'Stop 1 — Destination (Delivery)' : 'Destination (Delivery)'}
                       prefix="destination"
                       address={loadForm.destination as Address}
                       onChange={(field, value) => handleAddressChange('destination', field, value)}
@@ -1951,6 +2062,98 @@ export function LoadForm({
                       hideCompany
                     />
                   </div>
+                </div>
+
+                {/* ── Multi-Drop: Additional Delivery Stops (Stop 2, Stop 3, ...) ── */}
+                {getAdditionalStops(loadForm).length > 0 && (
+                  <div className="space-y-4">
+                    {getAdditionalStops(loadForm).map((stop, idx) => (
+                      <div key={stop.id} className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-bold text-blue-900 flex items-center gap-2">
+                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white text-xs font-bold">{idx + 2}</span>
+                            Stop {idx + 2}
+                            {Number(stop.legMiles) > 0 && (
+                              <span className="text-[11px] font-semibold text-blue-700 bg-blue-100 border border-blue-200 rounded-full px-2 py-0.5">
+                                +{stop.legMiles} mi from previous stop
+                              </span>
+                            )}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveStop(stop.id)}
+                            className="h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove
+                          </Button>
+                        </div>
+
+                        <AddressFields
+                          label={`Stop ${idx + 2} (Delivery)`}
+                          prefix={`stop-${stop.id}`}
+                          address={stop.address}
+                          onChange={(field, value) => handleStopAddressChange(stop.id, field, value)}
+                          hideCompany
+                        />
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="sm:col-span-3">
+                            <Label htmlFor={`stop-${stop.id}-cargo`} className="text-xs">What is dropped here (optional)</Label>
+                            <Input
+                              id={`stop-${stop.id}-cargo`}
+                              value={stop.cargoDescription || ''}
+                              onChange={(e) => handleStopFieldChange(stop.id, { cargoDescription: e.target.value })}
+                              placeholder="e.g., 4 pallets of fasteners"
+                              className="bg-white"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor={`stop-${stop.id}-qty`} className="text-xs">Quantity</Label>
+                            <Input
+                              id={`stop-${stop.id}-qty`}
+                              type="number"
+                              min="0"
+                              value={stop.cargoQuantity ?? ''}
+                              onChange={(e) => handleStopFieldChange(stop.id, { cargoQuantity: e.target.value === '' ? undefined : Number(e.target.value) })}
+                              placeholder="Units"
+                              className="bg-white"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor={`stop-${stop.id}-weight`} className="text-xs">Weight (lbs)</Label>
+                            <Input
+                              id={`stop-${stop.id}-weight`}
+                              type="number"
+                              min="0"
+                              value={stop.cargoWeight ?? ''}
+                              onChange={(e) => handleStopFieldChange(stop.id, { cargoWeight: e.target.value === '' ? undefined : Number(e.target.value) })}
+                              placeholder="lbs"
+                              className="bg-white"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddStop}
+                    className="border-dashed border-blue-300 text-blue-700 hover:bg-blue-50"
+                  >
+                    <Plus className="h-4 w-4 mr-1.5" /> Add Stop
+                  </Button>
+                  {getAdditionalStops(loadForm).length > 0 && (
+                    <span className="text-[11px] text-slate-500">
+                      Multi-drop: {getAdditionalStops(loadForm).length + 1} deliveries &bull; Total loaded miles {loadForm.distance || 0} mi (all legs, used in the rate)
+                    </span>
+                  )}
                 </div>
 
                 {/* Progressive Disclosure: Additional Route & Document Options */}

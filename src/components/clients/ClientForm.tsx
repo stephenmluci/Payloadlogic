@@ -267,6 +267,7 @@ export function ClientForm({ clientForm, setClientForm, onSubmit, isSubmitting, 
                 onChange={handleAddressChange}
                 hideCompany={true}
                 hideContact={true}
+                hidePasteButton={true}
                 onCompanyParsed={(company) => {
                   if (!clientForm.companyName || clientForm.companyName.trim() === '') {
                     setClientForm(prev => ({ ...prev, companyName: company }));

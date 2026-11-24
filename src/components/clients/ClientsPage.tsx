@@ -591,6 +591,7 @@ export function ClientsPage() {
                   }))}
                   hideCompany={true}
                   hideContact={true}
+                  hidePasteButton={true}
                 />
               </div>
             </div>

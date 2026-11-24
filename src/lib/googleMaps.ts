@@ -48,8 +48,8 @@ export type RoadDistanceWithCoordsResult = {
 };
 
 /**
- * Calculates road driving distance and exact origin/destination coordinates using Google Maps DirectionsService / Routes API
- * If client-side service is unavailable, falls back to server route /api/distance, then OSRM/Haversine routing.
+ * Calculates road driving distance and exact origin/destination coordinates using the server route /api/distance,
+ * falling back to OSRM/Haversine routing without injecting the Google Maps JavaScript SDK onto non-map pages.
  */
 export async function calculateRoadDistanceWithCoords(origin: string, destination: string): Promise<RoadDistanceWithCoordsResult> {
   if (!origin || !destination) throw new Error('Origin and destination are required');
@@ -74,69 +74,7 @@ export async function calculateRoadDistanceWithCoords(origin: string, destinatio
     console.warn('Server route /api/distance call failed, attempting fallback:', serverErr);
   }
 
-  // 2. Try Client-Side Google Maps DirectionsService if explicit API key is configured and client calls are enabled
-  const hasClientKey = Boolean((process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '').trim());
-  if (hasClientKey && !isClientDirectionsDisabled) {
-    try {
-      await loadGoogleMapsScript();
-      if (typeof window !== 'undefined' && (window as any).google?.maps?.DirectionsService) {
-        const directionsService = new (window as any).google.maps.DirectionsService();
-
-        const result = await new Promise<any>((resolve, reject) => {
-          directionsService.route(
-            {
-              origin: origin,
-              destination: destination,
-              travelMode: (window as any).google.maps.TravelMode.DRIVING,
-              unitSystem: (window as any).google.maps.UnitSystem.IMPERIAL,
-            },
-            (res: any, status: any) => {
-              if (status === 'OK' || status === (window as any).google.maps.DirectionsStatus?.OK) {
-                resolve(res);
-              } else {
-                if (status === 'REQUEST_DENIED') {
-                  isClientDirectionsDisabled = true;
-                }
-                reject(new Error(status));
-              }
-            }
-          );
-        });
-
-        const route = result.routes?.[0];
-        if (route && route.legs && route.legs.length > 0) {
-          let totalDistanceMeters = 0;
-          for (const leg of route.legs) {
-            totalDistanceMeters += leg.distance?.value || 0;
-          }
-
-          const miles = Math.round(totalDistanceMeters * 0.000621371);
-          const leg0 = route.legs[0];
-          const lastLeg = route.legs[route.legs.length - 1];
-          const originCoords = leg0?.start_location ? {
-            lat: parseFloat(leg0.start_location.lat().toFixed(5)),
-            lng: parseFloat(leg0.start_location.lng().toFixed(5)),
-          } : undefined;
-          const destinationCoords = lastLeg?.end_location ? {
-            lat: parseFloat(lastLeg.end_location.lat().toFixed(5)),
-            lng: parseFloat(lastLeg.end_location.lng().toFixed(5)),
-          } : undefined;
-
-          return { miles, originCoords, destinationCoords };
-        }
-      }
-    } catch (clientErr: any) {
-      const statusMsg = clientErr?.message || String(clientErr);
-      if (statusMsg.includes('REQUEST_DENIED')) {
-        isClientDirectionsDisabled = true;
-      }
-      if (statusMsg.includes('ZERO_RESULTS') || statusMsg.includes('NOT_FOUND')) {
-        throw new Error(`No road route found between "${origin}" and "${destination}" (ZERO_RESULTS).`);
-      }
-    }
-  }
-
-  // 3. Fallback to OSRM / Haversine road estimation locally
+  // 2. Fallback to OSRM / Haversine road estimation locally (never inject Google Maps JS SDK on non-map forms)
   try {
     const parseCityState = (addrStr: string) => {
       const parts = addrStr.split(',').map(s => s.trim());

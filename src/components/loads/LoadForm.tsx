@@ -145,6 +145,7 @@ export function LoadForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingLoadId]);
 
+  const lastAutoFilledOriginClientRef = React.useRef<string>('');
   const [formResetKey, setFormResetKey] = React.useState(0);
   const wasSubmittingRef = React.useRef(false);
   const resetLocalFormUiState = React.useCallback(() => {
@@ -158,6 +159,7 @@ export function LoadForm({
     setShowAdvancedPricing(false);
     setOpenSections(DEFAULT_OPEN_SECTIONS);
     lastAutoMappedReqIdRef.current = null;
+    lastAutoFilledOriginClientRef.current = '';
     stopLegKeysRef.current = {};
     if (outboundFileInputRef.current) outboundFileInputRef.current.value = '';
     setFormResetKey(k => k + 1);
@@ -798,6 +800,15 @@ export function LoadForm({
     }));
   };
 
+  const handleStopAddressBulkChange = (stopId: string, updates: Partial<Address>) => {
+    setLoadForm((prev) => ({
+      ...prev,
+      additionalStops: getAdditionalStops(prev).map((s) =>
+        s.id === stopId ? { ...s, address: { ...s.address, ...updates } } : s,
+      ),
+    }));
+  };
+
   const handleStopFieldChange = (stopId: string, patch: Partial<LoadStop>) => {
     setLoadForm((prev) => ({
       ...prev,
@@ -914,6 +925,16 @@ export function LoadForm({
       [type]: {
         ...(prev[type] as Address || { street: '', city: '', state: '', zip: '' }),
         [field]: value
+      }
+    }));
+  };
+
+  const handleAddressBulkChange = (type: 'origin' | 'destination', updates: Partial<Address>) => {
+    setLoadForm(prev => ({
+      ...prev,
+      [type]: {
+        ...(prev[type] as Address || { street: '', city: '', state: '', zip: '' }),
+        ...updates,
       }
     }));
   };
@@ -1187,9 +1208,16 @@ export function LoadForm({
       });
     }
 
-    // Ensure origin pickup gets populated if empty
+    // Ensure origin pickup gets populated once per selected client if completely empty
     const currentOrigin = loadForm.origin as Address | undefined;
-    if (!currentOrigin?.street && matchedCompany?.address) {
+    if (
+      targetClientId &&
+      lastAutoFilledOriginClientRef.current !== targetClientId &&
+      !currentOrigin?.street &&
+      !currentOrigin?.city &&
+      matchedCompany?.address
+    ) {
+      lastAutoFilledOriginClientRef.current = targetClientId;
       populateOriginWithClientData(targetClientId);
     }
 
@@ -1222,13 +1250,18 @@ export function LoadForm({
     setLoadForm,
   ]);
 
-  // Trigger auto-fill on initial load when a client is pre-selected but origin street is empty
+  // Trigger auto-fill once on initial load when a client is pre-selected and origin is completely empty
   React.useEffect(() => {
     const isLoading = appIsClientsLoading !== undefined ? appIsClientsLoading : isClientsLoading;
     if (isLoading) return; // Wait until clients are resolved
-    if (loadForm.clientId) {
+    if (!loadForm.clientId) {
+      lastAutoFilledOriginClientRef.current = '';
+      return;
+    }
+    if (lastAutoFilledOriginClientRef.current !== loadForm.clientId) {
+      lastAutoFilledOriginClientRef.current = loadForm.clientId;
       const currentOrigin = loadForm.origin as Address | undefined;
-      if (!currentOrigin?.street) {
+      if (!currentOrigin?.street && !currentOrigin?.city) {
         populateOriginWithClientData(loadForm.clientId);
       }
     }
@@ -2004,6 +2037,7 @@ export function LoadForm({
                                 companyName: found.companyName,
                               }));
                             }
+                            lastAutoFilledOriginClientRef.current = value;
                             handleSelectChange('clientId', value);
                             populateOriginWithClientData(value);
                           }}
@@ -2048,6 +2082,7 @@ export function LoadForm({
                       prefix="origin"
                       address={loadForm.origin as Address}
                       onChange={(field, value) => handleAddressChange('origin', field, value)}
+                      onBulkChange={(updates) => handleAddressBulkChange('origin', updates)}
                       required
                       hideCompany
                     />
@@ -2058,6 +2093,7 @@ export function LoadForm({
                       prefix="destination"
                       address={loadForm.destination as Address}
                       onChange={(field, value) => handleAddressChange('destination', field, value)}
+                      onBulkChange={(updates) => handleAddressBulkChange('destination', updates)}
                       required
                       hideCompany
                     />
@@ -2095,6 +2131,7 @@ export function LoadForm({
                           prefix={`stop-${stop.id}`}
                           address={stop.address}
                           onChange={(field, value) => handleStopAddressChange(stop.id, field, value)}
+                          onBulkChange={(updates) => handleStopAddressBulkChange(stop.id, updates)}
                           hideCompany
                         />
 

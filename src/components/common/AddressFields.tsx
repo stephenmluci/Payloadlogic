@@ -1,11 +1,12 @@
-
 import React, { useRef, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { MapPin, Check } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { MapPin, ClipboardPaste, Check } from 'lucide-react';
 import type { Address } from '@/types';
 import { handlePhonePaste, formatPhoneNumber } from '@/lib/utils';
-import { parseAddressBlock } from '@/lib/addressParser';
+import { parseAddressBlock, extractPhoneFromAddressText } from '@/lib/addressParser';
 export { parseAddressBlock };
 
 type AddressFieldsProps = {
@@ -13,17 +14,32 @@ type AddressFieldsProps = {
   prefix?: string;
   address: Address;
   onChange: (field: keyof Address, value: string) => void;
+  onBulkChange?: (updates: Partial<Address>) => void;
   required?: boolean;
   hideCompany?: boolean;
   hideContact?: boolean;
+  hidePasteButton?: boolean;
   onCompanyParsed?: (company: string) => void;
 };
 
-export function AddressFields({ label, prefix: customPrefix, address, onChange, required, hideCompany, hideContact, onCompanyParsed }: AddressFieldsProps) {
+export function AddressFields({
+  label,
+  prefix: customPrefix,
+  address,
+  onChange,
+  onBulkChange,
+  required,
+  hideCompany,
+  hideContact,
+  hidePasteButton,
+  onCompanyParsed,
+}: AddressFieldsProps) {
   const safeAddress = address || { street: '', city: '', state: '', zip: '' };
   const prefix = customPrefix || label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const streetInputRef = useRef<HTMLInputElement>(null);
   const [pasteNotice, setPasteNotice] = useState(false);
+  const [showPasteBox, setShowPasteBox] = useState(false);
+  const [pasteDraft, setPasteDraft] = useState('');
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatPhoneNumber(e.target.value);
@@ -37,43 +53,103 @@ export function AddressFields({ label, prefix: customPrefix, address, onChange, 
     });
   };
 
-  const applyParsedAddress = (parsed: Partial<Address>) => {
-    // Clear existing fields first so leftover values from a previous address do not remain
-    onChange('companyName', parsed.companyName || '');
-    onChange('street', parsed.street || '');
-    onChange('city', parsed.city || '');
-    onChange('state', parsed.state || '');
-    onChange('zip', parsed.zip || '');
+  const applyParsedAddress = (parsed: Partial<Address>, closePastePanel = true) => {
+    const updates: Partial<Address> = {
+      companyName: parsed.companyName || '',
+      street: parsed.street || '',
+      city: parsed.city || '',
+      state: parsed.state || '',
+      zip: parsed.zip || '',
+      ...(!hideContact
+        ? {
+            contactName: parsed.contactName || '',
+            contactPhone: parsed.contactPhone || '',
+          }
+        : {}),
+    };
+
+    if (onBulkChange) {
+      onBulkChange(updates);
+    } else {
+      onChange('companyName', updates.companyName || '');
+      onChange('street', updates.street || '');
+      onChange('city', updates.city || '');
+      onChange('state', updates.state || '');
+      onChange('zip', updates.zip || '');
+      if (!hideContact) {
+        onChange('contactName', updates.contactName || '');
+        onChange('contactPhone', updates.contactPhone || '');
+      }
+    }
+
     if (parsed.companyName && hideCompany && onCompanyParsed) {
       onCompanyParsed(parsed.companyName);
     }
-    if (!hideContact) {
-      onChange('contactName', parsed.contactName || '');
-      onChange('contactPhone', parsed.contactPhone || '');
+
+    if (closePastePanel) {
+      setShowPasteBox(false);
+      setPasteDraft('');
     }
     setPasteNotice(true);
     setTimeout(() => setPasteNotice(false), 2500);
   };
 
-  /** Fire when the user pastes into Company Name, Street, or Contact — try to parse a full or partial address. */
+  const handleFillFromDraft = (rawText: string, closePastePanel = true) => {
+    const trimmed = rawText.trim();
+    if (!trimmed) return false;
+
+    const parsed = parseAddressBlock(trimmed, hideCompany);
+    if (parsed) {
+      applyParsedAddress(parsed, closePastePanel);
+      return true;
+    }
+
+    // Fallback when user clicks Fill Fields with a partial/street-only line
+    if (closePastePanel) {
+      const { phone, remainder } = extractPhoneFromAddressText(trimmed);
+      applyParsedAddress(
+        {
+          street: remainder || trimmed,
+          city: safeAddress.city || '',
+          state: safeAddress.state || '',
+          zip: safeAddress.zip || '',
+          contactName: safeAddress.contactName || '',
+          contactPhone: phone || safeAddress.contactPhone || '',
+        },
+        true,
+      );
+      return true;
+    }
+    return false;
+  };
+
+  /** Direct paste into Street or Company field — immediately parse and fill Street, City, State, ZIP, and Phone. */
   const handleAddressPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    const text = e.clipboardData.getData('text/plain') || e.clipboardData.getData('text');
+    const text = e.clipboardData?.getData('text/plain') || e.clipboardData?.getData('text') || '';
     if (!text) return;
     const parsed = parseAddressBlock(text, hideCompany);
     if (!parsed) return; // single-line street-only paste — let browser handle it normally
     e.preventDefault();
-    applyParsedAddress(parsed);
+    applyParsedAddress(parsed, true);
+  };
+
+  const handleAddressDrop = (e: React.DragEvent<HTMLInputElement>) => {
+    const text = e.dataTransfer?.getData('text/plain') || e.dataTransfer?.getData('text') || '';
+    if (!text) return;
+    const parsed = parseAddressBlock(text, hideCompany);
+    if (!parsed) return;
+    e.preventDefault();
+    applyParsedAddress(parsed, true);
   };
 
   const handleSmartInput = (field: 'companyName' | 'street', value: string) => {
     const prevValue = field === 'street' ? (safeAddress.street || '') : (safeAddress.companyName || '');
-    const isBulkInsert = value.length - prevValue.length >= 6;
+    const isBulkInsert = value.length - prevValue.length >= 10;
 
-    if (value.includes(',')) {
+    if (isBulkInsert || (value.includes(',') && /\b\d{5}(?:-\d{4})?\b/.test(value))) {
       const parsed = parseAddressBlock(value, hideCompany);
-      // Split immediately when a zip code is present or on bulk paste/autofill (e.g. mobile keyboard)
-      if (parsed && (parsed.zip || isBulkInsert)) {
-        applyParsedAddress(parsed);
+      if (parsed && parsed.street && (parsed.city || parsed.zip)) {
+        applyParsedAddress(parsed, true);
         return;
       }
     }
@@ -81,11 +157,13 @@ export function AddressFields({ label, prefix: customPrefix, address, onChange, 
   };
 
   const handleStreetBlur = () => {
+    // Only auto-split on blur if City and Zip have not already been filled, keeping fields freely editable
+    if (safeAddress.city || safeAddress.zip) return;
     const current = safeAddress.street || '';
-    if (!current.includes(',')) return;
+    if (!current) return;
     const parsed = parseAddressBlock(current, hideCompany);
-    if (parsed) {
-      applyParsedAddress(parsed);
+    if (parsed && parsed.street && (parsed.city || parsed.zip)) {
+      applyParsedAddress(parsed, true);
     }
   };
 
@@ -102,8 +180,72 @@ export function AddressFields({ label, prefix: customPrefix, address, onChange, 
               <Check className="h-3 w-3" /> Filled
             </span>
           )}
+          {!hidePasteButton && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowPasteBox((prev) => !prev)}
+              className="h-7 px-2 text-xs text-slate-600 hover:text-slate-900"
+              title="Paste a full address block to auto-fill Street, City, State, ZIP, and Phone"
+            >
+              <ClipboardPaste className="h-3.5 w-3.5 mr-1" />
+              Paste Address
+            </Button>
+          )}
         </div>
       </div>
+
+      {!hidePasteButton && showPasteBox && (
+        <div className="p-2.5 rounded-lg border border-blue-200 bg-blue-50/50 space-y-2">
+          <Textarea
+            id={prefix + '-paste-box'}
+            value={pasteDraft}
+            onChange={(e) => setPasteDraft(e.target.value)}
+            onPaste={(e) => {
+              const text = e.clipboardData?.getData('text/plain') || e.clipboardData?.getData('text') || '';
+              if (!text) return;
+              const parsed = parseAddressBlock(text, hideCompany);
+              if (parsed) {
+                // Populate fields immediately and also keep draft until Fill Fields / close
+                applyParsedAddress(parsed, false);
+              }
+            }}
+            onKeyDown={(e) => {
+              if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                handleFillFromDraft(pasteDraft, true);
+              }
+            }}
+            placeholder={'Paste full address here, e.g.\n1858 E. Pike Street Clarksburg, WV 26301, (304) 624-6304'}
+            rows={3}
+            className="bg-white text-xs"
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                setShowPasteBox(false);
+                setPasteDraft('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => handleFillFromDraft(pasteDraft, true)}
+            >
+              Fill Fields
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-3">
         {/* Company / Business Name */}
@@ -116,6 +258,7 @@ export function AddressFields({ label, prefix: customPrefix, address, onChange, 
               value={safeAddress.companyName || ''}
               onChange={(e) => handleSmartInput('companyName', e.target.value)}
               onPaste={handleAddressPaste}
+              onDrop={handleAddressDrop}
               placeholder="Company / Business Name (optional) — paste full address here"
               className="bg-white"
             />
@@ -132,6 +275,7 @@ export function AddressFields({ label, prefix: customPrefix, address, onChange, 
             value={safeAddress.street || ''}
             onChange={(e) => handleSmartInput('street', e.target.value)}
             onPaste={handleAddressPaste}
+            onDrop={handleAddressDrop}
             onBlur={handleStreetBlur}
             placeholder="Street Address (or paste full address string here...)"
             required={required}

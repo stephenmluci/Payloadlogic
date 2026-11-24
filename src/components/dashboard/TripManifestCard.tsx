@@ -498,26 +498,36 @@ export function TripManifestCard({
                     onClick={() => setExpandedLoadId(isExpanded ? null : load.id!)}
                     className="p-3.5 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
                   >
-                    <div className="flex items-center gap-2">
-                      <Package className="w-4 h-4 text-indigo-600" />
-                      <span className="text-xs font-bold text-slate-800">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Package className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <span className="text-xs font-bold text-slate-800 shrink-0">
                         Load #{load.loadNumber || load.id?.substring(0, 8)}
                       </span>
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-slate-500 truncate">
                         ({load.origin.city} → {load.destination.city})
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                       <Badge className={`text-[10px] font-semibold ${
                         hasSignedBol 
                           ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
                           : 'bg-amber-100 text-amber-800 border-amber-300'
                       }`}>
-                        {hasSignedBol ? '✓ BOL Uploaded' : 'Awaiting Paperwork'}
+                        {hasSignedBol ? '✓ BOL Uploaded' : 'Pending BOL / POD'}
                       </Badge>
                       {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
                     </div>
+                  </div>
+
+                  {/* Always-accessible BOL/POD Upload Bar for each active load in trip */}
+                  <div className="px-3.5 pb-3 pt-1 border-t border-slate-100 bg-white">
+                    <SignedBolUpload
+                      load={load}
+                      updateLoad={onUpdateLoad}
+                      variant="driver"
+                      label="Upload Signed BOL / POD"
+                    />
                   </div>
 
                   {isExpanded && (
@@ -557,11 +567,6 @@ export function TripManifestCard({
                             <span>Complete e-POD</span>
                           </Button>
                         )}
-                      </div>
-
-                      {/* Paperwork Upload Component */}
-                      <div className="pt-2">
-                        <SignedBolUpload load={load} updateLoad={onUpdateLoad} label="Upload Signed BOL for this load" compact={true} />
                       </div>
                     </div>
                   )}

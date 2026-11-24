@@ -277,6 +277,8 @@ export async function POST(req: NextRequest) {
           'arrivedAt',
           'deliveredAt',
           'paperworkStatus',
+          'signedBolUrl',
+          'signedBolUploadedAt',
         ];
         const safeLoadUpdates: Record<string, any> = {};
         for (const field of allowedLoadFields) {

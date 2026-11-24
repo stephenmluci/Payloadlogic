@@ -59,7 +59,7 @@ export function isLoadCompleted(
   }
   if (Boolean(load.deliveredAt)) return true;
   const pw = (load.paperworkStatus || '').toLowerCase().trim();
-  if (pw === 'pod_uploaded' || pw === 'invoiced' || pw === 'closed') return true;
+  if (pw === 'invoiced' || pw === 'closed') return true;
   return false;
 }
 

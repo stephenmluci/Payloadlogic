@@ -1121,26 +1121,33 @@ export function LoadCard({
                 )}
 
                 {/* Proof of Delivery / Signed BOL Status in Projected Financials */}
-                <div className="flex items-center justify-between text-xs pt-2 border-t border-blue-200/60 mt-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-2 border-t border-blue-200/60 mt-2">
                   <span className="font-semibold text-slate-700">Signed BOL / POD:</span>
                   {load.signedBolUrl ? (
-                    <a
-                      href={load.signedBolUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center text-xs font-semibold text-purple-700 hover:text-purple-900 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 transition-colors"
-                      title="View & Download Signed Bill of Lading"
-                    >
-                      <FileCheck className="h-3.5 w-3.5 mr-1 text-purple-600" /> View Signed BOL <ExternalLink className="h-3 w-3 ml-1" />
-                    </a>
+                    <SignedBolUpload load={load} compact={true} />
                   ) : (
-                    <span className="text-amber-700 italic text-[11px] font-medium">Pending Driver Upload</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-amber-700 italic text-[11px] font-medium">Pending Driver Upload</span>
+                      <SignedBolUpload load={load} compact={true} label="Upload BOL / POD" />
+                    </div>
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground italic mt-1">Estimates based on current settings. Overhead allocated as daily prorated share × {tripCalendarDays} calendar day{tripCalendarDays !== 1 ? 's' : ''}{isLtlLoad ? ` (${deckPercentageUsed}% LTL share)` : ''}.</p>
                 <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">⚠️ <strong>Projected values only.</strong> HOS compliance must be verified on the driver's certified ELD. PayloadLogic is not an ELD.</p>
               </div>
-            ) : null}
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs p-2.5 rounded-md border border-slate-200 bg-slate-50">
+                <span className="font-semibold text-slate-700">Signed BOL / POD:</span>
+                {load.signedBolUrl ? (
+                  <SignedBolUpload load={load} compact={true} />
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-amber-700 italic text-[11px] font-medium">Pending Driver Upload</span>
+                    <SignedBolUpload load={load} compact={true} label="Upload BOL / POD" />
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
 

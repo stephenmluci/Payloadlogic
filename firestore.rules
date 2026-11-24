@@ -70,7 +70,8 @@ service cloud.firestore {
                     && isDriver(request.auth.uid)
                     && driverOwner(request.auth.uid) == adminUid
                     && collection == 'loads'
-                    && resource.data.assignedDriverId == request.auth.uid
+                    && (resource.data.assignedDriverId == request.auth.uid
+                        || resource.data.assignedDriverId == getProfile(request.auth.uid).driverProfileId)
                     && request.resource.data.diff(resource.data).affectedKeys()
                        .hasOnly([
                          'driverPhase', 'status', 'currentLat', 'currentLng',

@@ -37,6 +37,7 @@ import {
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { DriverPwaInstallBanner } from '@/components/common/DriverPwaInstallBanner';
+import { SignedBolUpload } from '@/components/loads/SignedBolUpload';
 import type { Load, DriverProfile } from '@/types';
 
 const DRIVER_PHASE_OPTIONS: { value: Load['status']; label: string }[] = [
@@ -583,6 +584,15 @@ export default function DriverPortalMagicLinkPage() {
                               ✓ Accepted
                             </Badge>
                           )}
+                          {load.signedBolUrl ? (
+                            <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold">
+                              ✓ Signed BOL Uploaded
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">
+                              Pending BOL / POD
+                            </Badge>
+                          )}
                         </div>
                         {load.distance ? (
                           <span className="text-xs font-bold text-slate-600">{load.distance} mi</span>
@@ -690,6 +700,22 @@ export default function DriverPortalMagicLinkPage() {
                         </div>
                       </div>
 
+                      {/* Signed BOL / POD Upload */}
+                      <div className="pt-1">
+                        <SignedBolUpload
+                          load={load}
+                          variant="driver"
+                          label="Upload Signed BOL / POD"
+                          updateLoad={async (id, updates) => {
+                            await handleUpdateLoad(
+                              id,
+                              updates,
+                              `Signed BOL / POD uploaded for Load #${load.loadNumber || id.substring(0, 8)}!`,
+                            );
+                          }}
+                        />
+                      </div>
+
                       {/* Driver Notes */}
                       <div className="space-y-1.5 pt-2 border-t border-slate-100">
                         <Label className="text-xs font-bold text-slate-700 flex items-center gap-1">
@@ -745,17 +771,35 @@ export default function DriverPortalMagicLinkPage() {
                 {completedLoads.map((cLoad) => (
                   <div
                     key={cLoad.id}
-                    className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between text-xs"
+                    className="bg-white rounded-xl border border-slate-200 p-3 space-y-2 text-xs"
                   >
-                    <div>
-                      <span className="font-bold text-slate-900">
-                        Load #{cLoad.loadNumber || cLoad.id?.substring(0, 8)}
-                      </span>
-                      <span className="text-slate-500 ml-2">
-                        {cLoad.origin?.city} → {cLoad.destination?.city}
-                      </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <span className="font-bold text-slate-900">
+                          Load #{cLoad.loadNumber || cLoad.id?.substring(0, 8)}
+                        </span>
+                        <span className="text-slate-500 ml-2">
+                          {cLoad.origin?.city} → {cLoad.destination?.city}
+                        </span>
+                      </div>
+                      <Badge className={cLoad.signedBolUrl ? "bg-emerald-100 text-emerald-800 text-[10px]" : "bg-amber-100 text-amber-900 text-[10px]"}>
+                        {cLoad.signedBolUrl ? 'Delivered • POD Uploaded' : 'Delivered • Pending POD'}
+                      </Badge>
                     </div>
-                    <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">Delivered</Badge>
+                    {!cLoad.signedBolUrl && (
+                      <SignedBolUpload
+                        load={cLoad}
+                        variant="driver"
+                        label="Upload Signed BOL / POD"
+                        updateLoad={async (id, updates) => {
+                          await handleUpdateLoad(
+                            id,
+                            updates,
+                            `Signed BOL / POD uploaded for Load #${cLoad.loadNumber || id.substring(0, 8)}!`,
+                          );
+                        }}
+                      />
+                    )}
                   </div>
                 ))}
               </div>

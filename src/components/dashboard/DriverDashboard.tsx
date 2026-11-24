@@ -650,7 +650,12 @@ export function DriverDashboard() {
           title: 'Delivery Timestamped',
           description: hasBol
             ? 'Drop-off verified and signed paperwork recorded.'
-            : 'Drop-off timestamped! Next step: Upload signed paper BOL for accounting & billing.',
+            : 'Drop-off timestamped! Tap "Upload Signed BOL / POD" to attach your signed paperwork.',
+        });
+      } else if (!hasBol && ['arrived', 'arrived-destination', 'unloading'].includes(phase)) {
+        toast({
+          title: 'Status Updated — BOL / POD Reminder',
+          description: 'Once the receiver signs, tap "Upload Signed BOL / POD" on your dispatch card.',
         });
       } else {
         toast({ title: 'Status Updated', description: `Now: ${PHASES.find(p => p.value === phase)?.label}` });
@@ -1145,6 +1150,29 @@ export function DriverDashboard() {
             )}
           </div>
 
+          {/* Paperwork Reminder Banner when any active load at destination or completed load still needs BOL/POD */}
+          {(() => {
+            const activeNeedingBol = activeLoads.filter(
+              (l) => !hasLoadPod(l) && ['arrived', 'arrived-destination', 'unloading'].includes((l.status || '').toLowerCase()),
+            );
+            const completedNeedingBol = completedToday.filter((l) => !isPaperworkClosedOut(l));
+            const totalNeedingBol = activeNeedingBol.length + completedNeedingBol.length;
+            if (totalNeedingBol === 0) return null;
+            return (
+              <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 p-3.5 flex items-start gap-2.5 shadow-xs">
+                <Camera className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                <div className="min-w-0 text-xs">
+                  <p className="font-extrabold text-amber-950">
+                    Signed BOL / POD Needed ({totalNeedingBol} {totalNeedingBol === 1 ? 'load' : 'loads'})
+                  </p>
+                  <p className="text-[11px] text-amber-900 mt-0.5 leading-snug">
+                    Use <strong>Upload Signed BOL / POD</strong> or <strong>Take Photo</strong> on the dispatch card below to send the signed paperwork to dispatch.
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
+
           {activeLoads.length === 0 ? (
             <Card className="border-dashed border-2 border-slate-200 bg-white/60 shadow-none rounded-2xl">
               <CardContent className="p-8 text-center text-slate-500">
@@ -1250,6 +1278,15 @@ export function DriverDashboard() {
                         {load.driverAcceptedStatus === 'accepted' && (
                           <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold px-2 py-0.5">
                             ✓ Load Accepted
+                          </Badge>
+                        )}
+                        {hasLoadPod(load) ? (
+                          <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold px-2 py-0.5">
+                            ✓ Signed BOL Uploaded
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold px-2 py-0.5">
+                            Pending BOL / POD
                           </Badge>
                         )}
                       </div>
@@ -1677,6 +1714,16 @@ export function DriverDashboard() {
                               )}
                             </Button>
                           </div>
+
+                          {/* ── Direct Signed BOL / POD Upload on Every Active Dispatch Card ── */}
+                          <div className="pt-1">
+                            <SignedBolUpload
+                              load={load}
+                              updateLoad={updateLoad}
+                              variant="driver"
+                              label="Upload Signed BOL / POD"
+                            />
+                          </div>
                         </div>
                       );
                     })()}
@@ -1909,17 +1956,23 @@ export function DriverDashboard() {
                               {cLoad.origin?.city} → {cLoad.destination?.city}
                             </p>
                           </div>
-                          <Button
-                            size="sm"
-                            type="button"
-                            onClick={() => setSelectedLoadForEpod(cLoad)}
-                            className="h-8 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs cursor-pointer"
-                          >
-                            <PenLine className="w-3.5 h-3.5 mr-1" />
-                            Sign BOL
-                          </Button>
-                        </div>
-                      </CardContent>
+                            <Button
+                              size="sm"
+                              type="button"
+                              onClick={() => setSelectedLoadForEpod(cLoad)}
+                              className="h-8 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs cursor-pointer"
+                            >
+                              <PenLine className="w-3.5 h-3.5 mr-1" />
+                              Sign BOL
+                            </Button>
+                          </div>
+                          <SignedBolUpload
+                            load={cLoad}
+                            updateLoad={updateLoad}
+                            variant="driver"
+                            label="Upload Signed BOL / POD"
+                          />
+                        </CardContent>
                     </Card>
                   ))}
                 </div>

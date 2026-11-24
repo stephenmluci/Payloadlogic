@@ -35,7 +35,8 @@ export async function GET(request: Request) {
   if (apiKey) {
     try {
       const gRes = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(rawAddress)}&key=${apiKey}`
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(rawAddress)}&key=${apiKey}`,
+        { signal: AbortSignal.timeout(2500) }
       );
       if (gRes.ok) {
         const gData = await gRes.json();
@@ -67,6 +68,7 @@ export async function GET(request: Request) {
           'Accept-Language': 'en',
           'User-Agent': 'PayloadLogic/1.0 (dispatch-routing-geocoder)',
         },
+        signal: AbortSignal.timeout(2500),
       }
     );
     if (nRes.ok) {
@@ -91,7 +93,8 @@ export async function GET(request: Request) {
   // 3. US Census Bureau Geocoder (Official US physical street address geocoder)
   try {
     const cRes = await fetch(
-      `https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address=${encodeURIComponent(rawAddress)}&benchmark=Public_AR_Current&format=json`
+      `https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address=${encodeURIComponent(rawAddress)}&benchmark=Public_AR_Current&format=json`,
+      { signal: AbortSignal.timeout(2500) }
     );
     if (cRes.ok) {
       const cData = await cRes.json();
@@ -126,6 +129,7 @@ export async function GET(request: Request) {
               'Accept-Language': 'en',
               'User-Agent': 'PayloadLogic/1.0 (dispatch-routing-geocoder)',
             },
+            signal: AbortSignal.timeout(2000),
           }
         );
         if (fallbackRes.ok) {

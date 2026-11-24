@@ -51,11 +51,17 @@ function sanitizeForFirestore<T>(data: T): T {
   if (data === undefined) {
     return '' as any;
   }
+  if (typeof data === 'number' && Number.isNaN(data)) {
+    return 0 as any;
+  }
   if (data === null || typeof data !== 'object') {
     return data;
   }
   if (data instanceof Date) {
     return data.toISOString() as any;
+  }
+  if (data instanceof Timestamp || typeof (data as any).toDate === 'function') {
+    return data;
   }
   if (Array.isArray(data)) {
     return data.map(item => sanitizeForFirestore(item)) as any;
@@ -64,6 +70,8 @@ function sanitizeForFirestore<T>(data: T): T {
   for (const [key, value] of Object.entries(data)) {
     if (value === undefined) {
       sanitized[key] = '';
+    } else if (typeof value === 'number' && Number.isNaN(value)) {
+      sanitized[key] = 0;
     } else if (value !== null && typeof value === 'object') {
       sanitized[key] = sanitizeForFirestore(value);
     } else {
@@ -71,6 +79,39 @@ function sanitizeForFirestore<T>(data: T): T {
     }
   }
   return sanitized as T;
+}
+
+/**
+ * Races a Firestore write/query promise against a timeout.
+ * With persistentLocalCache, writes are queued locally immediately; if server WebChannel ack stalls,
+ * resolving on timeout prevents UI lockups while still propagating immediate permission/validation rejections.
+ */
+function withFirestoreTimeout<T>(promise: Promise<T>, ms = 6000, fallbackValue?: T): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve(fallbackValue as T);
+      }
+    }, ms);
+    promise.then(
+      (val) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(val);
+        }
+      },
+      (err) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          reject(err);
+        }
+      },
+    );
+  });
 }
 
 const sanitizeAddress = (addr?: Partial<Address> | null): Address => ({
@@ -1625,15 +1666,41 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const clearStuckBodyPointerLock = () => {
+    if (typeof document === 'undefined') return;
+    const hasOpenDialog = Boolean(
+      document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]')
+    );
+    if (!hasOpenDialog && document.body.style.pointerEvents === 'none') {
+      document.body.style.pointerEvents = '';
+    }
+  };
+
+  // Safety watchdog: never allow isSubmitting to stay permanently stuck true
+  useEffect(() => {
+    if (!isSubmitting) return;
+    const watchdog = setTimeout(() => {
+      console.warn('[AppContext] Resetting stuck isSubmitting state after 12s timeout.');
+      isSavingLoadRef.current = false;
+      setIsSubmitting(false);
+      clearStuckBodyPointerLock();
+    }, 12000);
+    return () => clearTimeout(watchdog);
+  }, [isSubmitting]);
+
   const handleStartEditLoad = (loadToEdit: Load) => {
     if (!user || !ADMIN_ROLES.includes(user.role as any)) return;
-     const loadWithLocalTimes = {
+    isSavingLoadRef.current = false;
+    setIsSubmitting(false);
+    clearStuckBodyPointerLock();
+    const loadWithLocalTimes = {
       ...loadToEdit,
       pickupDateTime: toDateTimeLocalInput(loadToEdit.pickupDateTime),
       deliveryDateTime: toDateTimeLocalInput(loadToEdit.deliveryDateTime),
     };
     setLoadForm(loadWithLocalTimes);
     setEditingLoadId(loadToEdit.id!);
+    setLoadFormResetNonce(n => n + 1);
     setActiveTab('loads');
   };
 
@@ -1701,6 +1768,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   });
 
   const handleCancelEditLoad = () => {
+    isSavingLoadRef.current = false;
+    setIsSubmitting(false);
+    clearStuckBodyPointerLock();
     if (typeof window !== 'undefined') {
       try { localStorage.removeItem('agy_load_draft'); } catch {}
     }
@@ -1761,375 +1831,397 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }
     }
 
+    isSavingLoadRef.current = true;
     setIsSubmitting(true);
 
-    const calculatedTotalRate = calculateCustomerRateBreakdown({
-      distance: loadForm.distance,
-      deadheadMiles: loadForm.deadheadMiles,
-      ratePerMile: loadForm.ratePerMile,
-      tarpingFee: loadForm.tarpingFee,
-    }).totalAgreedRate;
-    const totalTripMilesForTime = (loadForm.distance || 0) + (loadForm.deadheadMiles || 0);
-    const calculatedDriveTime = totalTripMilesForTime > 0
-        ? totalTripMilesForTime / 55
+    try {
+      const calculatedTotalRate = calculateCustomerRateBreakdown({
+        distance: loadForm.distance,
+        deadheadMiles: loadForm.deadheadMiles,
+        ratePerMile: loadForm.ratePerMile,
+        tarpingFee: loadForm.tarpingFee,
+      }).totalAgreedRate;
+      const totalTripMilesForTime = (loadForm.distance || 0) + (loadForm.deadheadMiles || 0);
+      const calculatedDriveTime = totalTripMilesForTime > 0
+          ? totalTripMilesForTime / 55
+          : undefined;
+
+      const finalPickupDateTime = loadForm.pickupDateTime
+        ? (isNaN(new Date(loadForm.pickupDateTime).getTime()) ? undefined : new Date(loadForm.pickupDateTime).toISOString())
+        : undefined;
+      const finalDeliveryDateTime = loadForm.deliveryDateTime
+        ? (isNaN(new Date(loadForm.deliveryDateTime).getTime()) ? undefined : new Date(loadForm.deliveryDateTime).toISOString())
         : undefined;
 
-    const finalPickupDateTime = loadForm.pickupDateTime
-      ? (isNaN(new Date(loadForm.pickupDateTime).getTime()) ? undefined : new Date(loadForm.pickupDateTime).toISOString())
-      : undefined;
-    const finalDeliveryDateTime = loadForm.deliveryDateTime
-      ? (isNaN(new Date(loadForm.deliveryDateTime).getTime()) ? undefined : new Date(loadForm.deliveryDateTime).toISOString())
-      : undefined;
+      const existingEditedLoad = editingLoadId
+        ? loads.find(l => l.id === editingLoadId || (loadForm.loadNumber && l.loadNumber === loadForm.loadNumber))
+        : undefined;
 
-    // Ensure exact physical coordinates exist for both Origin and Destination
-    let originCoords: { lat: number; lng: number } | null = (typeof loadForm.origin?.lat === 'number' && typeof loadForm.origin?.lng === 'number')
-      ? { lat: loadForm.origin.lat, lng: loadForm.origin.lng }
-      : null;
-    let destCoords: { lat: number; lng: number } | null = (typeof loadForm.destination?.lat === 'number' && typeof loadForm.destination?.lng === 'number')
-      ? { lat: loadForm.destination.lat, lng: loadForm.destination.lng }
-      : null;
+      const isSameAddr = (a?: Partial<Address> | null, b?: Partial<Address> | null) =>
+        Boolean(
+          a && b &&
+          (a.street || '').trim().toLowerCase() === (b.street || '').trim().toLowerCase() &&
+          (a.city || '').trim().toLowerCase() === (b.city || '').trim().toLowerCase() &&
+          (a.state || '').trim().toLowerCase() === (b.state || '').trim().toLowerCase() &&
+          (a.zip || '').trim().toLowerCase() === (b.zip || '').trim().toLowerCase()
+        );
 
-    try {
-      if (!originCoords && loadForm.origin?.city) {
-        originCoords = await geocodePhysicalAddress(loadForm.origin);
-      }
-      if (!destCoords && loadForm.destination?.city) {
-        destCoords = await geocodePhysicalAddress(loadForm.destination);
-      }
-    } catch (geoErr) {
-      console.warn('Non-fatal geocoding error during save:', geoErr);
-    }
+      // Reuse verified coordinates when available so saving never blocks unnecessarily on geocoding
+      let originCoords: { lat: number; lng: number } | null =
+        typeof loadForm.origin?.lat === 'number' && typeof loadForm.origin?.lng === 'number'
+          ? { lat: loadForm.origin.lat, lng: loadForm.origin.lng }
+          : existingEditedLoad && isSameAddr(loadForm.origin, existingEditedLoad.origin) &&
+            typeof (existingEditedLoad.origin?.lat ?? existingEditedLoad.originLat) === 'number' &&
+            typeof (existingEditedLoad.origin?.lng ?? existingEditedLoad.originLng) === 'number'
+            ? {
+                lat: (existingEditedLoad.origin?.lat ?? existingEditedLoad.originLat) as number,
+                lng: (existingEditedLoad.origin?.lng ?? existingEditedLoad.originLng) as number,
+              }
+            : null;
 
-    const sanitizedOrigin = sanitizeAddress(loadForm.origin);
-    const sanitizedDestination = sanitizeAddress(loadForm.destination);
+      let destCoords: { lat: number; lng: number } | null =
+        typeof loadForm.destination?.lat === 'number' && typeof loadForm.destination?.lng === 'number'
+          ? { lat: loadForm.destination.lat, lng: loadForm.destination.lng }
+          : existingEditedLoad && isSameAddr(loadForm.destination, existingEditedLoad.destination) &&
+            typeof (existingEditedLoad.destination?.lat ?? existingEditedLoad.destinationLat) === 'number' &&
+            typeof (existingEditedLoad.destination?.lng ?? existingEditedLoad.destinationLng) === 'number'
+            ? {
+                lat: (existingEditedLoad.destination?.lat ?? existingEditedLoad.destinationLat) as number,
+                lng: (existingEditedLoad.destination?.lng ?? existingEditedLoad.destinationLng) as number,
+              }
+            : null;
 
-    if (originCoords) {
-      sanitizedOrigin.lat = originCoords.lat;
-      sanitizedOrigin.lng = originCoords.lng;
-    }
-    if (destCoords) {
-      sanitizedDestination.lat = destCoords.lat;
-      sanitizedDestination.lng = destCoords.lng;
-    }
-
-    const { id: _stripId, ...loadFormWithoutId } = loadForm as any;
-    const dataWithCalculations: Partial<Load> = {
-        ...loadFormWithoutId,
-        assignedDriverId: assignedDriverId || undefined,
-        assignedDriverName: assignedDriverName || undefined,
-        origin: sanitizedOrigin,
-        destination: sanitizedDestination,
-        originLat: originCoords?.lat ?? (loadForm as any).originLat,
-        originLng: originCoords?.lng ?? (loadForm as any).originLng,
-        destinationLat: destCoords?.lat ?? (loadForm as any).destinationLat,
-        destinationLng: destCoords?.lng ?? (loadForm as any).destinationLng,
-        pickupDateTime: finalPickupDateTime,
-        deliveryDateTime: finalDeliveryDateTime,
-        totalAgreedRate: calculatedTotalRate,
-        estimatedDriveTimeHours: calculatedDriveTime,
-        tripId: (loadForm.tripId === 'none' || loadForm.tripId === 'auto-create') ? undefined : (loadForm.tripId || undefined)
-    };
-
-    if ((loadForm.status === 'arrived' || (loadForm as any).status === 'Arrived' || loadForm.driverPhase === 'Arrived') && !dataWithCalculations.arrivedAt) {
-      dataWithCalculations.arrivedAt = new Date().toISOString();
-    }
-
-    // Multi-drop: persist cleaned additional stops (single-destination loads store none)
-    const cleanedStops = cleanStopsForSave(loadForm.additionalStops);
-    if (cleanedStops.length > 0) {
-      dataWithCalculations.additionalStops = cleanedStops;
-      if (typeof loadForm.firstLegMiles === 'number') dataWithCalculations.firstLegMiles = loadForm.firstLegMiles;
-      else delete (dataWithCalculations as any).firstLegMiles;
-    } else {
-      delete (dataWithCalculations as any).additionalStops;
-      delete (dataWithCalculations as any).firstLegMiles;
-    }
-
-    if (!editingLoadId) {
-      // Brand-new loads must always start as Pending Approval until explicitly approved.
-      dataWithCalculations.status = 'pending_approval';
-      if (String(dataWithCalculations.driverPhase || '').toLowerCase().trim() === 'complete') {
-        delete dataWithCalculations.driverPhase;
-      }
-      delete (dataWithCalculations as any).approvedAt;
-      delete (dataWithCalculations as any).approvedBy;
-      delete dataWithCalculations.deliveredAt;
-      delete dataWithCalculations.paperworkStatus;
-    } else if (loadForm.status === 'delivered' || loadForm.driverPhase === 'Complete') {
-      if (!dataWithCalculations.deliveredAt) {
-        dataWithCalculations.deliveredAt = new Date().toISOString();
-      }
-      const hasBol = Boolean(loadForm.signedBolUrl || dataWithCalculations.signedBolUrl);
-      dataWithCalculations.paperworkStatus = hasBol ? 'pod_uploaded' : 'pending_pod';
-    }
-
-
-    if (dataWithCalculations.cargoDimensions) {
-      const parsedTrailerDims = parseDimensionString(settings.trailerDimensions);
-      const parsedCargoDims = parseDimensionString(dataWithCalculations.cargoDimensions);
-      const trailerDeckHeightFeet = parseSingleDimensionToFeet(settings.trailerDeckHeight);
-
-      let validationFailed = false;
-      const messages: string[] = [];
-
-      if (parsedCargoDims.height !== null && trailerDeckHeightFeet !== null) {
-        const totalHeight = parsedCargoDims.height + trailerDeckHeightFeet;
-        if (totalHeight > MAX_TOTAL_HEIGHT_FEET) {
-          messages.push(`Total height (Deck ${trailerDeckHeightFeet.toFixed(2)}ft + Cargo ${parsedCargoDims.height.toFixed(2)}ft = ${totalHeight.toFixed(2)}ft) exceeds max legal height of ${MAX_TOTAL_HEIGHT_FEET}ft (13'6").`);
-          validationFailed = true;
-        }
-      } else if (parsedCargoDims.height !== null && trailerDeckHeightFeet === null) {
-        messages.push(`Trailer Deck Height is not defined in settings; could not validate total height.`);
-      }
-
-      if (parsedTrailerDims.length !== null && parsedCargoDims.length !== null && parsedCargoDims.length > parsedTrailerDims.length) {
-        messages.push(`Length (${parsedCargoDims.length.toFixed(2)}ft) exceeds trailer length (${parsedTrailerDims.length.toFixed(2)}ft).`);
-        validationFailed = true;
-      } else if (parsedTrailerDims.length === null && parsedCargoDims.length !== null) {
-        messages.push(`Trailer length not defined in settings for full validation.`);
-      }
-
-      if (parsedTrailerDims.width !== null && parsedCargoDims.width !== null && parsedCargoDims.width > parsedTrailerDims.width) {
-        messages.push(`Width (${parsedCargoDims.width.toFixed(2)}ft) exceeds trailer width (${parsedTrailerDims.width.toFixed(2)}ft).`);
-        validationFailed = true;
-      } else if (parsedTrailerDims.width === null && parsedCargoDims.width !== null) {
-         messages.push(`Trailer width not defined in settings for full validation.`);
-      }
-
-      if (validationFailed) {
-        toast({
-          variant: "destructive",
-          title: "Cargo Dimension Error",
-          description: "Cargo dimensions are invalid: " + messages.join(" "),
-        });
-        setIsSubmitting(false);
-        return;
-      }
-    }
-
-    if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
-        if (editingLoadId) {
-            const updatedLoad = { ...loads.find(l=>l.id===editingLoadId)!, ...dataWithCalculations, id: editingLoadId } as Load;
-            setLoads(prevLoads => prevLoads.map(l => l.id === editingLoadId ? updatedLoad : l));
-            toast({ title: "Trial/Review: Load Updated", description: `Load ${loadForm.loadNumber || editingLoadId} updated locally.` });
-        } else {
-            const newLoadNumber = formatLoadDisplayId(new Date(), loads.length + 1);
-            const newLoadData = {
-              ...initialLoadFormData,
-              ...dataWithCalculations,
-              status: 'pending_approval' as const,
-              loadNumber: newLoadNumber,
-              id: `mock-load-${Date.now()}`
-            } as Load;
-            setLoads(prev => [...prev, newLoadData]);
-            if (newLoadData.originalClientRequestId) {
-              setClientLoadRequests(prev => prev.map(r => r.id === newLoadData.originalClientRequestId ? {...r, status: 'accepted', createdLoadId: newLoadData.id} : r));
-            }
-            {
-              const savedTripId = loadForm.tripId;
-              const addedTrip = (savedTripId && savedTripId !== 'none' && savedTripId !== 'auto-create')
-                ? trips.find(t => t.id === savedTripId)
-                : undefined;
-              const where = savedTripId === 'auto-create'
-                ? 'as stop 1 of a new multi-stop trip'
-                : addedTrip ? `and added to trip "${addedTrip.name}"` : 'as an independent load';
-              toast({ title: "Trial/Review: Load Added", description: `Load ${newLoadNumber} added locally ${where}.` });
-            }
-        }
-    } else { 
-        isSavingLoadRef.current = true;
+      if ((!originCoords && loadForm.origin?.city) || (!destCoords && loadForm.destination?.city)) {
         try {
+          const [resolvedOrigin, resolvedDest] = await Promise.race([
+            Promise.all([
+              !originCoords && loadForm.origin?.city ? geocodePhysicalAddress(loadForm.origin) : Promise.resolve(originCoords),
+              !destCoords && loadForm.destination?.city ? geocodePhysicalAddress(loadForm.destination) : Promise.resolve(destCoords),
+            ]),
+            new Promise<[typeof originCoords, typeof destCoords]>((resolve) =>
+              setTimeout(() => resolve([originCoords, destCoords]), 2500)
+            ),
+          ]);
+          if (resolvedOrigin) originCoords = resolvedOrigin;
+          if (resolvedDest) destCoords = resolvedDest;
+        } catch (geoErr) {
+          console.warn('Non-fatal geocoding error during save:', geoErr);
+        }
+      }
+
+      const sanitizedOrigin = sanitizeAddress(loadForm.origin);
+      const sanitizedDestination = sanitizeAddress(loadForm.destination);
+
+      if (originCoords) {
+        sanitizedOrigin.lat = originCoords.lat;
+        sanitizedOrigin.lng = originCoords.lng;
+      }
+      if (destCoords) {
+        sanitizedDestination.lat = destCoords.lat;
+        sanitizedDestination.lng = destCoords.lng;
+      }
+
+      const { id: _stripId, ...loadFormWithoutId } = loadForm as any;
+      const dataWithCalculations: Partial<Load> = {
+          ...loadFormWithoutId,
+          assignedDriverId: assignedDriverId || undefined,
+          assignedDriverName: assignedDriverName || undefined,
+          origin: sanitizedOrigin,
+          destination: sanitizedDestination,
+          originLat: originCoords?.lat ?? (loadForm as any).originLat,
+          originLng: originCoords?.lng ?? (loadForm as any).originLng,
+          destinationLat: destCoords?.lat ?? (loadForm as any).destinationLat,
+          destinationLng: destCoords?.lng ?? (loadForm as any).destinationLng,
+          pickupDateTime: finalPickupDateTime,
+          deliveryDateTime: finalDeliveryDateTime,
+          totalAgreedRate: calculatedTotalRate,
+          estimatedDriveTimeHours: calculatedDriveTime,
+          tripId: (loadForm.tripId === 'none' || loadForm.tripId === 'auto-create') ? undefined : (loadForm.tripId || undefined)
+      };
+
+      if ((loadForm.status === 'arrived' || (loadForm as any).status === 'Arrived' || loadForm.driverPhase === 'Arrived') && !dataWithCalculations.arrivedAt) {
+        dataWithCalculations.arrivedAt = new Date().toISOString();
+      }
+
+      // Multi-drop: persist cleaned additional stops (single-destination loads store none)
+      const cleanedStops = cleanStopsForSave(loadForm.additionalStops);
+      if (cleanedStops.length > 0) {
+        dataWithCalculations.additionalStops = cleanedStops;
+        if (typeof loadForm.firstLegMiles === 'number') dataWithCalculations.firstLegMiles = loadForm.firstLegMiles;
+        else delete (dataWithCalculations as any).firstLegMiles;
+      } else if (editingLoadId) {
+        dataWithCalculations.additionalStops = [];
+        delete (dataWithCalculations as any).firstLegMiles;
+      } else {
+        delete (dataWithCalculations as any).additionalStops;
+        delete (dataWithCalculations as any).firstLegMiles;
+      }
+
+      if (!editingLoadId) {
+        // Brand-new loads must always start as Pending Approval until explicitly approved.
+        dataWithCalculations.status = 'pending_approval';
+        if (String(dataWithCalculations.driverPhase || '').toLowerCase().trim() === 'complete') {
+          delete dataWithCalculations.driverPhase;
+        }
+        delete (dataWithCalculations as any).approvedAt;
+        delete (dataWithCalculations as any).approvedBy;
+        delete dataWithCalculations.deliveredAt;
+        delete dataWithCalculations.paperworkStatus;
+      } else if (loadForm.status === 'delivered' || loadForm.driverPhase === 'Complete') {
+        if (!dataWithCalculations.deliveredAt) {
+          dataWithCalculations.deliveredAt = new Date().toISOString();
+        }
+        const hasBol = Boolean(loadForm.signedBolUrl || dataWithCalculations.signedBolUrl);
+        dataWithCalculations.paperworkStatus = hasBol ? 'pod_uploaded' : 'pending_pod';
+      }
+
+      if (dataWithCalculations.cargoDimensions) {
+        const parsedTrailerDims = parseDimensionString(settings.trailerDimensions);
+        const parsedCargoDims = parseDimensionString(dataWithCalculations.cargoDimensions);
+        const trailerDeckHeightFeet = parseSingleDimensionToFeet(settings.trailerDeckHeight);
+
+        let validationFailed = false;
+        const messages: string[] = [];
+
+        if (parsedCargoDims.height !== null && trailerDeckHeightFeet !== null) {
+          const totalHeight = parsedCargoDims.height + trailerDeckHeightFeet;
+          if (totalHeight > MAX_TOTAL_HEIGHT_FEET) {
+            messages.push(`Total height (Deck ${trailerDeckHeightFeet.toFixed(2)}ft + Cargo ${parsedCargoDims.height.toFixed(2)}ft = ${totalHeight.toFixed(2)}ft) exceeds max legal height of ${MAX_TOTAL_HEIGHT_FEET}ft (13'6").`);
+            validationFailed = true;
+          }
+        } else if (parsedCargoDims.height !== null && trailerDeckHeightFeet === null) {
+          messages.push(`Trailer Deck Height is not defined in settings; could not validate total height.`);
+        }
+
+        if (parsedTrailerDims.length !== null && parsedCargoDims.length !== null && parsedCargoDims.length > parsedTrailerDims.length) {
+          messages.push(`Length (${parsedCargoDims.length.toFixed(2)}ft) exceeds trailer length (${parsedTrailerDims.length.toFixed(2)}ft).`);
+          validationFailed = true;
+        } else if (parsedTrailerDims.length === null && parsedCargoDims.length !== null) {
+          messages.push(`Trailer length not defined in settings for full validation.`);
+        }
+
+        if (parsedTrailerDims.width !== null && parsedCargoDims.width !== null && parsedCargoDims.width > parsedTrailerDims.width) {
+          messages.push(`Width (${parsedCargoDims.width.toFixed(2)}ft) exceeds trailer width (${parsedTrailerDims.width.toFixed(2)}ft).`);
+          validationFailed = true;
+        } else if (parsedTrailerDims.width === null && parsedCargoDims.width !== null) {
+          messages.push(`Trailer width not defined in settings for full validation.`);
+        }
+
+        if (validationFailed) {
+          toast({
+            variant: "destructive",
+            title: "Cargo Dimension Error",
+            description: "Cargo dimensions are invalid: " + messages.join(" "),
+          });
+          return;
+        }
+      }
+
+      if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
         if (editingLoadId) {
-            try {
-              const sanitizedPayload = sanitizeForFirestore(dataWithCalculations);
-              let targetLoadRef = doc(db, `users/${user.uid}/loads`, editingLoadId);
-              const existingSnap = await getDoc(targetLoadRef);
-
-              if (!existingSnap.exists() && loadForm.loadNumber) {
-                // Fallback: locate by loadNumber in case a stale local ID was passed
-                const byNumSnap = await getDocs(
-                  query(collection(db, `users/${user.uid}/loads`), where('loadNumber', '==', loadForm.loadNumber), limit(1)),
-                );
-                if (!byNumSnap.empty) {
-                  targetLoadRef = byNumSnap.docs[0].ref;
-                }
-              }
-
-              const finalCheckSnap = await getDoc(targetLoadRef);
-              if (finalCheckSnap.exists()) {
-                await updateDoc(targetLoadRef, sanitizedPayload);
-              } else {
-                await setDoc(targetLoadRef, sanitizedPayload, { merge: true });
-              }
-
-              // Also update local state immediately so UI reflects edits without waiting
-              setLoads(prev => prev.map(l => (l.id === editingLoadId || l.id === targetLoadRef.id) ? ({ ...l, ...dataWithCalculations, id: targetLoadRef.id } as Load) : l));
-              toast({ title: "Load Updated", description: `Load ${loadForm.loadNumber || targetLoadRef.id} has been successfully updated.` });
-            } catch (error: any) {
-              console.error('Error updating load:', error);
-              toast({ variant: "destructive", title: "Error Updating Load", description: error.message });
-              setIsSubmitting(false);
-              return;
-            }
+          const baseLoad = loads.find(l => l.id === editingLoadId) || ({} as Load);
+          const updatedLoad = { ...baseLoad, ...dataWithCalculations, id: editingLoadId } as Load;
+          setLoads(prevLoads => prevLoads.map(l => l.id === editingLoadId ? updatedLoad : l));
+          toast({ title: "Trial/Review: Load Updated", description: `Load ${loadForm.loadNumber || editingLoadId} updated locally.` });
         } else {
-            // Duplicate prevention: check if an identical load already exists in state
-            const candidateSig = getLoadDuplicateKey(dataWithCalculations);
-            const existingDuplicate = loads.find((l) => {
-              if (dataWithCalculations.originalClientRequestId && l.originalClientRequestId === dataWithCalculations.originalClientRequestId) {
-                return true;
-              }
-              return Boolean(candidateSig) && getLoadDuplicateKey(l) === candidateSig;
+          const newLoadNumber = formatLoadDisplayId(new Date(), loads.length + 1);
+          const newLoadData = {
+            ...initialLoadFormData,
+            ...dataWithCalculations,
+            status: 'pending_approval' as const,
+            loadNumber: newLoadNumber,
+            id: `mock-load-${Date.now()}`
+          } as Load;
+          setLoads(prev => [...prev, newLoadData]);
+          if (newLoadData.originalClientRequestId) {
+            setClientLoadRequests(prev => prev.map(r => r.id === newLoadData.originalClientRequestId ? {...r, status: 'accepted', createdLoadId: newLoadData.id} : r));
+          }
+          {
+            const savedTripId = loadForm.tripId;
+            const addedTrip = (savedTripId && savedTripId !== 'none' && savedTripId !== 'auto-create')
+              ? trips.find(t => t.id === savedTripId)
+              : undefined;
+            const where = savedTripId === 'auto-create'
+              ? 'as stop 1 of a new multi-stop trip'
+              : addedTrip ? `and added to trip "${addedTrip.name}"` : 'as an independent load';
+            toast({ title: "Trial/Review: Load Added", description: `Load ${newLoadNumber} added locally ${where}.` });
+          }
+        }
+      } else if (editingLoadId) {
+        const sanitizedPayload = sanitizeForFirestore(dataWithCalculations);
+        const targetLoadId = existingEditedLoad?.id || editingLoadId;
+        const targetLoadRef = doc(db, `users/${user.uid}/loads`, targetLoadId);
+
+        await withFirestoreTimeout(
+          setDoc(targetLoadRef, sanitizedPayload, { merge: true }),
+          6000,
+        );
+
+        // Update local state immediately so LoadCard reflects edits without delay
+        setLoads(prev => prev.map(l => (l.id === editingLoadId || l.id === targetLoadId)
+          ? ({ ...l, ...dataWithCalculations, id: targetLoadId } as Load)
+          : l
+        ));
+        toast({ title: "Load Updated", description: `Load ${loadForm.loadNumber || targetLoadId} has been successfully updated.` });
+      } else {
+        // Duplicate prevention: check if an identical load already exists in state
+        const candidateSig = getLoadDuplicateKey(dataWithCalculations);
+        const existingDuplicate = loads.find((l) => {
+          if (dataWithCalculations.originalClientRequestId && l.originalClientRequestId === dataWithCalculations.originalClientRequestId) {
+            return true;
+          }
+          return Boolean(candidateSig) && getLoadDuplicateKey(l) === candidateSig;
+        });
+
+        if (existingDuplicate?.id) {
+          const dupRef = doc(db, `users/${user.uid}/loads`, existingDuplicate.id);
+          const sanitizedPayload = sanitizeForFirestore(dataWithCalculations);
+          await withFirestoreTimeout(setDoc(dupRef, sanitizedPayload, { merge: true }), 6000);
+          toast({
+            title: "Load Updated",
+            description: `Existing load ${existingDuplicate.loadNumber || existingDuplicate.id} was updated instead of creating a duplicate.`,
+          });
+          handleCancelEditLoad();
+          return;
+        }
+
+        let nextLoadNumeric = loads.length + 1;
+        const loadsCollectionRef = collection(db, `users/${user.uid}/loads`);
+        const q = query(loadsCollectionRef, orderBy('loadNumber', 'desc'), limit(1));
+        try {
+          const querySnapshot = await withFirestoreTimeout(getDocs(q), 4000, null);
+          if (querySnapshot && !querySnapshot.empty) {
+            const lastLoad = querySnapshot.docs[0].data() as Load;
+            const lastSeq = parseLoadSeq(lastLoad.loadNumber || '');
+            if (lastSeq != null) {
+              nextLoadNumeric = Math.max(nextLoadNumeric, lastSeq + 1);
+            }
+          }
+        } catch (e) {
+          console.warn("Falling back to local load sequence count:", e);
+        }
+
+        const newLoadNumber = formatLoadDisplayId(new Date(), nextLoadNumeric);
+        const assignedTruckForEst = dataWithCalculations.assignedTruckId
+          ? vehicles.find(v => v.id === dataWithCalculations.assignedTruckId)
+          : undefined;
+        const estMpg = (assignedTruckForEst?.mpg && assignedTruckForEst.mpg > 0)
+          ? assignedTruckForEst.mpg
+          : (settings.truckMpg && settings.truckMpg > 0 ? settings.truckMpg : 10);
+        const estFuelPrice = (settings.defaultFuelCostPerGallon && settings.defaultFuelCostPerGallon > 0)
+          ? settings.defaultFuelCostPerGallon
+          : 4.0;
+        const estMiles = (dataWithCalculations.distance || 0) + (dataWithCalculations.deadheadMiles || 0);
+        const estFuelCost = estMiles > 0 ? parseFloat(((estMiles / estMpg) * estFuelPrice).toFixed(2)) : 0;
+
+        const newLoadDataForFirestore = { 
+          ...dataWithCalculations, 
+          status: 'pending_approval' as const,
+          loadNumber: newLoadNumber, 
+          expenses: { payroll: 0, fuel: estFuelCost, estimatedFuel: estFuelCost, def: 0, recurring: 0, maintenance: 0, calculated: estFuelCost > 0 } 
+        } as Omit<Load, 'id'>;
+
+        const safeLoadData = sanitizeForFirestore(newLoadDataForFirestore);
+        const newDocRef = doc(loadsCollectionRef);
+        await withFirestoreTimeout(setDoc(newDocRef, safeLoadData), 6000);
+        const finalSavedLoadData = { ...safeLoadData, id: newDocRef.id } as Load;
+
+        {
+          const savedTripId = loadForm.tripId;
+          const addedTrip = (savedTripId && savedTripId !== 'none' && savedTripId !== 'auto-create')
+            ? trips.find(t => t.id === savedTripId)
+            : undefined;
+          if (savedTripId === 'auto-create') {
+            toast({ title: "Load created", description: `Load ${newLoadNumber} was created and a new multi-stop trip is being started with it as stop 1.` });
+          } else if (addedTrip) {
+            toast({ title: "Load added to trip", description: `Load ${newLoadNumber} was created and added as another stop on "${addedTrip.name}".` });
+          } else {
+            toast({ title: "Independent load created", description: `Load ${newLoadNumber} was created as an independent load (not part of a trip).` });
+          }
+        }
+
+        if (finalSavedLoadData.originalClientRequestId) {
+          if (!isTrialSession && !(IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
+            try {
+              const requestRef = doc(db, 'clientLoadRequests', finalSavedLoadData.originalClientRequestId);
+              await withFirestoreTimeout(updateDoc(requestRef, { status: 'accepted', createdLoadId: newDocRef.id }), 4000);
+              setClientLoadRequests(prev => prev.map(r => r.id === finalSavedLoadData.originalClientRequestId ? {...r, status: 'accepted', createdLoadId: newDocRef.id} : r));
+            } catch (err) {
+              console.error("Failed to finalize client load request status:", err);
+            }
+          } else {
+            setClientLoadRequests(prev => prev.map(r => r.id === finalSavedLoadData.originalClientRequestId ? {...r, status: 'accepted', createdLoadId: newDocRef.id} : r));
+          }
+
+          const client = clients.find(c => c.id === finalSavedLoadData.clientId);
+          if (client && client.contactEmail && finalSavedLoadData.status === 'approved') {
+            try {
+              const emailSubject = `Load Approved: ${finalSavedLoadData.loadNumber || finalSavedLoadData.id}`;
+              const emailBody = `Dear ${client.contactName || client.companyName},<br><br>Your load request for ${formatAddress(finalSavedLoadData.origin, 'short')} to ${formatAddress(finalSavedLoadData.destination, 'short')} has been approved. Your Load ID is ${finalSavedLoadData.loadNumber || finalSavedLoadData.id}.<br><br>Thank you,<br>PayloadLogic`;
+              await sendNotificationEmail({ recipientEmail: client.contactEmail, subject: emailSubject, body: emailBody });
+              toast({ title: "Client Notification", description: `Approval notification sent to client for new load ${finalSavedLoadData.loadNumber}.` });
+            } catch (emailErr) {
+              console.warn("Non-fatal: failed to send client approval email:", emailErr);
+            }
+          }
+        }
+
+        if (
+          finalSavedLoadData.id &&
+          finalSavedLoadData.assignedDriverId &&
+          finalSavedLoadData.assignedDriverId !== 'none' &&
+          (finalSavedLoadData.status === 'dispatched' || finalSavedLoadData.status === 'in-transit')
+        ) {
+          try {
+            const assignedDriver = driverProfiles.find(
+              d => d.uid === finalSavedLoadData.assignedDriverId || d.authUid === finalSavedLoadData.assignedDriverId
+            );
+            const alertResult = dispatchDriverAssignmentAlert({
+              driverId: finalSavedLoadData.assignedDriverId,
+              driver: assignedDriver,
+              loadId: finalSavedLoadData.id,
+              loadData: finalSavedLoadData,
+              isDispatched: finalSavedLoadData.status === 'dispatched',
             });
 
-            if (existingDuplicate?.id) {
-              const dupRef = doc(db, `users/${user.uid}/loads`, existingDuplicate.id);
-              const sanitizedPayload = sanitizeForFirestore(dataWithCalculations);
-              await setDoc(dupRef, sanitizedPayload, { merge: true });
+            if (alertResult.smsUrl) {
               toast({
-                title: "Load Updated",
-                description: `Existing load ${existingDuplicate.loadNumber || existingDuplicate.id} was updated instead of creating a duplicate.`,
+                title: 'Dispatch SMS Ready',
+                description: `${alertResult.driverName}: ${alertResult.summaryMsg}`,
+                action: (
+                  <ToastAction altText="Send SMS to driver" asChild>
+                    <a href={alertResult.smsUrl}>Send SMS</a>
+                  </ToastAction>
+                ),
               });
-              handleCancelEditLoad();
-              setIsSubmitting(false);
-              return;
+            } else {
+              toast({
+                title: 'In-App Driver Notification Sent',
+                description: `${alertResult.driverName} notified in-app (${alertResult.summaryMsg})`,
+              });
             }
-
-            let nextLoadNumeric = 1;
-            const loadsCollectionRef = collection(db, `users/${user.uid}/loads`);
-            const q = query(loadsCollectionRef, orderBy('loadNumber', 'desc'), limit(1));
-            try {
-                const querySnapshot = await getDocs(q);
-                if (!querySnapshot.empty) {
-                    const lastLoad = querySnapshot.docs[0].data() as Load;
-                    // parseLoadSeq handles both "L-0042" (legacy) and "LD-2609-0042" (new)
-                    const lastSeq = parseLoadSeq(lastLoad.loadNumber || '');
-                    nextLoadNumeric = lastSeq != null ? lastSeq + 1 : (await getDocs(loadsCollectionRef)).size + 1;
-                } else {
-                     nextLoadNumeric = (await getDocs(loadsCollectionRef)).size + 1;
-                }
-            } catch (e) {
-                console.error("Error fetching last load number, falling back to collection size:", e);
-                nextLoadNumeric = (await getDocs(loadsCollectionRef)).size + 1;
-            }
-            const newLoadNumber = formatLoadDisplayId(new Date(), nextLoadNumeric);
-            const assignedTruckForEst = dataWithCalculations.assignedTruckId
-              ? vehicles.find(v => v.id === dataWithCalculations.assignedTruckId)
-              : undefined;
-            const estMpg = (assignedTruckForEst?.mpg && assignedTruckForEst.mpg > 0)
-              ? assignedTruckForEst.mpg
-              : (settings.truckMpg && settings.truckMpg > 0 ? settings.truckMpg : 10);
-            const estFuelPrice = (settings.defaultFuelCostPerGallon && settings.defaultFuelCostPerGallon > 0)
-              ? settings.defaultFuelCostPerGallon
-              : 4.0;
-            const estMiles = (dataWithCalculations.distance || 0) + (dataWithCalculations.deadheadMiles || 0);
-            const estFuelCost = estMiles > 0 ? parseFloat(((estMiles / estMpg) * estFuelPrice).toFixed(2)) : 0;
-
-            const newLoadDataForFirestore = { 
-              ...dataWithCalculations, 
-              status: 'pending_approval' as const,
-              loadNumber: newLoadNumber, 
-              expenses: { payroll: 0, fuel: estFuelCost, estimatedFuel: estFuelCost, def: 0, recurring: 0, maintenance: 0, calculated: estFuelCost > 0 } 
-            } as Omit<Load, 'id'>;
-
-            const safeLoadData = sanitizeForFirestore(newLoadDataForFirestore);
-            try {
-              const docRef = await addDoc(collection(db, `users/${user.uid}/loads`), safeLoadData);
-              // onSnapshot will update local state — no manual setLoads needed
-              const finalSavedLoadData = { ...safeLoadData, id: docRef.id } as Load;
-              {
-                const savedTripId = loadForm.tripId;
-                const addedTrip = (savedTripId && savedTripId !== 'none' && savedTripId !== 'auto-create')
-                  ? trips.find(t => t.id === savedTripId)
-                  : undefined;
-                if (savedTripId === 'auto-create') {
-                  toast({ title: "Load created", description: `Load ${newLoadNumber} was created and a new multi-stop trip is being started with it as stop 1.` });
-                } else if (addedTrip) {
-                  toast({ title: "Load added to trip", description: `Load ${newLoadNumber} was created and added as another stop on "${addedTrip.name}".` });
-                } else {
-                  toast({ title: "Independent load created", description: `Load ${newLoadNumber} was created as an independent load (not part of a trip).` });
-                }
-              }
-
-              if (finalSavedLoadData.originalClientRequestId) {
-                // Finalize the client load request status
-                if (!isTrialSession && !(IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
-                  try {
-                    const requestRef = doc(db, 'clientLoadRequests', finalSavedLoadData.originalClientRequestId);
-                    await updateDoc(requestRef, { status: 'accepted', createdLoadId: docRef.id });
-                    setClientLoadRequests(prev => prev.map(r => r.id === finalSavedLoadData.originalClientRequestId ? {...r, status: 'accepted', createdLoadId: docRef.id} : r));
-                  } catch (err) {
-                    console.error("Failed to finalize client load request status:", err);
-                  }
-                } else {
-                  setClientLoadRequests(prev => prev.map(r => r.id === finalSavedLoadData.originalClientRequestId ? {...r, status: 'accepted', createdLoadId: docRef.id} : r));
-                }
-
-                const client = clients.find(c => c.id === finalSavedLoadData.clientId);
-                if (client && client.contactEmail && finalSavedLoadData.status === 'approved') {
-                  try {
-                    const emailSubject = `Load Approved: ${finalSavedLoadData.loadNumber || finalSavedLoadData.id}`;
-                    const emailBody = `Dear ${client.contactName || client.companyName},<br><br>Your load request for ${formatAddress(finalSavedLoadData.origin, 'short')} to ${formatAddress(finalSavedLoadData.destination, 'short')} has been approved. Your Load ID is ${finalSavedLoadData.loadNumber || finalSavedLoadData.id}.<br><br>Thank you,<br>PayloadLogic`;
-                    await sendNotificationEmail({ recipientEmail: client.contactEmail, subject: emailSubject, body: emailBody });
-                    toast({ title: "Client Notification", description: `Approval notification sent to client for new load ${finalSavedLoadData.loadNumber}.` });
-                  } catch (emailErr) {
-                    console.warn("Non-fatal: failed to send client approval email:", emailErr);
-                  }
-                }
-              }
-
-              // Trigger in-app notification & FCM push notification if driver assigned on create AND load is already dispatched
-              if (
-                finalSavedLoadData.id &&
-                finalSavedLoadData.assignedDriverId &&
-                finalSavedLoadData.assignedDriverId !== 'none' &&
-                (finalSavedLoadData.status === 'dispatched' || finalSavedLoadData.status === 'in-transit')
-              ) {
-                try {
-                  const assignedDriver = driverProfiles.find(
-                    d => d.uid === finalSavedLoadData.assignedDriverId || d.authUid === finalSavedLoadData.assignedDriverId
-                  );
-                  const alertResult = dispatchDriverAssignmentAlert({
-                    driverId: finalSavedLoadData.assignedDriverId,
-                    driver: assignedDriver,
-                    loadId: finalSavedLoadData.id,
-                    loadData: finalSavedLoadData,
-                    isDispatched: finalSavedLoadData.status === 'dispatched',
-                  });
-
-                  if (alertResult.smsUrl) {
-                    toast({
-                      title: 'Dispatch SMS Ready',
-                      description: `${alertResult.driverName}: ${alertResult.summaryMsg}`,
-                      action: (
-                        <ToastAction altText="Send SMS to driver" asChild>
-                          <a href={alertResult.smsUrl}>Send SMS</a>
-                        </ToastAction>
-                      ),
-                    });
-                  } else {
-                    toast({
-                      title: 'In-App Driver Notification Sent',
-                      description: `${alertResult.driverName} notified in-app (${alertResult.summaryMsg})`,
-                    });
-                  }
-                } catch (alertErr) {
-                  console.warn("Non-fatal: failed to dispatch driver alert:", alertErr);
-                }
-              }
-            } catch (error: any) {
-              console.error('Error adding load:', error);
-              toast({ variant: "destructive", title: "Error Adding Load", description: error.message });
-              setIsSubmitting(false);
-              return;
-            }
+          } catch (alertErr) {
+            console.warn("Non-fatal: failed to dispatch driver alert:", alertErr);
+          }
         }
-        } finally {
-          isSavingLoadRef.current = false;
-        }
+      }
+
+      handleCancelEditLoad();
+      if (typeof window !== 'undefined') {
+        try { localStorage.removeItem('agy_load_draft'); } catch {}
+      }
+    } catch (error: any) {
+      console.error('Error saving load:', error);
+      toast({
+        variant: "destructive",
+        title: editingLoadId ? "Error Updating Load" : "Error Adding Load",
+        description: error?.message || "Could not save load. Please try again.",
+      });
+    } finally {
+      isSavingLoadRef.current = false;
+      setIsSubmitting(false);
+      clearStuckBodyPointerLock();
     }
-    handleCancelEditLoad();
-    localStorage.removeItem('agy_load_draft');
-    setIsSubmitting(false);
   };
 
 
@@ -2454,14 +2546,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     try {
       const ownerUid = user.role === 'driver' ? (driverOwnerId ?? user.uid) : user.uid;
       const loadRef = doc(db, `users/${ownerUid}/loads`, id);
-      const docSnap = await getDoc(loadRef);
-      if (!docSnap.exists()) throw new Error("Load not found for update.");
+      const docSnap = await fetchDocWithTimeout(loadRef, 4000);
+      const fallbackLoad = loads.find(l => l.id === id);
+      if ((!docSnap || !docSnap.exists()) && !fallbackLoad) {
+        throw new Error("Load not found for update.");
+      }
       
-      const currentLoad = { id: docSnap.id, ...docSnap.data() } as Load;
+      const currentLoad = (docSnap && docSnap.exists())
+        ? ({ id: docSnap.id, ...(docSnap.data() as Record<string, any>) } as Load)
+        : (fallbackLoad as Load);
       const finalUpdates = calculateFinalUpdates(currentLoad);
       const safeUpdates = sanitizeForFirestore(finalUpdates);
 
-      await updateDoc(loadRef, safeUpdates);
+      await withFirestoreTimeout(updateDoc(loadRef, safeUpdates), 6000);
       setLoads(prevLoads => prevLoads.map(l => l.id === id ? { ...currentLoad, ...finalUpdates } as Load : l));
 
       let toastMessage = "Load details saved.";
@@ -2693,22 +2790,30 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [user, driverOwnerId, settings, isTrialSession, clients, toast, driverProfiles, loads]); 
 
   const handleDeleteLoad = async (loadId: string) => {
-    if (!user || !ADMIN_ROLES.includes(user.role as any) || !window.confirm("Are you sure you want to delete this load? This action cannot be undone.")) return;
-    setIsSubmitting(true);
-    if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
+    if (!loadId || !user || !ADMIN_ROLES.includes(user.role as any)) return;
+    if (!window.confirm("Are you sure you want to delete this load? This action cannot be undone.")) return;
+
+    try {
+      if (isTrialSession || (IS_ADMIN_REVIEW_MODE && user.uid === mockReviewUser.uid)) {
         setLoads(prevLoads => prevLoads.filter(l => l.id !== loadId));
-        toast({ title: "Trial/Review: Load Deleted", description: `Load ${loadId} removed locally.` });
-    } else {
-        try {
-          await deleteDoc(doc(db, `users/${user.uid}/loads`, loadId));
-          setLoads(prevLoads => prevLoads.filter(l => l.id !== loadId));
-          toast({ title: "Load Deleted", description: "Load has been successfully deleted." });
-        } catch (error: any) {
-          console.error('Error deleting load:', error);
-          toast({ variant: "destructive", title: "Error Deleting Load", description: error.message });
+        if (editingLoadId === loadId) {
+          handleCancelEditLoad();
         }
+        toast({ title: "Trial/Review: Load Deleted", description: `Load ${loadId} removed locally.` });
+      } else {
+        await withFirestoreTimeout(deleteDoc(doc(db, `users/${user.uid}/loads`, loadId)), 6000);
+        setLoads(prevLoads => prevLoads.filter(l => l.id !== loadId));
+        if (editingLoadId === loadId) {
+          handleCancelEditLoad();
+        }
+        toast({ title: "Load Deleted", description: "Load has been successfully deleted." });
+      }
+    } catch (error: any) {
+      console.error('Error deleting load:', error);
+      toast({ variant: "destructive", title: "Error Deleting Load", description: error?.message || "Could not delete load." });
+    } finally {
+      clearStuckBodyPointerLock();
     }
-    setIsSubmitting(false);
   };
 
   // Maps a driver phase to the dispatcher load status that should apply

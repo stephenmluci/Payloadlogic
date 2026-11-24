@@ -1133,8 +1133,8 @@ export function LoadForm({
       directClientName = '';
     }
 
-    // Check localStorage draft if not present in request object or loadForm
-    if ((!directClientId || !directClientName) && typeof window !== 'undefined') {
+    // Check localStorage draft if not present in request object or loadForm (never while editing an existing load)
+    if (!editingLoadId && (!directClientId || !directClientName) && typeof window !== 'undefined') {
       try {
         const raw = localStorage.getItem(LS_LOAD_DRAFT);
         if (raw) {
@@ -1234,8 +1234,8 @@ export function LoadForm({
       populateOriginWithClientData(targetClientId);
     }
 
-    // Update persistence layer
-    if (typeof window !== 'undefined') {
+    // Update persistence layer (only for Create Load drafts, never while editing an existing load)
+    if (!editingLoadId && typeof window !== 'undefined') {
       try {
         const raw = localStorage.getItem(LS_LOAD_DRAFT);
         const parsed = raw ? JSON.parse(raw) : {};
@@ -4141,23 +4141,23 @@ export function LoadForm({
               </Button>
             )}
             {isEditMode && onCancelEdit && (
-              <Button type="button" variant="outline" onClick={onCancelEdit} disabled={isSubmitting} className="w-full sm:w-auto">
+              <Button type="button" variant="outline" onClick={onCancelEdit} className="w-full sm:w-auto">
                 <XCircle className="mr-2 h-4 w-4" />
                 Cancel Edit
               </Button>
             )}
             <div
-              className={`w-full sm:w-auto ${!loadValidation.isValid && !isSubmitting ? 'cursor-not-allowed' : ''}`}
-              role={!loadValidation.isValid && !isSubmitting ? 'button' : undefined}
-              tabIndex={!loadValidation.isValid && !isSubmitting ? 0 : undefined}
-              aria-label={!loadValidation.isValid && !isSubmitting ? 'Show missing required fields to create load' : undefined}
+              className={`w-full sm:w-auto ${!isEditMode && !loadValidation.isValid && !isSubmitting ? 'cursor-not-allowed' : ''}`}
+              role={!isEditMode && !loadValidation.isValid && !isSubmitting ? 'button' : undefined}
+              tabIndex={!isEditMode && !loadValidation.isValid && !isSubmitting ? 0 : undefined}
+              aria-label={!isEditMode && !loadValidation.isValid && !isSubmitting ? 'Show missing required fields to create load' : undefined}
               onClick={(e) => {
-                if (isSubmitting || loadValidation.isValid) return;
+                if (isEditMode || isSubmitting || loadValidation.isValid) return;
                 e.preventDefault();
                 handleIncompleteSubmitAttempt();
               }}
               onKeyDown={(e) => {
-                if (isSubmitting || loadValidation.isValid) return;
+                if (isEditMode || isSubmitting || loadValidation.isValid) return;
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
                   handleIncompleteSubmitAttempt();
@@ -4167,10 +4167,19 @@ export function LoadForm({
               <Button
                 type="submit"
                 className="w-full sm:w-auto"
-                disabled={isSubmitting || !loadValidation.isValid}
+                disabled={isSubmitting || (!isEditMode && !loadValidation.isValid)}
               >
-                <Save className="mr-2 h-4 w-4" />
-                {isEditMode ? 'Update Load' : 'Create Load'}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {isEditMode ? 'Updating Load…' : 'Creating Load…'}
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    {isEditMode ? 'Update Load' : 'Create Load'}
+                  </>
+                )}
               </Button>
             </div>
             </div>

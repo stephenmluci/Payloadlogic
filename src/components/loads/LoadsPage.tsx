@@ -206,6 +206,12 @@ export function LoadsPage() {
         assignedDriverId:  resolvedDriverId || loadForm.assignedDriverId   || undefined,
       });
 
+      if (editingLoadId) {
+        await handleSaveLoad();
+        await updateLoad(editingLoadId, { tripId: targetTrip.id });
+        return;
+      }
+
       // Snapshot the load count BEFORE saving so we can identify the new load afterwards
       const loadCountBefore = loads.length;
 
@@ -281,6 +287,20 @@ export function LoadsPage() {
 
   const [highlightedLoadId, setHighlightedLoadId] = React.useState<string | null>(null);
 
+  const formContainerRef = React.useRef<HTMLDivElement>(null);
+
+  const handleEditLoadCard = React.useCallback((load: any) => {
+    setInnerActiveTab("createLoad");
+    handleStartEditLoad(load);
+    setTimeout(() => {
+      if (formContainerRef.current) {
+        formContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }, 60);
+  }, [handleStartEditLoad]);
+
   const handleSelectDriverLoad = React.useCallback((load: any) => {
     if (!load?.id) return;
     const el = typeof document !== 'undefined' ? document.getElementById(`load-card-${load.id}`) : null;
@@ -292,8 +312,8 @@ export function LoadsPage() {
       }, 2200);
       return;
     }
-    handleStartEditLoad(load);
-  }, [handleStartEditLoad]);
+    handleEditLoadCard(load);
+  }, [handleEditLoadCard]);
 
   const renderActiveLoadCard = (load: any) => (
     <div
@@ -315,10 +335,9 @@ export function LoadsPage() {
         trips={trips}
         onGenerateAgreement={generateAgreement}
         onGenerateInvoice={generateInvoice}
-        onEdit={handleStartEditLoad}
+        onEdit={handleEditLoadCard}
         onDelete={handleDeleteLoad}
         calculateVehicleCPM={calculateVehicleCPM}
-        isUpdatingStatus={isSubmittingLoad}
       />
     </div>
   );
@@ -362,6 +381,7 @@ export function LoadsPage() {
         </TabsList>
 
         <TabsContent value="createLoad">
+          <div ref={formContainerRef} className="scroll-mt-20">
           <LoadForm 
             key={loadFormResetNonce}
             loadForm={loadForm}
@@ -381,6 +401,7 @@ export function LoadsPage() {
             isClientsLoading={isClientsLoading}
             clientLoadRequests={clientLoadRequests}
           />
+          </div>
 
         </TabsContent>
         <TabsContent value="clientRequests">
@@ -606,10 +627,9 @@ export function LoadsPage() {
                 onGenerateAgreement={generateAgreement}
                 onGenerateInvoice={generateInvoice}
                 onGenerateSettlement={handleGenerateSettlement}
-                onEdit={handleStartEditLoad}
+                onEdit={handleEditLoadCard}
                 onDelete={handleDeleteLoad}
                 calculateVehicleCPM={calculateVehicleCPM}
-                isUpdatingStatus={isSubmittingLoad}
               />
             ))}
           </div>

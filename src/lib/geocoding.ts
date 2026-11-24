@@ -69,9 +69,14 @@ export async function geocodePhysicalAddress(address: Address | string): Promise
     } catch {}
   }
 
-  // 3. Query /api/geocode
+  // 3. Query /api/geocode (bounded with timeout so UI actions never hang)
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 3000) : null;
   try {
-    const res = await fetch(`/api/geocode?address=${encodeURIComponent(addrStr)}`);
+    const res = await fetch(
+      `/api/geocode?address=${encodeURIComponent(addrStr)}`,
+      controller ? { signal: controller.signal } : undefined,
+    );
     if (res.ok) {
       const data = await res.json();
       if (typeof data.lat === 'number' && typeof data.lng === 'number') {
@@ -90,6 +95,8 @@ export async function geocodePhysicalAddress(address: Address | string): Promise
     }
   } catch (err: any) {
     console.warn(`[geocodePhysicalAddress] Geocode fetch failed for "${addrStr}":`, err?.message || err);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 
   return null;

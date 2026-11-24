@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Map, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2, Ruler, Weight, Box, ShieldCheck, ShieldX, ShieldAlert, Timer, Phone, TrendingUp, TrendingDown, Info, AlertTriangle, Scale, MessageSquare, Lock, FileCheck, ExternalLink, Share2, Receipt, ChevronDown, ChevronUp, Send } from 'lucide-react';
+import { MapPin, Map, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2, Ruler, Weight, Box, ShieldCheck, ShieldX, ShieldAlert, Timer, Phone, TrendingUp, TrendingDown, Info, AlertTriangle, Scale, MessageSquare, Lock, FileCheck, ExternalLink, Share2, Receipt, ChevronDown, ChevronUp, Send, Loader2 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { ShareLoadPacketModal } from './ShareLoadPacketModal';
 import { SignedBolUpload } from './SignedBolUpload';
@@ -49,7 +49,7 @@ type LoadCardProps = {
   load: Load;
   client: Client | undefined;
   settings: Settings; 
-  onStatusChange: (loadId: string, status: Load['status']) => void;
+  onStatusChange: (loadId: string, status: Load['status']) => void | Promise<void>;
   onGenerateAgreement: (load: Load) => void;
   onGenerateInvoice: (load: Load) => void;
   onGenerateSettlement?: (load: Load) => void;
@@ -127,6 +127,36 @@ export function LoadCard({
   const [isSharePacketOpen, setIsSharePacketOpen] = React.useState(false);
   const [isExpenseLedgerOpen, setIsExpenseLedgerOpen] = React.useState(false);
   const [isCompleteConfirmOpen, setIsCompleteConfirmOpen] = React.useState(false);
+  const [isDeletingCard, setIsDeletingCard] = React.useState(false);
+  const [isCardStatusBusy, setIsCardStatusBusy] = React.useState(false);
+
+  const statusBusy = Boolean(isUpdatingStatus || isCardStatusBusy);
+
+  const handleCardStatusChange = async (nextStatus: Load['status']) => {
+    if (!load.id || statusBusy) return;
+    setIsCardStatusBusy(true);
+    try {
+      await Promise.race([
+        Promise.resolve(onStatusChange(load.id, nextStatus)),
+        new Promise((resolve) => setTimeout(resolve, 8000)),
+      ]);
+    } finally {
+      setIsCardStatusBusy(false);
+    }
+  };
+
+  const handleCardDelete = async () => {
+    if (!load.id || isDeletingCard) return;
+    setIsDeletingCard(true);
+    try {
+      await Promise.race([
+        Promise.resolve(onDelete(load.id)),
+        new Promise((resolve) => setTimeout(resolve, 8000)),
+      ]);
+    } finally {
+      setIsDeletingCard(false);
+    }
+  };
   const VALID_STATUS_VALUES = [
     'pending_approval',
     'approved',
@@ -800,7 +830,7 @@ export function LoadCard({
             )}
             <div className="flex items-center font-semibold col-span-full sm:col-span-1">
               <DollarSign className="h-4 w-4 mr-2 text-primary" />
-              Total Agreed: ${load.totalAgreedRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              Total Agreed: ${(Number(load.totalAgreedRate) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
         </div>
 
@@ -1322,8 +1352,8 @@ export function LoadCard({
             {(effectiveStatus === 'pending_approval' || effectiveStatus === 'pending') && (
               <Button
                 size="sm"
-                onClick={() => onStatusChange(load.id!, 'approved')}
-                disabled={isUpdatingStatus}
+                onClick={() => handleCardStatusChange('approved')}
+                disabled={statusBusy}
                 className="px-3 h-8 text-xs sm:h-9 sm:text-sm bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-xs transition-colors"
                 title="Approve this load and mark ready for dispatch"
               >
@@ -1344,8 +1374,8 @@ export function LoadCard({
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => onStatusChange(load.id!, 'dispatched')}
-                  disabled={isUpdatingStatus || isDotWeightViolation}
+                  onClick={() => handleCardStatusChange('dispatched')}
+                  disabled={statusBusy || isDotWeightViolation}
                   className="px-3 h-8 text-xs sm:h-9 sm:text-sm bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs transition-colors"
                   title="Dispatch load to assigned driver and trigger alerts"
                 >
@@ -1358,8 +1388,8 @@ export function LoadCard({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => onStatusChange(load.id!, 'arrived-origin')}
-                disabled={isUpdatingStatus}
+                onClick={() => handleCardStatusChange('arrived-origin')}
+                disabled={statusBusy}
                 className="px-2.5 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm bg-cyan-50 hover:bg-cyan-100 text-cyan-700 border-cyan-300 font-semibold transition-colors"
                 title="Mark driver arrived at pickup location"
               >
@@ -1371,8 +1401,8 @@ export function LoadCard({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => onStatusChange(load.id!, 'loading')}
-                disabled={isUpdatingStatus}
+                onClick={() => handleCardStatusChange('loading')}
+                disabled={statusBusy}
                 className="px-2.5 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300 font-semibold transition-colors"
                 title="Mark freight as loading"
               >
@@ -1384,8 +1414,8 @@ export function LoadCard({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => onStatusChange(load.id!, 'in-transit')}
-                disabled={isUpdatingStatus || isOverHeight || isDotWeightViolation}
+                onClick={() => handleCardStatusChange('in-transit')}
+                disabled={statusBusy || isOverHeight || isDotWeightViolation}
                 className="px-2.5 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300 font-semibold transition-colors"
                 title="Mark load in transit to destination"
               >
@@ -1394,29 +1424,38 @@ export function LoadCard({
             )}
 
             <Button
+                type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => onEdit(load)}
                 className="px-2 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm"
-                disabled={isUpdatingStatus}
             >
                 <Pencil className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" /> Edit
             </Button>
             <Button
+                type="button"
                 variant="destructive"
                 size="sm"
-                onClick={() => onDelete(load.id!)}
+                onClick={handleCardDelete}
                 className="px-2 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm"
-                disabled={isUpdatingStatus}
+                disabled={isDeletingCard}
             >
-                <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" /> Delete
+                {isDeletingCard ? (
+                  <>
+                    <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 animate-spin" /> Deleting…
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" /> Delete
+                  </>
+                )}
             </Button>
             {effectiveStatus === 'in-transit' && !isTrackingViaTelemetry && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => onStatusChange(load.id!, 'arrived-destination')}
-                disabled={isUpdatingStatus}
+                onClick={() => handleCardStatusChange('arrived-destination')}
+                disabled={statusBusy}
                 className="px-2 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm bg-teal-50 hover:bg-teal-100 text-teal-700 border-teal-300 font-semibold transition-colors"
                 title="Log arrival at destination"
               >
@@ -1429,7 +1468,7 @@ export function LoadCard({
                 variant="outline"
                 size="sm"
                 onClick={() => setIsCompleteConfirmOpen(true)}
-                disabled={isUpdatingStatus}
+                disabled={statusBusy}
                 className="px-2.5 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-700 font-bold shadow-xs transition-colors"
                 title="Mark load as delivered and move to Completed Loads"
               >
@@ -1448,8 +1487,8 @@ export function LoadCard({
               )}
               <Select
                   value={effectiveStatus || 'pending_approval'}
-                  onValueChange={(value) => onStatusChange(load.id!, value as Load['status'])}
-                  disabled={isUpdatingStatus}
+                  onValueChange={(value) => handleCardStatusChange(value as Load['status'])}
+                  disabled={statusBusy}
               >
                   <SelectTrigger className="w-[140px] sm:w-[160px] h-8 text-xs sm:h-9 sm:text-sm shrink-0 font-medium">
                   <SelectValue placeholder="Change status" />
@@ -1487,11 +1526,12 @@ export function LoadCard({
         </div>
         <div className="flex flex-wrap items-center gap-2">
             <Button
+                type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => onGenerateAgreement(load)}
                 className="px-2 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm"
-                disabled={!client || isUpdatingStatus}
+                disabled={!client}
             >
                 <FileText className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" /> Agreement
             </Button>
@@ -1508,32 +1548,33 @@ export function LoadCard({
             )}
             {loadIsCompleted && (
               <Button
+                  type="button"
                   variant="outline"
                   size="sm"
                   onClick={() => onGenerateInvoice(load)}
                   className="px-2 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700"
-                  disabled={!client || isUpdatingStatus}
+                  disabled={!client}
               >
                   <DollarSign className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" /> Invoice
               </Button>
             )}
             {loadIsCompleted && onGenerateSettlement && (
               <Button
+                  type="button"
                   variant="outline"
                   size="sm"
                   onClick={() => onGenerateSettlement(load)}
                   className="px-2 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700"
-                  disabled={isUpdatingStatus}
               >
                   <FileText className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" /> Settlement
               </Button>
             )}
             <Button
+                type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => onShareLoadPacket ? onShareLoadPacket(load) : setIsSharePacketOpen(true)}
                 className="px-2 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm bg-indigo-50 hover:bg-indigo-100 border-indigo-300 text-indigo-700 font-semibold shadow-xs transition-colors"
-                disabled={isUpdatingStatus}
                 title="Compile and Email Load Packet (Invoice + Signed BOL) to broker/customer"
             >
                 <Share2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 text-indigo-600" /> Share Packet
@@ -1578,10 +1619,10 @@ export function LoadCard({
               type="button"
               size="sm"
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-              disabled={isUpdatingStatus}
+              disabled={statusBusy}
               onClick={() => {
-                onStatusChange(load.id!, 'delivered');
                 setIsCompleteConfirmOpen(false);
+                handleCardStatusChange('delivered');
               }}
             >
               <CheckCircle className="h-3.5 w-3.5 mr-1.5" />

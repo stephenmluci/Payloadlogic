@@ -16,6 +16,7 @@ type AddressFieldsProps = {
   onChange: (field: keyof Address, value: string) => void;
   onBulkChange?: (updates: Partial<Address>) => void;
   required?: boolean;
+  highlightMissing?: boolean;
   hideCompany?: boolean;
   hideContact?: boolean;
   hidePasteButton?: boolean;
@@ -29,6 +30,7 @@ export function AddressFields({
   onChange,
   onBulkChange,
   required,
+  highlightMissing,
   hideCompany,
   hideContact,
   hidePasteButton,
@@ -172,7 +174,10 @@ export function AddressFields({
       <div className="flex items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-2">
           <MapPin className="h-4 w-4 text-primary" />
-          <Label className="text-sm font-semibold text-slate-700">{label}</Label>
+          <Label className="text-sm font-semibold text-slate-700">
+            {label}
+            {required && <span className="text-red-500 ml-0.5" aria-hidden="true">*</span>}
+          </Label>
         </div>
         <div className="flex items-center gap-2">
           {pasteNotice && (
@@ -279,7 +284,8 @@ export function AddressFields({
             onBlur={handleStreetBlur}
             placeholder="Street Address (or paste full address string here...)"
             required={required}
-            className="bg-white"
+            aria-invalid={Boolean(required && highlightMissing && !safeAddress.street?.trim())}
+            className={required && highlightMissing && !safeAddress.street?.trim() ? 'bg-red-50/40 border-red-400 focus-visible:ring-red-400' : 'bg-white'}
           />
         </div>
 
@@ -294,7 +300,8 @@ export function AddressFields({
               onChange={(e) => onChange('city', e.target.value)}
               placeholder="City"
               required={required}
-              className="bg-white"
+              aria-invalid={Boolean(required && highlightMissing && !safeAddress.city?.trim())}
+              className={required && highlightMissing && !safeAddress.city?.trim() ? 'bg-red-50/40 border-red-400 focus-visible:ring-red-400' : 'bg-white'}
             />
           </div>
           <div>
@@ -306,7 +313,8 @@ export function AddressFields({
               onChange={(e) => onChange('state', e.target.value)}
               placeholder="State"
               required={required}
-              className="bg-white"
+              aria-invalid={Boolean(required && highlightMissing && !safeAddress.state?.trim())}
+              className={required && highlightMissing && !safeAddress.state?.trim() ? 'bg-red-50/40 border-red-400 focus-visible:ring-red-400' : 'bg-white'}
             />
           </div>
           <div>
@@ -318,7 +326,8 @@ export function AddressFields({
               onChange={(e) => onChange('zip', e.target.value)}
               placeholder="Zip Code"
               required={required}
-              className="bg-white"
+              aria-invalid={Boolean(required && highlightMissing && !safeAddress.zip?.trim())}
+              className={required && highlightMissing && !safeAddress.zip?.trim() ? 'bg-red-50/40 border-red-400 focus-visible:ring-red-400' : 'bg-white'}
             />
           </div>
         </div>

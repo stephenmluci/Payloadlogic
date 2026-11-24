@@ -35,19 +35,27 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { validateLoadForm, formatValidationSummary } from '@/lib/loadValidation';
 
 const CDL_THRESHOLD = 26_000; // lbs — 49 CFR § 383.91
 
 const emptyAddress = { street: '', city: '', state: '', zip: '', contactName: '', contactPhone: '' };
-const blankLoadForm = {
+const blankLoadForm: Partial<Load> = {
   clientId: '', clientName: '', companyName: '', origin: emptyAddress, destination: emptyAddress,
   pickupDateTime: '', deliveryDateTime: '',
   ratePerMile: 0, distance: 0, deadheadMiles: 0, status: 'pending_approval' as const,
-  cargoDescription: '', cargoDimensions: '', cargoWeight: '', specialTerms: '',
-  requiresTarping: false, tarpingFee: 0,
-  tripDuration: undefined, assignedTruckId: '', assignedTrailerId: '', assignedDriverId: '',
+  cargoDescription: '', cargoDimensions: '', cargoWeight: '',
+  cargoWeightNum: undefined, cargoLength: undefined, cargoWidth: undefined, cargoHeight: undefined,
+  cargoType: undefined, vehicleTransportType: undefined, placementMode: undefined, deckPercentageUsed: undefined,
+  isPartialLTL: false, isLtl: false, isPartialLoad: false,
+  specialTerms: '',
+  requiresTarping: false, tarpingFee: 0, totalAgreedRate: undefined,
+  tripDuration: undefined, tripId: undefined,
+  assignedTruckId: '', assignedTrailerId: '', assignedDriverId: '', assignedDriverName: '',
   cargoQuantity: 1,
   bolSource: 'broker' as const,
+  outboundBolUrl: undefined, outboundBolFileName: undefined, outboundBolGeneratedAt: undefined,
   additionalStops: undefined,
   firstLegMiles: undefined,
 };
@@ -85,7 +93,7 @@ type LoadFormProps = {
 
 
 const ALL_SECTIONS = ['section-locations', 'section-schedule', 'section-cargo', 'section-pricing', 'section-fleet', 'section-notes', 'section-bol'];
-const DEFAULT_OPEN_SECTIONS = ['section-locations', 'section-cargo', 'section-pricing'];
+const DEFAULT_OPEN_SECTIONS = ['section-locations', 'section-schedule', 'section-cargo', 'section-pricing'];
 
 const SECTION_NAV_ITEMS = [
   { id: 'section-locations', num: 1, label: 'Locations' },
@@ -135,7 +143,10 @@ export function LoadForm({
     const t = loadForm.tripId ?? 'none';
     if (t !== 'none' && t !== '') setExistingTripPicked(false);
   }, [loadForm.tripId]);
-  React.useEffect(() => { setExistingTripPicked(false); }, [editingLoadId]);
+  React.useEffect(() => {
+    setExistingTripPicked(false);
+    setShowValidationAlert(false);
+  }, [editingLoadId]);
   const outboundFileInputRef = React.useRef<HTMLInputElement>(null);
   const isDeliveryManualRef = React.useRef(false);
 
@@ -147,6 +158,7 @@ export function LoadForm({
 
   const lastAutoFilledOriginClientRef = React.useRef<string>('');
   const [formResetKey, setFormResetKey] = React.useState(0);
+  const [showValidationAlert, setShowValidationAlert] = React.useState(false);
   const wasSubmittingRef = React.useRef(false);
   const resetLocalFormUiState = React.useCallback(() => {
     isDeliveryManualRef.current = false;
@@ -154,6 +166,7 @@ export function LoadForm({
     setLastCalculatedRoute('');
     setLastCalculatedDriver('');
     setExistingTripPicked(false);
+    setShowValidationAlert(false);
     setShowAdvancedLocations(false);
     setShowAdvancedCargo(false);
     setShowAdvancedPricing(false);
@@ -1911,6 +1924,37 @@ export function LoadForm({
     [isVehicleLoad, loadedMiles, vehicleTransportType],
   );
 
+  const loadValidation = React.useMemo(
+    () => validateLoadForm(loadForm, { isEditMode, existingTripPicked }),
+    [loadForm, isEditMode, existingTripPicked],
+  );
+
+  React.useEffect(() => {
+    if (loadValidation.isValid && showValidationAlert) {
+      setShowValidationAlert(false);
+    }
+  }, [loadValidation.isValid, showValidationAlert]);
+
+  const handleIncompleteSubmitAttempt = React.useCallback(() => {
+    if (loadValidation.isValid) return;
+    setShowValidationAlert(true);
+    const missingIds = loadValidation.missingSections.map((s) => s.sectionId);
+    setOpenSections((prev) => Array.from(new Set([...prev, ...missingIds])));
+
+    toast({
+      variant: 'destructive',
+      title: isEditMode ? 'Cannot Update Load — Missing Required Fields' : 'Cannot Create Load — Missing Required Fields',
+      description: formatValidationSummary(loadValidation),
+    });
+
+    setTimeout(() => {
+      const alertEl = typeof document !== 'undefined' ? document.getElementById('load-form-validation-alert') : null;
+      if (alertEl) {
+        alertEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }, 80);
+  }, [loadValidation, isEditMode, toast]);
+
   return (
     <Card className="shadow-lg">
       <CardHeader>
@@ -1922,15 +1966,11 @@ export function LoadForm({
       <CardContent>
         <form
           key={formResetKey}
+          noValidate
           onSubmit={(e) => {
-            if (existingTripPicked && (loadForm.tripId ?? 'none') === 'none') {
+            if (!loadValidation.isValid) {
               e.preventDefault();
-              setOpenSections(prev => (prev.includes('section-fleet') ? prev : [...prev, 'section-fleet']));
-              toast({
-                variant: 'destructive',
-                title: 'Choose a trip first',
-                description: 'You selected "Add to Existing Trip" — pick a trip from the list, or choose a different fleet assignment option.',
-              });
+              handleIncompleteSubmitAttempt();
               return;
             }
             if (!loadForm.cargoQuantity || loadForm.cargoQuantity < 1) {
@@ -1971,21 +2011,24 @@ export function LoadForm({
             <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
               {SECTION_NAV_ITEMS.map((item) => {
                 const isOpen = openSections.includes(item.id);
+                const hasMissingInSection = showValidationAlert && loadValidation.missingSections.some(s => s.sectionId === item.id);
                 return (
                   <button
                     key={item.id}
                     type="button"
                     onClick={() => jumpToSection(item.id)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all shrink-0 ${
-                      isOpen
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                      hasMissingInSection
+                        ? 'bg-red-50 text-red-800 border border-red-300 ring-1 ring-red-200'
+                        : isOpen
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                     }`}
                   >
                     <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                      isOpen ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                      hasMissingInSection ? 'bg-red-600 text-white' : isOpen ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
                     }`}>
-                      {item.num}
+                      {hasMissingInSection ? '!' : item.num}
                     </span>
                     <span>{item.label}</span>
                   </button>
@@ -2084,6 +2127,7 @@ export function LoadForm({
                       onChange={(field, value) => handleAddressChange('origin', field, value)}
                       onBulkChange={(updates) => handleAddressBulkChange('origin', updates)}
                       required
+                      highlightMissing={showValidationAlert}
                       hideCompany
                     />
                   </div>
@@ -2095,6 +2139,7 @@ export function LoadForm({
                       onChange={(field, value) => handleAddressChange('destination', field, value)}
                       onBulkChange={(updates) => handleAddressBulkChange('destination', updates)}
                       required
+                      highlightMissing={showValidationAlert}
                       hideCompany
                     />
                   </div>
@@ -2317,11 +2362,14 @@ export function LoadForm({
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div>
-                      <Label htmlFor="pickupDateTime">Pickup Date &amp; Time</Label>
+                      <Label htmlFor="pickupDateTime">
+                        Pickup Date &amp; Time <span className="text-red-500" aria-hidden="true">*</span>
+                      </Label>
                       <DispatcherDateTimePicker
                         id="pickupDateTime"
                         name="pickupDateTime"
                         value={loadForm.pickupDateTime || ''}
+                        hasError={showValidationAlert && loadValidation.missingFieldKeys.has('pickupDateTime')}
                         onChange={(val) => {
                           setLoadForm(prev => {
                             const prevDeadhead =
@@ -2351,11 +2399,14 @@ export function LoadForm({
                       />
                     </div>
                     <div>
-                      <Label htmlFor="deliveryDateTime">Delivery Date &amp; Time</Label>
+                      <Label htmlFor="deliveryDateTime">
+                        Delivery Date &amp; Time <span className="text-red-500" aria-hidden="true">*</span>
+                      </Label>
                       <DispatcherDateTimePicker
                         id="deliveryDateTime"
                         name="deliveryDateTime"
                         value={loadForm.deliveryDateTime || ''}
+                        hasError={showValidationAlert && loadValidation.missingFieldKeys.has('deliveryDateTime')}
                         onChange={(val) => {
                           isDeliveryManualRef.current = Boolean(val) && val !== suggestedDeliveryLocal;
                           setLoadForm(prev => ({ ...prev, deliveryDateTime: val }));
@@ -2516,7 +2567,9 @@ export function LoadForm({
                 {/* Weight & Quantity */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
                   <div>
-                    <Label htmlFor="cargoQuantity">Quantity / Units</Label>
+                    <Label htmlFor="cargoQuantity">
+                      Quantity / Units <span className="text-red-500" aria-hidden="true">*</span>
+                    </Label>
                     <div className="relative">
                       <Hash className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
@@ -2535,7 +2588,8 @@ export function LoadForm({
                           }
                         }}
                         placeholder="e.g., 1"
-                        className="pl-9 bg-white"
+                        aria-invalid={showValidationAlert && loadValidation.missingFieldKeys.has('cargoQuantity')}
+                        className={`pl-9 ${showValidationAlert && loadValidation.missingFieldKeys.has('cargoQuantity') ? 'bg-red-50/40 border-red-400 focus-visible:ring-red-400' : 'bg-white'}`}
                         required
                       />
                     </div>
@@ -2543,7 +2597,9 @@ export function LoadForm({
                   </div>
 
                   <div>
-                    <Label htmlFor="cargoWeightNum">Unit Weight (lbs)</Label>
+                    <Label htmlFor="cargoWeightNum">
+                      Unit Weight (lbs) <span className="text-red-500" aria-hidden="true">*</span>
+                    </Label>
                     <div className="relative">
                       <Weight className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
@@ -2555,7 +2611,8 @@ export function LoadForm({
                         value={loadForm.cargoWeightNum !== undefined ? loadForm.cargoWeightNum : ''}
                         onChange={handleInputChange}
                         placeholder="e.g., 4500"
-                        className="pl-9 bg-white"
+                        aria-invalid={showValidationAlert && loadValidation.missingFieldKeys.has('cargoWeightNum')}
+                        className={`pl-9 ${showValidationAlert && loadValidation.missingFieldKeys.has('cargoWeightNum') ? 'bg-red-50/40 border-red-400 focus-visible:ring-red-400' : 'bg-white'}`}
                         required
                       />
                     </div>
@@ -2576,7 +2633,9 @@ export function LoadForm({
                 {/* Primary Cargo Dimensions (Length & Width) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div>
-                    <Label htmlFor="cargoLength">Length (ft)</Label>
+                    <Label htmlFor="cargoLength">
+                      Length (ft) <span className="text-red-500" aria-hidden="true">*</span>
+                    </Label>
                     <div className="relative">
                       <Ruler className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
@@ -2588,7 +2647,8 @@ export function LoadForm({
                         value={loadForm.cargoLength !== undefined ? loadForm.cargoLength : ''}
                         onChange={handleInputChange}
                         placeholder="e.g., 15.5"
-                        className="pl-9 bg-white"
+                        aria-invalid={showValidationAlert && loadValidation.missingFieldKeys.has('cargoLength')}
+                        className={`pl-9 ${showValidationAlert && loadValidation.missingFieldKeys.has('cargoLength') ? 'bg-red-50/40 border-red-400 focus-visible:ring-red-400' : 'bg-white'}`}
                         required
                       />
                     </div>
@@ -2596,7 +2656,9 @@ export function LoadForm({
                   </div>
 
                   <div>
-                    <Label htmlFor="cargoWidth">Width (ft)</Label>
+                    <Label htmlFor="cargoWidth">
+                      Width (ft) <span className="text-red-500" aria-hidden="true">*</span>
+                    </Label>
                     <div className="relative">
                       <Ruler className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
@@ -2608,7 +2670,8 @@ export function LoadForm({
                         value={loadForm.cargoWidth !== undefined ? loadForm.cargoWidth : ''}
                         onChange={handleInputChange}
                         placeholder="e.g., 8.2"
-                        className="pl-9 bg-white"
+                        aria-invalid={showValidationAlert && loadValidation.missingFieldKeys.has('cargoWidth')}
+                        className={`pl-9 ${showValidationAlert && loadValidation.missingFieldKeys.has('cargoWidth') ? 'bg-red-50/40 border-red-400 focus-visible:ring-red-400' : 'bg-white'}`}
                         required
                       />
                     </div>
@@ -2799,7 +2862,9 @@ export function LoadForm({
               <AccordionContent className="pt-2 space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
-                    <Label htmlFor="distance">Loaded Miles</Label>
+                    <Label htmlFor="distance">
+                      Loaded Miles <span className="text-red-500" aria-hidden="true">*</span>
+                    </Label>
                     <div className="relative">
                       <Milestone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                       <Input 
@@ -2807,10 +2872,11 @@ export function LoadForm({
                         name="distance"
                         type="number"
                         step="any"
-                        value={loadForm.distance !== undefined && loadForm.distance !== null ? loadForm.distance : ''} 
+                        value={loadForm.distance || ''} 
                         onChange={handleInputChange} 
                         placeholder="e.g., 500"
-                        className="pl-10 bg-white" 
+                        aria-invalid={showValidationAlert && loadValidation.missingFieldKeys.has('distance')}
+                        className={`pl-10 ${showValidationAlert && loadValidation.missingFieldKeys.has('distance') ? 'bg-red-50/40 border-red-400 focus-visible:ring-red-400' : 'bg-white'}`} 
                         required
                       />
                     </div>
@@ -2839,7 +2905,9 @@ export function LoadForm({
                     </p>
                   </div>
                   <div>
-                    <Label htmlFor="ratePerMile">Rate per Mile ($)</Label>
+                    <Label htmlFor="ratePerMile">
+                      Rate per Mile ($) <span className="text-red-500" aria-hidden="true">*</span>
+                    </Label>
                     <div className="relative">
                       <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                       <Input 
@@ -2850,7 +2918,8 @@ export function LoadForm({
                         value={loadForm.ratePerMile || ''} 
                         onChange={handleInputChange} 
                         placeholder="e.g., 2.50"
-                        className="pl-10 bg-white"
+                        aria-invalid={showValidationAlert && loadValidation.missingFieldKeys.has('ratePerMile')}
+                        className={`pl-10 ${showValidationAlert && loadValidation.missingFieldKeys.has('ratePerMile') ? 'bg-red-50/40 border-red-400 focus-visible:ring-red-400' : 'bg-white'}`}
                         required
                       />
                     </div>
@@ -3972,19 +4041,71 @@ export function LoadForm({
             );
           })()}
 
+          {/* ── Required-Field Validation Alert (shown when user tries to submit with missing fields) ── */}
+          {showValidationAlert && !loadValidation.isValid && (
+            <Alert
+              id="load-form-validation-alert"
+              variant="destructive"
+              className="border-red-300 bg-red-50/95 text-red-900 shadow-sm [&>svg]:text-red-600"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle className="font-bold text-sm text-red-900">
+                {isEditMode
+                  ? 'Please complete all required fields before updating this load'
+                  : 'Please complete all required fields before creating this load'}
+              </AlertTitle>
+              <AlertDescription className="mt-2 space-y-2 text-xs text-red-800">
+                <p>The following sections still have missing required information (click any section to jump to it):</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  {loadValidation.missingSections.map((section) => (
+                    <li key={section.sectionId}>
+                      <button
+                        type="button"
+                        onClick={() => jumpToSection(section.sectionId)}
+                        className="text-left hover:underline focus:outline-none focus:underline"
+                      >
+                        <strong className="font-bold text-red-950">{section.sectionTitle}:</strong>{' '}
+                        <span>{section.missingFields.join(', ')}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Action bar — normal document flow on mobile so it never covers form fields; sticky on desktop */}
           <div className="md:sticky md:bottom-0 md:z-30 mt-6 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm md:shadow-[0_-4px_16px_rgba(15,23,42,0.08)] backdrop-blur flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0 text-xs text-slate-500">
-              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Fleet assignment</span>
-              <span className="block truncate text-sm font-semibold text-slate-800">
-                {loadForm.tripId === 'auto-create'
-                  ? 'Starts a new multi-stop trip (this load is stop 1)'
-                  : matchedTrip
-                    ? `Added to ${matchedTrip.name}`
-                    : existingTripPicked
-                      ? 'Pick a trip to add this load to'
-                      : 'Independent load (not part of a trip)'}
-              </span>
+            <div className="min-w-0 text-xs text-slate-500 space-y-1">
+              <div>
+                <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Fleet assignment</span>
+                <span className="block truncate text-sm font-semibold text-slate-800">
+                  {loadForm.tripId === 'auto-create'
+                    ? 'Starts a new multi-stop trip (this load is stop 1)'
+                    : matchedTrip
+                      ? `Added to ${matchedTrip.name}`
+                      : existingTripPicked
+                        ? 'Pick a trip to add this load to'
+                        : 'Independent load (not part of a trip)'}
+                </span>
+              </div>
+              {!loadValidation.isValid ? (
+                <button
+                  type="button"
+                  onClick={handleIncompleteSubmitAttempt}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 hover:text-amber-900 underline decoration-amber-400 underline-offset-2 text-left"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                  <span>
+                    {loadValidation.totalMissingCount} required field{loadValidation.totalMissingCount === 1 ? '' : 's'} remaining across {loadValidation.missingSections.length} section{loadValidation.missingSections.length === 1 ? '' : 's'} — view missing
+                  </span>
+                </button>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                  All required fields complete
+                </span>
+              )}
             </div>
             <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
             {loadForm.originalClientRequestId && onDeclineClientRequest && (
@@ -4025,10 +4146,33 @@ export function LoadForm({
                 Cancel Edit
               </Button>
             )}
-            <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting}>
-              <Save className="mr-2 h-4 w-4" />
-              {isEditMode ? 'Update Load' : 'Create Load'}
-            </Button>
+            <div
+              className={`w-full sm:w-auto ${!loadValidation.isValid && !isSubmitting ? 'cursor-not-allowed' : ''}`}
+              role={!loadValidation.isValid && !isSubmitting ? 'button' : undefined}
+              tabIndex={!loadValidation.isValid && !isSubmitting ? 0 : undefined}
+              aria-label={!loadValidation.isValid && !isSubmitting ? 'Show missing required fields to create load' : undefined}
+              onClick={(e) => {
+                if (isSubmitting || loadValidation.isValid) return;
+                e.preventDefault();
+                handleIncompleteSubmitAttempt();
+              }}
+              onKeyDown={(e) => {
+                if (isSubmitting || loadValidation.isValid) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleIncompleteSubmitAttempt();
+                }
+              }}
+            >
+              <Button
+                type="submit"
+                className="w-full sm:w-auto"
+                disabled={isSubmitting || !loadValidation.isValid}
+              >
+                <Save className="mr-2 h-4 w-4" />
+                {isEditMode ? 'Update Load' : 'Create Load'}
+              </Button>
+            </div>
             </div>
           </div>
         </form>

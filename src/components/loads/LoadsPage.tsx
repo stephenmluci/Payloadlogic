@@ -3,6 +3,7 @@ import React from 'react';
 import { type Client, isDriverOffDuty } from '@/types';
 import { getDriverProfileId } from '@/lib/driverAssignment';
 import { isLoadCompleted, deduplicateLoads } from '@/lib/loadStatus';
+import { validateLoadForm, formatValidationSummary } from '@/lib/loadValidation';
 import { LoadForm } from './LoadForm';
 import { LoadCard } from './LoadCard';
 import { ClientLoadRequestCard } from './ClientLoadRequestCard'; 
@@ -115,6 +116,17 @@ export function LoadsPage() {
 
   const handleLoadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // -- Required-Field Validation Guard --
+    const validation = validateLoadForm(loadForm, { isEditMode: Boolean(editingLoadId) });
+    if (!validation.isValid) {
+      toast({
+        variant: 'destructive',
+        title: editingLoadId ? 'Cannot Update Load — Missing Required Fields' : 'Cannot Create Load — Missing Required Fields',
+        description: formatValidationSummary(validation),
+      });
+      return;
+    }
 
     // -- Validation --
     if (loadForm.assignedTrailerId) {

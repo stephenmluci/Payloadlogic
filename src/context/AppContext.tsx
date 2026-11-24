@@ -28,6 +28,7 @@ import { getDetentionFreeTimeMinutes, getDetentionFeeRate, formatFreeTimeLabel }
 import { deduplicateLoads, getLoadDuplicateKey, isLoadCompleted, hasLoadPod } from '@/lib/loadStatus';
 import { calculateCustomerRateBreakdown } from '@/lib/loadPricing';
 import { cleanStopsForSave } from '@/lib/loadStops';
+import { validateLoadForm, formatValidationSummary } from '@/lib/loadValidation';
 
 
 
@@ -1713,6 +1714,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const handleSaveLoad = async () => {
     if (!user || !ADMIN_ROLES.includes(user.role as any)) return;
     if (isSavingLoadRef.current) return;
+
+    // ── Required-Field Validation Guard ──
+    const validation = validateLoadForm(loadForm, { isEditMode: Boolean(editingLoadId) });
+    if (!validation.isValid) {
+      toast({
+        variant: 'destructive',
+        title: editingLoadId ? 'Cannot Update Load — Missing Required Fields' : 'Cannot Create Load — Missing Required Fields',
+        description: formatValidationSummary(validation),
+      });
+      return;
+    }
 
     // ── Driver Assignment Normalization & Validation ──
     let assignedDriverId = loadForm.assignedDriverId && loadForm.assignedDriverId !== 'none' ? loadForm.assignedDriverId.trim() : undefined;

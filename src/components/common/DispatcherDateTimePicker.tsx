@@ -16,6 +16,7 @@ interface DispatcherDateTimePickerProps {
   name?: string;
   className?: string;
   disabled?: boolean;
+  hasError?: boolean;
 }
 
 export function DispatcherDateTimePicker({
@@ -24,6 +25,7 @@ export function DispatcherDateTimePicker({
   id,
   className,
   disabled = false,
+  hasError = false,
 }: DispatcherDateTimePickerProps) {
   const [date, setDate] = useState<Date | undefined>(undefined);
   const [time24, setTime24] = useState<string>('08:00');
@@ -91,9 +93,11 @@ export function DispatcherDateTimePicker({
             type="button"
             variant="outline"
             disabled={disabled}
+            aria-invalid={hasError && !date}
             className={cn(
               "flex-1 min-w-[140px] justify-start text-left font-normal bg-white h-10 px-3 border-input shadow-sm hover:border-slate-300 transition-colors",
-              !date && "text-muted-foreground"
+              !date && "text-muted-foreground",
+              hasError && !date && "border-red-400 bg-red-50/40 text-red-700 hover:border-red-500"
             )}
           >
             <CalendarIcon className="mr-2 h-4 w-4 text-blue-600 shrink-0" />

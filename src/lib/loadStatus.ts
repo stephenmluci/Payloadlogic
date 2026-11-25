@@ -91,6 +91,19 @@ export function hasLoadPod(
 }
 
 /**
+ * Returns true only when the load has reached the delivery stage
+ * (Arrived at Destination, Unloading, or Delivered / Completed) and is ready for signed BOL / POD.
+ */
+export function isLoadReadyForPodUpload(
+  load?: Pick<Load, 'status' | 'driverPhase' | 'deliveredAt' | 'paperworkStatus'> | null,
+): boolean {
+  if (!load) return false;
+  if (isLoadCompleted(load)) return true;
+  const norm = normalizeLoadStatus(load.status);
+  return norm === 'arrived-destination' || norm === 'unloading' || norm === 'delivered';
+}
+
+/**
  * Single source of truth for displaying a load's status pill across Overview,
  * Loads page, LoadCard, and Driver view.
  */

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { uploadSignedBolDocument } from '@/lib/storage';
 import { useApp } from '@/context/AppContext';
+import { hasLoadPod, isLoadReadyForPodUpload } from '@/lib/loadStatus';
 import type { Load } from '@/types';
 
 interface SignedBolUploadProps {
@@ -53,7 +54,7 @@ export function SignedBolUpload({
   const [optimisticBolUrl, setOptimisticBolUrl] = useState<string | null>(null);
 
   const resolvedBolUrl = load.signedBolUrl || optimisticBolUrl || '';
-  const hasSignedBol = Boolean(resolvedBolUrl);
+  const hasSignedBol = Boolean(resolvedBolUrl) || hasLoadPod(load);
 
   const handleTriggerFilePicker = () => {
     if (fileInputRef.current) {
@@ -203,17 +204,17 @@ export function SignedBolUpload({
 
   // ── Driver View Card Mode (Mobile-First Active Dispatch Card) ──
   if (variant === 'driver') {
-    const statusLower = (load.status || '').toLowerCase();
-    const isAtDeliveryStage = ['arrived', 'arrived-destination', 'unloading', 'delivered'].includes(statusLower);
+    const isAtDeliveryStage = isLoadReadyForPodUpload(load);
+    if (!hasSignedBol && !isAtDeliveryStage) {
+      return null;
+    }
 
     return (
       <div
         className={`rounded-xl border p-3 transition-all ${
           hasSignedBol
             ? 'bg-emerald-50/80 border-emerald-300'
-            : isAtDeliveryStage
-              ? 'bg-amber-50 border-2 border-amber-400 shadow-xs'
-              : 'bg-amber-50/60 border-amber-200'
+            : 'bg-amber-50 border-2 border-amber-400 shadow-xs'
         } ${className}`}
       >
         {sharedInputs}
@@ -223,10 +224,10 @@ export function SignedBolUpload({
             {hasSignedBol ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             ) : (
-              <FileText className="w-4 h-4 text-amber-700 shrink-0" />
+              <Camera className="w-4 h-4 text-amber-700 shrink-0" />
             )}
             <span className="text-xs font-extrabold text-slate-900 truncate">
-              Signed BOL / POD
+              {label || 'Signed BOL / POD'}
             </span>
           </div>
           {hasSignedBol ? (
@@ -235,7 +236,7 @@ export function SignedBolUpload({
             </Badge>
           ) : (
             <Badge className="bg-amber-200 text-amber-950 border border-amber-300 text-[10px] font-bold px-2 py-0.5 shrink-0">
-              {isAtDeliveryStage ? 'Action Needed' : 'Upload Needed'}
+              Action Needed
             </Badge>
           )}
         </div>
@@ -246,23 +247,25 @@ export function SignedBolUpload({
               Signed paperwork attached and visible to dispatch.
             </p>
             <div className="flex items-center gap-1.5 shrink-0">
-              <a
-                href={resolvedBolUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors"
-              >
-                <span>View</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
+              {resolvedBolUrl && (
+                <a
+                  href={resolvedBolUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors"
+                >
+                  <span>View</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={handleTriggerFilePicker}
+                onClick={handleTriggerCamera}
                 disabled={isUploading}
                 className="h-8 px-2.5 border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-900 text-xs font-semibold"
-                title="Replace uploaded BOL / POD"
+                title="Retake photo of signed BOL / POD"
               >
                 <RefreshCw className={`w-3.5 h-3.5 mr-1 ${isUploading ? 'animate-spin' : ''}`} />
                 <span>Replace</span>
@@ -272,17 +275,16 @@ export function SignedBolUpload({
         ) : (
           <div className="space-y-2">
             <p className="text-[11px] text-amber-950/85 leading-snug">
-              {isAtDeliveryStage
-                ? 'Have the receiver sign the BOL, then take a photo or choose a file from your phone.'
-                : 'Take a clear photo or choose a PDF/image of the signed BOL or POD once signed.'}
+              Have the receiver sign the BOL, then take a clear photo or upload a file from your phone.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-2">
               <Button
                 type="button"
-                onClick={handleTriggerFilePicker}
+                onClick={handleTriggerCamera}
                 disabled={isUploading}
                 className="flex-1 min-h-[44px] h-11 bg-amber-600 hover:bg-amber-500 active:scale-[0.99] text-white font-extrabold text-xs rounded-xl shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                title="Open camera to photograph signed BOL / POD"
               >
                 {isUploading ? (
                   <>
@@ -291,8 +293,8 @@ export function SignedBolUpload({
                   </>
                 ) : (
                   <>
-                    <Upload className="w-4 h-4 shrink-0" />
-                    <span>{label || 'Upload Signed BOL / POD'}</span>
+                    <Camera className="w-4 h-4 shrink-0" />
+                    <span>Take Photo</span>
                   </>
                 )}
               </Button>
@@ -300,13 +302,13 @@ export function SignedBolUpload({
               <Button
                 type="button"
                 variant="outline"
-                onClick={handleTriggerCamera}
+                onClick={handleTriggerFilePicker}
                 disabled={isUploading}
                 className="min-h-[44px] h-11 px-3.5 border-amber-400 bg-white hover:bg-amber-100 active:scale-[0.99] text-amber-950 font-bold text-xs rounded-xl shadow-2xs flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
-                title="Open phone camera directly to snap signed BOL"
+                title="Choose an existing photo or PDF file"
               >
-                <Camera className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>Take Photo</span>
+                <Upload className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>Upload File</span>
               </Button>
             </div>
 

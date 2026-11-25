@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/hooks/use-toast';
 import { isLoadDetentionActive } from '@/lib/detention';
-import { hasLoadPod, getUnifiedLoadStatusDisplay } from '@/lib/loadStatus';
+import { hasLoadPod, getUnifiedLoadStatusDisplay, isLoadReadyForPodUpload } from '@/lib/loadStatus';
 import { getLoadDeliveryStops, isMultiDropLoad } from '@/lib/loadStops';
 import { registerServiceWorker, subscribeUserToPush } from '@/lib/webPushClient';
 import { ShareLiveLocationToggle } from './ShareLiveLocationToggle';
@@ -1147,7 +1147,7 @@ export function DriverDashboard() {
           {/* Paperwork Reminder Banner when any active load at destination or completed load still needs BOL/POD */}
           {(() => {
             const activeNeedingBol = activeLoads.filter(
-              (l) => !hasLoadPod(l) && ['arrived', 'arrived-destination', 'unloading'].includes((l.status || '').toLowerCase()),
+              (l) => !hasLoadPod(l) && isLoadReadyForPodUpload(l),
             );
             const completedNeedingBol = completedToday.filter((l) => !isPaperworkClosedOut(l));
             const totalNeedingBol = activeNeedingBol.length + completedNeedingBol.length;
@@ -1160,7 +1160,7 @@ export function DriverDashboard() {
                     Signed BOL / POD Needed ({totalNeedingBol} {totalNeedingBol === 1 ? 'load' : 'loads'})
                   </p>
                   <p className="text-[11px] text-amber-900 mt-0.5 leading-snug">
-                    Use <strong>Upload Signed BOL / POD</strong> or <strong>Take Photo</strong> on the dispatch card below to send the signed paperwork to dispatch.
+                    Use <strong>Take Photo</strong> or <strong>Upload File</strong> on the dispatch card below to send the signed paperwork to dispatch.
                   </p>
                 </div>
               </div>
@@ -1285,11 +1285,11 @@ export function DriverDashboard() {
                           <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold px-2 py-0.5">
                             ✓ Signed BOL Uploaded
                           </Badge>
-                        ) : (
+                        ) : isLoadReadyForPodUpload(load) ? (
                           <Badge className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold px-2 py-0.5">
                             Pending BOL / POD
                           </Badge>
-                        )}
+                        ) : null}
                       </div>
                       {busy && (
                         <div className="flex items-center gap-1 text-xs text-blue-600 font-semibold">
@@ -1716,15 +1716,17 @@ export function DriverDashboard() {
                             </Button>
                           </div>
 
-                          {/* ── Direct Signed BOL / POD Upload on Every Active Dispatch Card ── */}
-                          <div className="pt-1">
-                            <SignedBolUpload
-                              load={load}
-                              updateLoad={updateLoad}
-                              variant="driver"
-                              label="Upload Signed BOL / POD"
-                            />
-                          </div>
+                          {/* ── Signed BOL / POD Upload (only at delivery stage or once uploaded) ── */}
+                          {(hasLoadPod(load) || isLoadReadyForPodUpload(load)) && (
+                            <div className="pt-1">
+                              <SignedBolUpload
+                                load={load}
+                                updateLoad={updateLoad}
+                                variant="driver"
+                                label="Signed BOL / POD"
+                              />
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -2016,7 +2018,7 @@ export function DriverDashboard() {
                             <PenLine className="w-4 h-4 mr-1" />
                             <span>Complete Bill of Lading (Sign on Glass)</span>
                           </Button>
-                          <SignedBolUpload load={cLoad} updateLoad={updateLoad} compact={false} label="Upload Signed Paper BOL (POD)" />
+                          <SignedBolUpload load={cLoad} updateLoad={updateLoad} variant="driver" label="Signed Paper BOL (POD)" />
                         </div>
                       </CardContent>
                     </Card>

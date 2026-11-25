@@ -14,7 +14,7 @@ import {
   isIosDevice,
   type ChronologicalTripStop,
 } from '@/lib/routeUtils';
-import { hasLoadPod, getUnifiedLoadStatusDisplay } from '@/lib/loadStatus';
+import { hasLoadPod, getUnifiedLoadStatusDisplay, isLoadReadyForPodUpload } from '@/lib/loadStatus';
 import { isLoadDetentionActive } from '@/lib/detention';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -879,15 +879,15 @@ export function TripManifestCard({
                     {matchedLoad && (
                       <div className="pt-1.5 border-t border-slate-200/60 flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <Badge
-                            className={`text-[10px] font-semibold px-1.5 py-0 ${
-                              hasBolUploaded
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                : 'bg-amber-100 text-amber-900 border-amber-300'
-                            }`}
-                          >
-                            {hasBolUploaded ? '✓ BOL Uploaded' : 'Pending BOL / POD'}
-                          </Badge>
+                          {hasBolUploaded ? (
+                            <Badge className="text-[10px] font-semibold px-1.5 py-0 bg-emerald-100 text-emerald-800 border-emerald-300">
+                              ✓ BOL Uploaded
+                            </Badge>
+                          ) : isLoadReadyForPodUpload(matchedLoad) ? (
+                            <Badge className="text-[10px] font-semibold px-1.5 py-0 bg-amber-100 text-amber-900 border-amber-300">
+                              Pending BOL / POD
+                            </Badge>
+                          ) : null}
                           {(() => {
                             const unifiedStatus = getUnifiedLoadStatusDisplay(matchedLoad);
                             return (
@@ -1013,7 +1013,7 @@ export function TripManifestCard({
                           </Button>
                         )}
 
-                        {onOpenEpod && !hasBolUploaded && (
+                        {onOpenEpod && !hasBolUploaded && isLoadReadyForPodUpload(matchedLoad) && (
                           <Button
                             type="button"
                             size="sm"
@@ -1026,13 +1026,15 @@ export function TripManifestCard({
                         )}
                       </div>
 
-                      {/* Signed BOL / POD Upload */}
-                      <SignedBolUpload
-                        load={matchedLoad}
-                        updateLoad={onUpdateLoad}
-                        variant="driver"
-                        label={`Upload Signed BOL / POD (Load #${matchedLoad.loadNumber || matchedLoad.id?.substring(0, 6)})`}
-                      />
+                      {/* Signed BOL / POD Upload (only at delivery stage or once uploaded) */}
+                      {(hasBolUploaded || isLoadReadyForPodUpload(matchedLoad)) && (
+                        <SignedBolUpload
+                          load={matchedLoad}
+                          updateLoad={onUpdateLoad}
+                          variant="driver"
+                          label={`Signed BOL / POD (Load #${matchedLoad.loadNumber || matchedLoad.id?.substring(0, 6)})`}
+                        />
+                      )}
 
                       {/* Manual Status Override for this specific Load */}
                       <div className="space-y-1">
@@ -1187,15 +1189,15 @@ export function TripManifestCard({
                             </Badge>
                           );
                         })()}
-                        <Badge
-                          className={`text-[10px] font-semibold ${
-                            hasSignedBol
-                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                              : 'bg-amber-100 text-amber-900 border-amber-300'
-                          }`}
-                        >
-                          {hasSignedBol ? '✓ BOL' : 'Need BOL'}
-                        </Badge>
+                        {hasSignedBol ? (
+                          <Badge className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 border-emerald-300">
+                            ✓ BOL
+                          </Badge>
+                        ) : isLoadReadyForPodUpload(load) ? (
+                          <Badge className="text-[10px] font-semibold bg-amber-100 text-amber-900 border-amber-300">
+                            Need BOL
+                          </Badge>
+                        ) : null}
                         {isExpanded ? (
                           <ChevronUp className="w-4 h-4 text-slate-400" />
                         ) : (
@@ -1204,14 +1206,16 @@ export function TripManifestCard({
                       </div>
                     </div>
 
-                    <div className="px-3 pb-2.5 pt-1 border-t border-slate-100 bg-white">
-                      <SignedBolUpload
-                        load={load}
-                        updateLoad={onUpdateLoad}
-                        variant="driver"
-                        label="Upload Signed BOL / POD"
-                      />
-                    </div>
+                    {(hasSignedBol || isLoadReadyForPodUpload(load)) && (
+                      <div className="px-3 pb-2.5 pt-1 border-t border-slate-100 bg-white">
+                        <SignedBolUpload
+                          load={load}
+                          updateLoad={onUpdateLoad}
+                          variant="driver"
+                          label="Signed BOL / POD"
+                        />
+                      </div>
+                    )}
 
                     {isExpanded && (
                       <div className="p-3.5 bg-slate-50/70 border-t border-slate-200 space-y-2.5 text-xs">
@@ -1263,7 +1267,7 @@ export function TripManifestCard({
                             </Button>
                           )}
 
-                          {onOpenEpod && !hasSignedBol && (
+                          {onOpenEpod && !hasSignedBol && isLoadReadyForPodUpload(load) && (
                             <Button
                               type="button"
                               size="sm"

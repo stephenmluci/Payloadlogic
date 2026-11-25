@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useToast } from '@/hooks/use-toast';
 import { isLoadDetentionActive } from '@/lib/detention';
-import { hasLoadPod } from '@/lib/loadStatus';
+import { hasLoadPod, getUnifiedLoadStatusDisplay } from '@/lib/loadStatus';
 import { getLoadDeliveryStops, isMultiDropLoad } from '@/lib/loadStops';
 import { registerServiceWorker, subscribeUserToPush } from '@/lib/webPushClient';
 import { ShareLiveLocationToggle } from './ShareLiveLocationToggle';
@@ -160,7 +160,7 @@ export function getNextRecommendedAction(
       };
     case 'in-transit':
       return {
-        nextPhase: 'arrived',
+        nextPhase: 'arrived-destination',
         actionType: 'phase',
         label: 'Mark Arrived at Facility',
         sublabel: 'At receiver location — starts detention clock',
@@ -1213,7 +1213,7 @@ export function DriverDashboard() {
               const isPrimary     = groupIdx === 0;
 
               const nextAction = getNextRecommendedAction(load, isAwaitingPaperwork(load), isPaperworkClosedOut(load));
-              const currentStatusDisplay = getStatusDisplayName(load.status);
+              const unifiedStatus = getUnifiedLoadStatusDisplay(load);
               const showMore = showMoreDetailsByLoad[load.id!] ?? false;
 
               const originPhone = load.origin?.contactPhone;
@@ -1273,8 +1273,8 @@ export function DriverDashboard() {
                     <div className="mt-2.5 flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Status:</span>
-                        <Badge className={`text-xs font-extrabold px-2 py-0.5 ${nextAction.badgeClass}`}>
-                          {currentStatusDisplay}
+                        <Badge className={`text-xs font-extrabold px-2 py-0.5 border-none ${unifiedStatus.color}`}>
+                          {unifiedStatus.label}
                         </Badge>
                         {load.driverAcceptedStatus === 'accepted' && (
                           <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold px-2 py-0.5">

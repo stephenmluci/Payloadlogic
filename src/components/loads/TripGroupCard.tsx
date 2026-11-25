@@ -17,6 +17,7 @@ import {
   MapPin,
 } from 'lucide-react';
 import { getDispatcherStatusLabel } from './LoadCard';
+import { getUnifiedLoadStatusDisplay } from '@/lib/loadStatus';
 import {
   buildChronologicalTripStops,
   computeDeckPositions,
@@ -219,6 +220,7 @@ export function TripGroupCard({
             {tripItineraryStops.map((stop, idx) => {
               const matchedLoad = ordered.find(l => l.id === stop.loadId);
               const { completed, active } = getTripStopProgressState(stop, matchedLoad);
+              const stopStatusLabel = matchedLoad ? getUnifiedLoadStatusDisplay(matchedLoad).label : '';
               const locShort = [stop.rawAddress?.city, stop.rawAddress?.state].filter(Boolean).join(', ') || stop.location;
               return (
                 <React.Fragment key={stop.id || `${stop.loadId}-${idx}`}>
@@ -230,12 +232,18 @@ export function TripGroupCard({
                         ? 'bg-indigo-500/35 text-white border border-indigo-400'
                         : 'bg-slate-800 text-slate-200 border border-slate-700'
                     }`}
+                    title={stopStatusLabel ? `Load #${matchedLoad?.loadNumber || matchedLoad?.id?.slice(0, 6)}: ${stopStatusLabel}` : undefined}
                   >
-                    <span className="font-black text-[10px] text-purple-300">{idx + 1}.</span>
+                    <span className="font-black text-[10px] text-purple-300">
+                      {completed ? '✓' : `${idx + 1}.`}
+                    </span>
                     <span className="text-[9px] uppercase font-extrabold opacity-85">
                       {stop.type === 'pickup' ? 'PU' : 'DEL'}
                     </span>
                     <span>{locShort}</span>
+                    {active && stopStatusLabel && (
+                      <span className="text-[9px] text-indigo-200 font-bold">({stopStatusLabel})</span>
+                    )}
                     {stop.type === 'dropoff' && ordered.length > 1 && stop.isTopLoad && (
                       <span className="text-[9px] text-emerald-300 font-bold">(1st Off)</span>
                     )}

@@ -1,5 +1,37 @@
 import type { Load, DriverProfile } from '@/types';
 import { haversineDistanceMiles, calculateLegProgress, buildDriverProgressLegs } from '@/lib/routeUtils';
+import { isLoadCompleted, normalizeLoadStatus } from '@/lib/loadStatus';
+
+/**
+ * Returns true if the driver, truck, or trip currently has more than one active
+ * (non-completed) load. In multi-load trips, shared driver telemetry must not
+ * overwrite individual load statuses.
+ */
+function hasMultipleActiveLoadsForVehicleOrTrip(
+  load: Load,
+  allLoads: Load[],
+  driver?: DriverProfile | null
+): boolean {
+  const activeOthers = allLoads.filter(l => {
+    if (!l.id || l.id === load.id) return false;
+    if (isLoadCompleted(l)) return false;
+
+    if (load.tripId && load.tripId !== 'none' && l.tripId === load.tripId) {
+      return true;
+    }
+    if (load.assignedDriverId && l.assignedDriverId === load.assignedDriverId) {
+      return true;
+    }
+    if (driver?.uid && l.assignedDriverId === driver.uid) {
+      return true;
+    }
+    if (load.assignedTruckId && load.assignedTruckId !== 'none' && l.assignedTruckId === load.assignedTruckId) {
+      return true;
+    }
+    return false;
+  });
+  return activeOthers.length > 0;
+}
 
 /**
  * Checks if a driver is actively broadcasting GPS coordinates (live within valid coordinate ranges).
@@ -55,6 +87,12 @@ export function deriveTelemetryLoadStatus(
   // If a dispatcher manually advanced or overrode the status, manual override wins absolutely
   if (load.manualOverrideAt) {
     return load.status;
+  }
+
+  // If multiple active loads share this driver, truck, or trip, each load must keep
+  // its own explicit status rather than inheriting shared driver telemetry.
+  if (hasMultipleActiveLoadsForVehicleOrTrip(load, allLoads, driver)) {
+    return normalizeLoadStatus(load.status);
   }
 
   const currentStatusRank = STATUS_LIFECYCLE_ORDER[load.status] ?? 0;
@@ -191,6 +229,11 @@ export function isErroneousArrivalTimestamp(
 
   // If a manual override is active, dispatcher decision is absolute truth — never clear arrival
   if (load.manualOverrideAt) {
+    return false;
+  }
+
+  // In multi-load trips, shared driver telemetry/GPS may reflect a different load's stop
+  if (hasMultipleActiveLoadsForVehicleOrTrip(load, allLoads, driver)) {
     return false;
   }
 

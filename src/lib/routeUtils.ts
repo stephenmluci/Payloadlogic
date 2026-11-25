@@ -5,6 +5,7 @@
  */
 
 import type { Load, RouteLeg, DeckPosition, Address, DriverProfile, Trip, Vehicle } from '@/types';
+import { isLoadCompleted, normalizeLoadStatus } from '@/lib/loadStatus';
 
 // ── 1. LIFO DECK SEQUENCING & VEHICLE TRIP GROUPING ──────────────────────────
 
@@ -584,32 +585,34 @@ export interface ChronologicalTripStop {
 
 export function getTripStopProgressState(
   stop: Pick<ChronologicalTripStop, 'type' | 'loadId'>,
-  load?: Pick<Load, 'status' | 'driverPhase'> | null
+  load?: Pick<Load, 'status' | 'driverPhase' | 'deliveredAt' | 'paperworkStatus'> | null
 ): { completed: boolean; active: boolean } {
   if (!load) return { completed: false, active: false };
-  const status = String(load.status || '').toLowerCase().trim();
+  const status = normalizeLoadStatus(load.status);
   const phase = String(load.driverPhase || '').toLowerCase().trim();
 
-  if (status === 'delivered' || status === 'completed' || phase === 'complete') {
+  if (isLoadCompleted(load)) {
     return { completed: true, active: false };
   }
 
   if (stop.type === 'pickup') {
     // Pickup is completed once cargo has departed origin (in-transit or at/unloading destination)
-    const pickupCompleted = [
-      'in-transit',
-      'arrived',
-      'arrived-destination',
-      'unloading',
-      'delivered',
-      'completed',
-    ].includes(status);
-    const pickupActive = ['dispatched', 'deadheading', 'arrived-origin', 'loading'].includes(status);
+    const pickupCompleted =
+      [
+        'in-transit',
+        'arrived-destination',
+        'unloading',
+        'delivered',
+      ].includes(status) ||
+      ['enroute to destination', 'getting unloaded', 'complete'].includes(phase);
+    const pickupActive =
+      !pickupCompleted &&
+      ['dispatched', 'Deadheading', 'arrived-origin', 'loading'].includes(status);
     return { completed: pickupCompleted, active: pickupActive };
   }
 
   // Delivery / dropoff stop
-  const dropoffActive = ['in-transit', 'arrived', 'arrived-destination', 'unloading'].includes(status);
+  const dropoffActive = ['in-transit', 'arrived-destination', 'unloading'].includes(status);
   return { completed: false, active: dropoffActive };
 }
 
@@ -2099,7 +2102,7 @@ export function calculateLegProgress(
     const leg = legList[i];
     const targetLoad = allLoads.find(al => al.id === leg.loadId) || (leg.loadId === load.id ? load : undefined);
     const targetStatus = targetLoad?.status;
-    const targetPhase = targetLoad?.driverPhase || load.driverPhase;
+    const targetPhase = targetLoad ? targetLoad.driverPhase : load.driverPhase;
 
     let isStopCompleted = false;
 
@@ -2168,7 +2171,7 @@ export function calculateLegProgress(
 
     const activeTargetLoad = allLoads.find(al => al.id === legList[activeIndex].loadId) || (legList[activeIndex].loadId === load.id ? load : undefined);
     const activeTargetStatus = activeTargetLoad?.status || load.status;
-    const activeTargetPhase = activeTargetLoad?.driverPhase || load.driverPhase;
+    const activeTargetPhase = activeTargetLoad ? activeTargetLoad.driverPhase : load.driverPhase;
 
     if (
       activeTargetStatus === 'arrived' ||

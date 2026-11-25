@@ -25,7 +25,7 @@ import { isErroneousArrivalTimestamp, isDriverBroadcastingGPS } from '@/lib/tele
 import { normalizeLoadDriverAssignment, isLoadAssignedToDriver, getDriverProfileId } from '@/lib/driverAssignment';
 import { resolveCoordinates } from '@/lib/routeUtils';
 import { getDetentionFreeTimeMinutes, getDetentionFeeRate, formatFreeTimeLabel } from '@/lib/detention';
-import { deduplicateLoads, getLoadDuplicateKey, isLoadCompleted, hasLoadPod } from '@/lib/loadStatus';
+import { deduplicateLoads, getLoadDuplicateKey, isLoadCompleted, hasLoadPod, normalizeLoadStatus } from '@/lib/loadStatus';
 import { calculateCustomerRateBreakdown } from '@/lib/loadPricing';
 import { cleanStopsForSave } from '@/lib/loadStops';
 import { validateLoadForm, formatValidationSummary } from '@/lib/loadValidation';
@@ -2377,6 +2377,26 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           if (!editingLoadId && (loadForm.id === id || (currentLoad.loadNumber && loadForm.loadNumber === currentLoad.loadNumber))) {
             handleCancelEditLoad();
           }
+        } else if (updates.status && !updates.driverPhase) {
+          // Keep driverPhase in sync with explicit non-delivered status updates so stale
+          // driverPhase ('Complete') never forces an active load to appear completed.
+          const normNext = normalizeLoadStatus(updates.status);
+          const phaseMap: Partial<Record<Load['status'], Load['driverPhase']>> = {
+            dispatched: 'Enroute to Pickup',
+            Deadheading: 'Enroute to Pickup',
+            'arrived-origin': 'Arrived',
+            'arrived-destination': 'Arrived',
+            arrived: 'Arrived',
+            loading: 'Getting Loaded',
+            'in-transit': 'Enroute to Destination',
+            unloading: 'Getting Unloaded',
+          };
+          const mappedPhase = phaseMap[normNext];
+          if (mappedPhase) {
+            finalUpdates.driverPhase = mappedPhase;
+          } else if (currentLoad.driverPhase === 'Complete') {
+            finalUpdates.driverPhase = null as any;
+          }
         }
 
         if (effectiveUpdates.signedBolUrl || updates.signedBolUrl) {
@@ -2479,8 +2499,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               if (res) { dLat = res.lat; dLng = res.lng; }
             }
 
+            const hasOtherActiveLoads = loads.some(l =>
+              l.id !== id &&
+              !isLoadCompleted(l) &&
+              (
+                (currentLoad.assignedDriverId && l.assignedDriverId === currentLoad.assignedDriverId) ||
+                (currentLoad.tripId && currentLoad.tripId !== 'none' && l.tripId === currentLoad.tripId) ||
+                (currentLoad.assignedTruckId && currentLoad.assignedTruckId !== 'none' && l.assignedTruckId === currentLoad.assignedTruckId)
+              )
+            );
+
             if (isDelivered) {
-              driverUpdates.availabilityStatus = 'Available';
+              driverUpdates.availabilityStatus = hasOtherActiveLoads ? 'Active - Stacking Available' : 'Available';
               driverUpdates.currentStaging = destString;
               driverUpdates.lastLocationCity = destCity;
               driverUpdates.lastLocationState = destState;
@@ -2489,14 +2519,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                 driverUpdates.currentLat = dLat;
                 driverUpdates.currentLng = dLng;
               }
-              const existingDriver = driverProfiles.find(d => d.uid === currentLoad.assignedDriverId || d.id === currentLoad.assignedDriverId);
-              driverUpdates.telemetry = {
-                ...(existingDriver?.telemetry || {}),
-                status: 'Available',
-                lat: typeof dLat === 'number' ? dLat : existingDriver?.currentLat,
-                lng: typeof dLng === 'number' ? dLng : existingDriver?.currentLng,
-                updatedAt: new Date().toISOString(),
-              };
+              if (!hasOtherActiveLoads) {
+                const existingDriver = driverProfiles.find(d => d.uid === currentLoad.assignedDriverId || d.id === currentLoad.assignedDriverId);
+                driverUpdates.telemetry = {
+                  ...(existingDriver?.telemetry || {}),
+                  status: 'Available',
+                  lat: typeof dLat === 'number' ? dLat : existingDriver?.currentLat,
+                  lng: typeof dLng === 'number' ? dLng : existingDriver?.currentLng,
+                  updatedAt: new Date().toISOString(),
+                };
+              }
             } else if (isManualAdvanceToLoaded) {
               driverUpdates.availabilityStatus = 'Active - Stacking Available';
               if (typeof oLat === 'number' && typeof oLng === 'number') {
@@ -2581,8 +2613,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             if (res) { dLat = res.lat; dLng = res.lng; }
           }
 
+          const hasOtherActiveLoads = loads.some(l =>
+            l.id !== id &&
+            !isLoadCompleted(l) &&
+            (
+              (currentLoad.assignedDriverId && l.assignedDriverId === currentLoad.assignedDriverId) ||
+              (currentLoad.tripId && currentLoad.tripId !== 'none' && l.tripId === currentLoad.tripId) ||
+              (currentLoad.assignedTruckId && currentLoad.assignedTruckId !== 'none' && l.assignedTruckId === currentLoad.assignedTruckId)
+            )
+          );
+
           if (isDelivered) {
-            driverUpdates.availabilityStatus = 'Available';
+            driverUpdates.availabilityStatus = hasOtherActiveLoads ? 'Active - Stacking Available' : 'Available';
             driverUpdates.currentStaging = destString;
             driverUpdates.lastLocationCity = destCity;
             driverUpdates.lastLocationState = destState;
@@ -2591,14 +2633,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               driverUpdates.currentLat = dLat;
               driverUpdates.currentLng = dLng;
             }
-            const existingDriver = driverProfiles.find(d => d.uid === currentLoad.assignedDriverId || d.id === currentLoad.assignedDriverId);
-            driverUpdates.telemetry = {
-              ...(existingDriver?.telemetry || {}),
-              status: 'Available',
-              lat: typeof dLat === 'number' ? dLat : existingDriver?.currentLat,
-              lng: typeof dLng === 'number' ? dLng : existingDriver?.currentLng,
-              updatedAt: new Date().toISOString(),
-            };
+            if (!hasOtherActiveLoads) {
+              const existingDriver = driverProfiles.find(d => d.uid === currentLoad.assignedDriverId || d.id === currentLoad.assignedDriverId);
+              driverUpdates.telemetry = {
+                ...(existingDriver?.telemetry || {}),
+                status: 'Available',
+                lat: typeof dLat === 'number' ? dLat : existingDriver?.currentLat,
+                lng: typeof dLng === 'number' ? dLng : existingDriver?.currentLng,
+                updatedAt: new Date().toISOString(),
+              };
+            }
           } else if (
             updates.status === 'arrived' ||
             (updates as any).status === 'Arrived' ||
@@ -2704,7 +2748,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }
 
         // Auto-close Completed Trip Containers
-        if (isLoadCompleted({ status: updates.status }) && currentLoad.tripId) {
+        if (isLoadCompleted({ status: updates.status, driverPhase: updates.driverPhase }) && currentLoad.tripId) {
           const tripId = currentLoad.tripId;
           const otherLoadsOnTrip = loads.filter(l => l.tripId === tripId && l.id !== id);
           const allOthersDelivered = otherLoadsOnTrip.every(l => isLoadCompleted(l));
@@ -2846,8 +2890,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     try {
       const batch = writeBatch(db);
       const loadRef = doc(db, `users/${ownerUid}/loads`, loadId);
-      // Write driverPhase, derived load status, and arrival timestamp atomically
-      batch.update(loadRef, { driverPhase: phase, status: autoStatus, ...noteFields, ...arrivalFields });
+      // Write driverPhase, derived load status, arrival and delivery timestamps atomically
+      batch.update(loadRef, { driverPhase: phase, status: autoStatus, ...noteFields, ...arrivalFields, ...deliveryFields });
 
       if (user.role === 'driver' && driverOwnerId) {
         const driverRef = doc(db, `users/${driverOwnerId}/driverProfiles`, user.uid);

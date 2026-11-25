@@ -28,7 +28,7 @@ import { ShareLoadPacketModal } from './ShareLoadPacketModal';
 import { SignedBolUpload } from './SignedBolUpload';
 import { getDriverProfileId } from '@/lib/driverAssignment';
 import { getSameVehicleActiveLoads, computeDeckPositions, formatDeckPositionBadge } from '@/lib/routeUtils';
-import { normalizeLoadStatus, isLoadCompleted, hasLoadPod } from '@/lib/loadStatus';
+import { normalizeLoadStatus, isLoadCompleted, hasLoadPod, getUnifiedLoadStatusDisplay } from '@/lib/loadStatus';
 import { getLoadDeliveryStops, isMultiDropLoad } from '@/lib/loadStops';
 import {
   calculateLoadDetention,
@@ -94,17 +94,19 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
 
 /** Returns a concise unified label for the dispatcher badge */
 export function getDispatcherStatusLabel(statusKey: string, load?: Load): { label: string; color: string } {
+  if (load) {
+    return getUnifiedLoadStatusDisplay({
+      ...load,
+      status: (statusKey as Load['status']) || load.status,
+    });
+  }
   const norm = (statusKey || '').toLowerCase();
   if (
     norm === 'delivered' ||
     norm === 'complete' ||
     norm === 'completed' ||
-    norm === 'delivered / completed' ||
-    (load && isLoadCompleted(load))
+    norm === 'delivered / completed'
   ) {
-    if (hasLoadPod(load)) {
-      return { label: 'Delivered / Completed', color: 'bg-emerald-700 text-white' };
-    }
     return { label: 'Delivered (Pending POD)', color: 'bg-amber-600 text-white' };
   }
   return statusConfig[statusKey] ?? statusConfig[statusKey?.toLowerCase()] ?? statusConfig.pending_approval;

@@ -5,6 +5,7 @@
  */
 
 import type { Load, DriverProfile, Trip, Vehicle, User } from '@/types';
+import { isLoadCompleted } from '@/lib/loadStatus';
 
 /**
  * All dispatch statuses that represent an active, in-progress, or queued dispatch
@@ -181,14 +182,7 @@ export function isLoadAssignedToDriver(
  */
 export function isLoadHistoricalOrDelivered(load: Load): boolean {
   const status = (load.status || '').toLowerCase().trim();
-  const driverPhase = (load.driverPhase || '').toLowerCase().trim();
-
-  return (
-    status === 'delivered' ||
-    status === 'completed' ||
-    status === 'awaiting paperwork' ||
-    driverPhase === 'complete'
-  );
+  return status === 'awaiting paperwork' || isLoadCompleted(load);
 }
 
 /**

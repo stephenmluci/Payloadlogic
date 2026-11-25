@@ -14,7 +14,7 @@ import {
   isIosDevice,
   type ChronologicalTripStop,
 } from '@/lib/routeUtils';
-import { hasLoadPod } from '@/lib/loadStatus';
+import { hasLoadPod, getUnifiedLoadStatusDisplay } from '@/lib/loadStatus';
 import { isLoadDetentionActive } from '@/lib/detention';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -888,9 +888,14 @@ export function TripManifestCard({
                           >
                             {hasBolUploaded ? '✓ BOL Uploaded' : 'Pending BOL / POD'}
                           </Badge>
-                          <span className="text-[10px] text-slate-500 capitalize">
-                            Status: <strong className="text-slate-700">{matchedLoad.status}</strong>
-                          </span>
+                          {(() => {
+                            const unifiedStatus = getUnifiedLoadStatusDisplay(matchedLoad);
+                            return (
+                              <Badge className={`text-[10px] font-bold px-1.5 py-0 border-none ${unifiedStatus.color}`}>
+                                {unifiedStatus.label}
+                              </Badge>
+                            );
+                          })()}
                         </div>
 
                         <button
@@ -1174,6 +1179,14 @@ export function TripManifestCard({
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
+                        {(() => {
+                          const unifiedStatus = getUnifiedLoadStatusDisplay(load);
+                          return (
+                            <Badge className={`text-[10px] font-bold border-none ${unifiedStatus.color}`}>
+                              {unifiedStatus.label}
+                            </Badge>
+                          );
+                        })()}
                         <Badge
                           className={`text-[10px] font-semibold ${
                             hasSignedBol

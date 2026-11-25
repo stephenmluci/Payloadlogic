@@ -8,6 +8,11 @@ import { deduplicateLoads, isLoadCompleted } from '@/lib/loadStatus';
 import { calculateHOSTripPlan, calculateHOSAwareProgress } from '@/lib/hosEngine';
 import {
   buildDriverProgressLegs,
+  buildChronologicalTripStops,
+  computeDeckPositions,
+  formatDeckPositionBadge,
+  getCombinedTripGoogleMapsUrl,
+  getSameVehicleActiveLoads,
   calculateLegProgress,
   calculateEstimatedDriverLocation,
   resolveCoordinates,
@@ -196,6 +201,9 @@ export function LiveOperationsCommandCenter() {
     return deduplicateLoads(loads).unique.filter(l => {
       if (isLoadCompleted(l)) return false;
       return (
+        l.status === 'dispatched' ||
+        l.status === 'arrived-origin' ||
+        l.status === 'arrived-destination' ||
         l.status === 'in-transit' || 
         l.status === 'arrived' || 
         (l as any).status === 'Arrived' || 
@@ -1110,6 +1118,56 @@ export function LiveOperationsCommandCenter() {
                   </CardHeader>
 
                   <CardContent className="p-4 space-y-3.5">
+                    {/* Linked Multi-Stop Vehicle Trip Banner when multiple loads share this vehicle/driver */}
+                    {(() => {
+                      const vehicleLoads = getSameVehicleActiveLoads(
+                        selectedEnrichedLoad.load,
+                        loads,
+                        selectedFleetItem.driver,
+                        trips,
+                        vehicles,
+                        driverProfiles
+                      );
+                      if (vehicleLoads.length <= 1) return null;
+                      const decks = computeDeckPositions(vehicleLoads);
+                      const tripStops = buildChronologicalTripStops(vehicleLoads);
+                      const combinedUrl = getCombinedTripGoogleMapsUrl(vehicleLoads, null, false);
+                      return (
+                        <div className="p-3 rounded-xl bg-purple-50/80 border border-purple-200 space-y-2 text-xs">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="font-extrabold text-purple-900 flex items-center gap-1.5">
+                              <Layers className="h-3.5 w-3.5 text-purple-700" />
+                              Multi-Stop Vehicle Trip ({vehicleLoads.length} Loads • {tripStops.length} Stops)
+                            </span>
+                            <a
+                              href={combinedUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 hover:underline"
+                            >
+                              <span>Combined Trip Route</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {vehicleLoads.map(vl => {
+                              const d = decks.find(dp => dp.loadId === vl.id);
+                              return (
+                                <Badge
+                                  key={vl.id}
+                                  variant="outline"
+                                  className="bg-white border-purple-200 text-slate-800 text-[10px] font-semibold"
+                                >
+                                  #{vl.loadNumber || vl.id?.slice(0, 6)} ({vl.origin?.city} → {vl.destination?.city})
+                                  {d ? ` • ${formatDeckPositionBadge(d, vehicleLoads.length)}` : ''}
+                                </Badge>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* Active Waypoint Box */}
                     <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2">
                       <div className="flex items-center justify-between text-xs">

@@ -2,6 +2,7 @@
 import React from 'react';
 import { type Client, isDriverOffDuty } from '@/types';
 import { getDriverProfileId } from '@/lib/driverAssignment';
+import { groupLoadsIntoVehicleTrips } from '@/lib/routeUtils';
 import { isLoadCompleted, deduplicateLoads } from '@/lib/loadStatus';
 import { validateLoadForm, formatValidationSummary } from '@/lib/loadValidation';
 import { LoadForm } from './LoadForm';
@@ -259,18 +260,26 @@ export function LoadsPage() {
   const activeLoads = uniqueLoads.filter(load => !isLoadCompleted(load));
   const completedLoads = uniqueLoads.filter(load => isLoadCompleted(load));
 
-  // Split active loads into multi-stop trips vs. independent loads.
-  // A load whose tripId points at a trip that no longer exists is treated as independent.
-  const activeTripGroups = React.useMemo(() => {
-    const groups: { trip: (typeof trips)[number]; stops: typeof activeLoads }[] = [];
-    trips.forEach(trip => {
-      const stops = activeLoads.filter(l => l.tripId === trip.id);
-      if (stops.length > 0) groups.push({ trip, stops });
-    });
-    return groups;
-  }, [trips, activeLoads]);
-  const tripIdsWithStops = new Set(activeTripGroups.map(g => g.trip.id));
-  const independentActiveLoads = activeLoads.filter(l => !l.tripId || !tripIdsWithStops.has(l.tripId));
+  // Split active loads into multi-stop vehicle trips vs. independent single loads.
+  // Automatically groups multiple active loads sharing the same truck, driver, or explicit Trip,
+  // while leaving single independent loads unchanged.
+  const { activeTripGroups, independentActiveLoads } = React.useMemo(() => {
+    const { tripGroups, standaloneLoads } = groupLoadsIntoVehicleTrips(
+      activeLoads,
+      trips,
+      vehicles,
+      driverProfiles,
+      { includeSingleLoadExplicitTrips: true }
+    );
+    return {
+      activeTripGroups: tripGroups.map(g => ({
+        trip: g.trip,
+        stops: g.loads,
+        isExplicitTrip: g.isExplicitTrip,
+      })),
+      independentActiveLoads: standaloneLoads,
+    };
+  }, [activeLoads, trips, vehicles, driverProfiles]);
   const isPendingReq = (status: string) => status === 'new' || status === 'in_review' || status === 'pending';
   const newClientRequests = clientLoadRequests.filter(req => isPendingReq(req.status));
   const processedClientRequests = clientLoadRequests.filter(req => !isPendingReq(req.status));
@@ -554,13 +563,15 @@ export function LoadsPage() {
                   Multi-Stop Trips ({activeTripGroups.length})
                 </h3>
                 <div className="space-y-4">
-                  {activeTripGroups.map(({ trip, stops }) => (
+                  {activeTripGroups.map(({ trip, stops, isExplicitTrip }) => (
                     <TripGroupCard
                       key={trip.id}
                       trip={trip}
                       stops={stops}
+                      isExplicitTrip={isExplicitTrip}
                       vehicles={vehicles}
                       driverProfiles={driverProfiles}
+                      onUpdateLoad={updateLoad}
                       renderLoadCard={renderActiveLoadCard}
                     />
                   ))}

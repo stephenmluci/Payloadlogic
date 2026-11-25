@@ -77,8 +77,24 @@ export async function GET(req: NextRequest) {
 
     try {
       const loadsSnap = await adminDb.collection(`users/${record.adminUid}/loads`).get();
+      const tripsSnap = await adminDb.collection(`users/${record.adminUid}/trips`).get();
       const queryIds = [record.driverUid, record.authUid].filter(Boolean);
       const driverNameLower = (driverProfile?.name || record.driverName || '').trim().toLowerCase();
+      const driverTruckId = String(driverProfile?.assignedTruckId || '').trim();
+
+      const driverTripIds = new Set<string>();
+      tripsSnap.docs.forEach((td) => {
+        const tData = td.data() || {};
+        const tDriver = String(tData.assignedDriverId || '').trim();
+        const tTruck = String(tData.assignedTruckId || '').trim();
+        if (
+          (tDriver && queryIds.includes(tDriver)) ||
+          (tDriver && driverNameLower && tDriver.toLowerCase() === driverNameLower) ||
+          (driverTruckId && tTruck && tTruck === driverTruckId)
+        ) {
+          driverTripIds.add(td.id);
+        }
+      });
 
       assignedLoads = loadsSnap.docs
         .map((d) => ({ id: d.id, ...d.data() } as Record<string, any>))
@@ -86,7 +102,11 @@ export async function GET(req: NextRequest) {
           const assignedId = String(l.assignedDriverId || l.driverId || '').trim();
           if (assignedId && queryIds.includes(assignedId)) return true;
           const assignedName = String(l.assignedDriverName || l.driverName || '').trim().toLowerCase();
-          if (!assignedId && driverNameLower && assignedName === driverNameLower) return true;
+          if (driverNameLower && assignedName === driverNameLower) return true;
+          const lTruck = String(l.assignedTruckId || '').trim();
+          if (driverTruckId && lTruck && lTruck === driverTruckId) return true;
+          const lTrip = String(l.tripId || '').trim();
+          if (lTrip && driverTripIds.has(lTrip)) return true;
           return false;
         })
         .map(redactLoadForDriverServer);
@@ -252,7 +272,12 @@ export async function POST(req: NextRequest) {
         const loadData = snap.data() || {};
         const queryIds = [record.driverUid, record.authUid].filter(Boolean);
         const assignedId = String(loadData.assignedDriverId || loadData.driverId || '').trim();
-        if (assignedId && !queryIds.includes(assignedId)) {
+        const driverProfileForAuth = await getDriverProfileForOnboarding(record.adminUid, record.driverUid);
+        const driverTruckId = String(driverProfileForAuth?.assignedTruckId || '').trim();
+        const loadTruckId = String(loadData.assignedTruckId || '').trim();
+        const matchesTruck = Boolean(driverTruckId && loadTruckId && driverTruckId === loadTruckId);
+
+        if (assignedId && !queryIds.includes(assignedId) && !matchesTruck) {
           return NextResponse.json(
             { error: 'This load is not assigned to your driver account.' },
             { status: 403 }
@@ -275,6 +300,7 @@ export async function POST(req: NextRequest) {
           'driverNoteUpdatedAt',
           'driverExceptionFlag',
           'arrivedAt',
+          'detentionActive',
           'deliveredAt',
           'paperworkStatus',
           'signedBolUrl',

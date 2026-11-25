@@ -8,11 +8,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MapPin, User, ArrowRight, PlusCircle, AlertTriangle, MessageSquare, RotateCcw, Clock } from 'lucide-react';
+import { MapPin, User, ArrowRight, PlusCircle, AlertTriangle, MessageSquare, RotateCcw, Clock, Layers } from 'lucide-react';
 import { type DriverProfile, type Load, isDriverOffDuty } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { QuickAssignModal } from './QuickAssignModal';
-import { buildDriverProgressLegs, calculateLegProgress } from '@/lib/routeUtils';
+import { buildDriverProgressLegs, buildChronologicalTripStops, calculateLegProgress, sequenceLoadsFirstOffToLastOff } from '@/lib/routeUtils';
 import { isLoadAssignedToDriver } from '@/lib/driverAssignment';
 import { isLoadCompleted, normalizeLoadStatus } from '@/lib/loadStatus';
 
@@ -77,7 +77,11 @@ export const DriverAvailability = ({ onSelectDriverLoad }: DriverAvailabilityPro
                   );
 
                   const activeLoads = inProgressLoads.length > 0 ? inProgressLoads : pendingLoads;
-                  const primaryLoad = inProgressLoads[inProgressLoads.length - 1] || driverLoads[0];
+                  const orderedDriverLoads = sequenceLoadsFirstOffToLastOff(driverLoads);
+                  const primaryLoad =
+                    (inProgressLoads.length > 0 ? sequenceLoadsFirstOffToLastOff(inProgressLoads)[0] : undefined) ||
+                    orderedDriverLoads[0];
+                  const combinedTripStops = driverLoads.length > 1 ? buildChronologicalTripStops(driverLoads) : [];
 
                   const isEnRoute = inProgressLoads.some(l => l.status === 'in-transit');
                   const isLoading = inProgressLoads.some(l => l.status === 'loading');
@@ -337,6 +341,14 @@ export const DriverAvailability = ({ onSelectDriverLoad }: DriverAvailabilityPro
                           <span className="text-[10px] text-slate-500 uppercase tracking-tight mb-1">
                             {driver.idNumber ?? 'No ID'}
                           </span>
+                          {driverLoads.length > 1 && (
+                            <div className="mb-1">
+                              <Badge className="bg-purple-100 text-purple-800 border border-purple-200 hover:bg-purple-100 text-[10px] font-bold inline-flex items-center gap-1">
+                                <Layers className="h-3 w-3" />
+                                Multi-Stop Trip ({driverLoads.length} Loads • {combinedTripStops.length} Stops)
+                              </Badge>
+                            </div>
+                          )}
                           {trailer && (
                             <div className="flex flex-col text-xs text-slate-600 gap-0.5">
                               <span>

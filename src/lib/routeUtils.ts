@@ -4,16 +4,62 @@
  * Google Maps multi-stop URL building, and RouteLeg construction.
  */
 
-import type { Load, RouteLeg, DeckPosition, Address, DriverProfile } from '@/types';
+import type { Load, RouteLeg, DeckPosition, Address, DriverProfile, Trip, Vehicle } from '@/types';
 
-// ── 1. LIFO DECK SEQUENCING ──────────────────────────────────────────────────
+// ── 1. LIFO DECK SEQUENCING & VEHICLE TRIP GROUPING ──────────────────────────
 
-export function sequenceLoadsLIFO(loads: Load[]): Load[] {
+/**
+ * Sorts loads in UNLOADING / DELIVERY order:
+ * Index 0 = Deck #1 • First Off (unloaded first),
+ * Index N-1 = Deck #N • Last Off (unloaded last).
+ *
+ * Respects any explicit `load.deckOrder` (1 = First Off .. N = Last Off) first;
+ * otherwise applies LIFO rules (shorter delivery distance = First Off, tie-broken
+ * by earlier deliveryDateTime, then pickupDateTime, then loadNumber/id).
+ */
+export function sequenceLoadsFirstOffToLastOff(loads: Load[]): Load[] {
+  const parseTime = (val?: string) => {
+    if (!val) return Number.MAX_SAFE_INTEGER;
+    const ms = new Date(val).getTime();
+    return Number.isNaN(ms) ? Number.MAX_SAFE_INTEGER : ms;
+  };
+
   return [...loads].sort((a, b) => {
-    const distDiff = (b.distance ?? 0) - (a.distance ?? 0);
-    if (distDiff !== 0) return distDiff;
-    return new Date(a.deliveryDateTime).getTime() - new Date(b.deliveryDateTime).getTime();
+    const aExplicit = typeof a.deckOrder === 'number' && a.deckOrder > 0 ? a.deckOrder : null;
+    const bExplicit = typeof b.deckOrder === 'number' && b.deckOrder > 0 ? b.deckOrder : null;
+
+    if (aExplicit !== null && bExplicit !== null && aExplicit !== bExplicit) {
+      return aExplicit - bExplicit;
+    }
+    if (aExplicit !== null && bExplicit === null) return -1;
+    if (aExplicit === null && bExplicit !== null) return 1;
+
+    const distA = Number(a.distance) || 0;
+    const distB = Number(b.distance) || 0;
+    if (distA !== distB) {
+      // If one load has 0/unset distance, fall through to delivery timestamp comparison
+      if (distA > 0 && distB > 0) {
+        return distA - distB; // Shorter haul = First Off!
+      }
+    }
+
+    const delivDiff = parseTime(a.deliveryDateTime) - parseTime(b.deliveryDateTime);
+    if (delivDiff !== 0) return delivDiff; // Earlier delivery = First Off!
+
+    const pickupDiff = parseTime(a.pickupDateTime) - parseTime(b.pickupDateTime);
+    if (pickupDiff !== 0) return pickupDiff;
+
+    return String(a.loadNumber || a.id || '').localeCompare(String(b.loadNumber || b.id || ''));
   });
+}
+
+/**
+ * Sorts loads in LOADING / PICKUP order onto a LIFO trailer:
+ * Index 0 = Bottom/Front of deck (Deck #N • Last Off — loaded FIRST),
+ * Index N-1 = Top/Rear of deck (Deck #1 • First Off — loaded LAST).
+ */
+export function sequenceLoadsLIFO(loads: Load[]): Load[] {
+  return [...sequenceLoadsFirstOffToLastOff(loads)].reverse();
 }
 
 export function computeDeckPositions(loads: Load[]): DeckPosition[] {
@@ -23,9 +69,268 @@ export function computeDeckPositions(loads: Load[]): DeckPosition[] {
     loadId: load.id!,
     deckOrder: n - idx,
     deliveryDistance: load.distance ?? 0,
-    isBottomLoad: idx === 0,
+    isBottomLoad: n > 1 ? idx === 0 : false,
     isTopLoad: idx === n - 1,
   }));
+}
+
+export function formatDeckPositionBadge(deck?: DeckPosition | null, totalLoads: number = 1): string {
+  if (!deck) return '';
+  if (totalLoads <= 1) {
+    return `Deck #${deck.deckOrder} • First Off`;
+  }
+  if (deck.isTopLoad) return `Deck #${deck.deckOrder} • First Off`;
+  if (deck.isBottomLoad) return `Deck #${deck.deckOrder} • Last Off`;
+  return `Deck #${deck.deckOrder} • Stop ${deck.deckOrder} Off`;
+}
+
+export interface VehicleTripGroup {
+  /** Resolved explicit Trip or synthesized vehicle trip container */
+  trip: Trip;
+  /** True when backed by an explicit saved Trip document in Firestore */
+  isExplicitTrip: boolean;
+  /** Active loads belonging to this vehicle/driver trip */
+  loads: Load[];
+}
+
+/**
+ * Resolves effective equipment & driver keys for a load so loads assigned to the
+ * same truck, same driver, same trailer, or same tripId are recognized as sharing
+ * one physical vehicle run.
+ */
+function resolveLoadGroupingKeys(
+  load: Load,
+  trips: Trip[] = [],
+  vehicles: Vehicle[] = [],
+  driverProfiles: DriverProfile[] = []
+): string[] {
+  const keys: string[] = [];
+
+  const cleanId = (v?: string | null) => {
+    const s = (v || '').trim();
+    return s && s !== 'none' && s !== 'auto-create' ? s : '';
+  };
+
+  const tripId = cleanId(load.tripId);
+  const matchedTrip = tripId ? trips.find(t => t.id === tripId) : undefined;
+  if (matchedTrip) {
+    keys.push(`trip:${matchedTrip.id}`);
+  } else if (tripId) {
+    keys.push(`trip:${tripId}`);
+  }
+
+  let truckId = cleanId(load.assignedTruckId) || cleanId(matchedTrip?.assignedTruckId);
+  let trailerId = cleanId(load.assignedTrailerId) || cleanId(matchedTrip?.assignedTrailerId);
+  let driverId = cleanId(load.assignedDriverId || (load as any).driverId) || cleanId(matchedTrip?.assignedDriverId);
+  const driverName = (load.assignedDriverName || (load as any).driverName || '').trim().toLowerCase();
+
+  // Resolve driver profile from ID, name, or truck pairing
+  let matchedDriver: DriverProfile | undefined;
+  if (driverId) {
+    matchedDriver = driverProfiles.find(
+      d => (d.uid && d.uid === driverId) || ((d as any).id && (d as any).id === driverId) || (d.name && d.name.toLowerCase() === driverId.toLowerCase())
+    );
+  }
+  if (!matchedDriver && driverName) {
+    matchedDriver = driverProfiles.find(d => d.name?.trim().toLowerCase() === driverName);
+  }
+  if (!matchedDriver && truckId) {
+    matchedDriver = driverProfiles.find(d => d.assignedTruckId === truckId);
+    if (!matchedDriver) {
+      const truckObj = vehicles.find(v => v.id === truckId);
+      if (truckObj?.assignedDriverId) {
+        matchedDriver = driverProfiles.find(
+          d => d.uid === truckObj.assignedDriverId || (d as any).id === truckObj.assignedDriverId
+        );
+      }
+    }
+  }
+
+  if (matchedDriver) {
+    const canonicalDriverId = (matchedDriver.uid || (matchedDriver as any).id || '').trim();
+    if (canonicalDriverId) driverId = canonicalDriverId;
+    if (!truckId && matchedDriver.assignedTruckId) truckId = cleanId(matchedDriver.assignedTruckId);
+    if (!trailerId && matchedDriver.assignedTrailerId) trailerId = cleanId(matchedDriver.assignedTrailerId);
+  }
+
+  if (truckId) keys.push(`truck:${truckId}`);
+  if (driverId) keys.push(`driver:${driverId.toLowerCase()}`);
+  else if (driverName) keys.push(`driverName:${driverName}`);
+  if (!truckId && !driverId && trailerId) keys.push(`trailer:${trailerId}`);
+
+  return keys;
+}
+
+/**
+ * Groups active loads sharing the same vehicle, driver, or explicit Trip container
+ * into unified VehicleTripGroups, while leaving single standalone loads untouched.
+ *
+ * - Any group with >= 2 active loads on the same vehicle/driver becomes a single multi-stop trip.
+ * - Any group backed by an explicit `Trip` document (even with 1 load when `includeSingleLoadExplicitTrips` is true)
+ *   preserves its `Trip` metadata.
+ * - Single loads without a multi-load vehicle group are returned in `standaloneLoads`.
+ */
+export function groupLoadsIntoVehicleTrips(
+  activeLoads: Load[],
+  trips: Trip[] = [],
+  vehicles: Vehicle[] = [],
+  driverProfiles: DriverProfile[] = [],
+  options: { includeSingleLoadExplicitTrips?: boolean } = {}
+): { tripGroups: VehicleTripGroup[]; standaloneLoads: Load[] } {
+  const n = activeLoads.length;
+  if (n === 0) return { tripGroups: [], standaloneLoads: [] };
+
+  // Union-Find across shared vehicle/driver/trip keys
+  const parent = activeLoads.map((_, i) => i);
+  const find = (x: number): number => {
+    let r = x;
+    while (parent[r] !== r) r = parent[r];
+    let cur = x;
+    while (cur !== r) {
+      const nxt = parent[cur];
+      parent[cur] = r;
+      cur = nxt;
+    }
+    return r;
+  };
+  const union = (a: number, b: number) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  };
+
+  const keyOwner = new Map<string, number>();
+  activeLoads.forEach((load, idx) => {
+    const keys = resolveLoadGroupingKeys(load, trips, vehicles, driverProfiles);
+    for (const k of keys) {
+      const prev = keyOwner.get(k);
+      if (prev !== undefined) {
+        union(prev, idx);
+      } else {
+        keyOwner.set(k, idx);
+      }
+    }
+  });
+
+  const buckets = new Map<number, Load[]>();
+  activeLoads.forEach((load, idx) => {
+    const root = find(idx);
+    const arr = buckets.get(root);
+    if (arr) arr.push(load);
+    else buckets.set(root, [load]);
+  });
+
+  const tripGroups: VehicleTripGroup[] = [];
+  const standaloneLoads: Load[] = [];
+
+  for (const groupLoads of buckets.values()) {
+    // Check if any load in this group references a known Trip container
+    const explicitTrip = groupLoads
+      .map(l => (l.tripId && l.tripId !== 'none' ? trips.find(t => t.id === l.tripId) : undefined))
+      .find((t): t is Trip => Boolean(t));
+
+    if (groupLoads.length > 1 || (explicitTrip && options.includeSingleLoadExplicitTrips)) {
+      const primary = groupLoads[0];
+      const resolvedTruckId =
+        explicitTrip?.assignedTruckId ||
+        groupLoads.find(l => l.assignedTruckId && l.assignedTruckId !== 'none')?.assignedTruckId ||
+        driverProfiles.find(d => groupLoads.some(l => l.assignedDriverId && (d.uid === l.assignedDriverId || (d as any).id === l.assignedDriverId)))?.assignedTruckId;
+      const resolvedTrailerId =
+        explicitTrip?.assignedTrailerId ||
+        groupLoads.find(l => l.assignedTrailerId && l.assignedTrailerId !== 'none')?.assignedTrailerId ||
+        driverProfiles.find(d => groupLoads.some(l => l.assignedDriverId && (d.uid === l.assignedDriverId || (d as any).id === l.assignedDriverId)))?.assignedTrailerId;
+      const resolvedDriverId =
+        explicitTrip?.assignedDriverId ||
+        groupLoads.find(l => l.assignedDriverId && l.assignedDriverId !== 'none')?.assignedDriverId ||
+        (resolvedTruckId ? driverProfiles.find(d => d.assignedTruckId === resolvedTruckId)?.uid : undefined);
+
+      const truck = resolvedTruckId ? vehicles.find(v => v.id === resolvedTruckId) : undefined;
+      const trailer = resolvedTrailerId ? vehicles.find(v => v.id === resolvedTrailerId) : undefined;
+      const driver = resolvedDriverId
+        ? driverProfiles.find(d => d.uid === resolvedDriverId || (d as any).id === resolvedDriverId)
+        : undefined;
+
+      const equipLabel = [
+        truck ? `#${truck.unitNumber} ${truck.name || ''}`.trim() : null,
+        trailer ? `#${trailer.unitNumber} ${trailer.name || ''}`.trim() : null,
+      ].filter(Boolean).join(' + ');
+
+      const synthId =
+        explicitTrip?.id ||
+        (primary.tripId && primary.tripId !== 'none'
+          ? primary.tripId
+          : `vehicle-trip-${resolvedTruckId || resolvedDriverId || primary.id || 'group'}`);
+
+      const tripObj: Trip = explicitTrip
+        ? {
+            ...explicitTrip,
+            assignedTruckId: explicitTrip.assignedTruckId || resolvedTruckId,
+            assignedTrailerId: explicitTrip.assignedTrailerId || resolvedTrailerId,
+            assignedDriverId: explicitTrip.assignedDriverId || resolvedDriverId,
+            loadIds: Array.from(new Set([...(explicitTrip.loadIds || []), ...groupLoads.map(l => l.id!).filter(Boolean)])),
+          }
+        : {
+            id: synthId,
+            name: equipLabel
+              ? `Combined Vehicle Trip — ${equipLabel}`
+              : driver?.name
+              ? `Combined Trip — ${driver.name}`
+              : `Combined Multi-Stop Trip (${groupLoads.length} Loads)`,
+            assignedTruckId: resolvedTruckId,
+            assignedTrailerId: resolvedTrailerId,
+            assignedDriverId: resolvedDriverId,
+            loadIds: groupLoads.map(l => l.id!).filter(Boolean),
+            startOdometer: 0,
+            status: 'active',
+          };
+
+      tripGroups.push({
+        trip: tripObj,
+        isExplicitTrip: Boolean(explicitTrip),
+        loads: sequenceLoadsFirstOffToLastOff(groupLoads),
+      });
+    } else {
+      standaloneLoads.push(groupLoads[0]);
+    }
+  }
+
+  return { tripGroups, standaloneLoads };
+}
+
+/**
+ * Returns all active (non-delivered) loads sharing the same trip, truck, or driver
+ * with `activeLoad`. Returns `[activeLoad]` for standalone single loads.
+ */
+export function getSameVehicleActiveLoads(
+  activeLoad: Load,
+  allLoads: Load[] = [],
+  driver?: DriverProfile | null,
+  trips: Trip[] = [],
+  vehicles: Vehicle[] = [],
+  driverProfiles: DriverProfile[] = []
+): Load[] {
+  const isCompletedStatus = (l: Load) => {
+    const s = String(l.status || '').toLowerCase().trim();
+    const p = String(l.driverPhase || '').toLowerCase().trim();
+    return s === 'delivered' || s === 'completed' || s === 'awaiting paperwork' || p === 'complete';
+  };
+
+  const candidates = allLoads.filter(l => !isCompletedStatus(l));
+  if (candidates.length <= 1) {
+    return [activeLoad];
+  }
+
+  const effectiveProfiles = driver && !driverProfiles.some(d => d.uid === driver.uid)
+    ? [...driverProfiles, driver]
+    : driverProfiles;
+
+  const listWithActive = candidates.some(l => l.id === activeLoad.id)
+    ? candidates
+    : [activeLoad, ...candidates];
+
+  const { tripGroups } = groupLoadsIntoVehicleTrips(listWithActive, trips, vehicles, effectiveProfiles);
+  const matchingGroup = tripGroups.find(g => g.loads.some(l => l.id === activeLoad.id));
+  return matchingGroup ? matchingGroup.loads : [activeLoad];
 }
 
 // ── 2. MULTI-STOP ROUTE LEGS ──────────────────────────────────────────────────
@@ -80,14 +385,29 @@ export function formatAddressForRoute(addr?: Address | null): string {
 
 export function buildMultiStopLegs(loads: Load[]): RouteLeg[] {
   if (loads.length === 0) return [];
-  // Use chronological ordering and deduplication pipeline
-  const chronologicalStops = buildChronologicalTripStops(loads);
-  return chronologicalStops.map(stop => ({
-    type: stop.type,
-    location: stop.location,
-    loadId: stop.loadId,
-    label: stop.loadNumber ? `Load #${stop.loadNumber}` : undefined,
-  }));
+  const sequencedStops = buildChronologicalTripStops(loads);
+  const legs: RouteLeg[] = [];
+  for (const stop of sequencedStops) {
+    const prev = legs[legs.length - 1];
+    if (
+      prev &&
+      prev.type === stop.type &&
+      prev.location.trim().toLowerCase() === stop.location.trim().toLowerCase()
+    ) {
+      continue;
+    }
+    legs.push({
+      type: stop.type,
+      location: stop.location,
+      loadId: stop.loadId,
+      label: stop.deckLabel
+        ? `${stop.loadNumber ? `Load #${stop.loadNumber} • ` : ''}${stop.deckLabel}`
+        : stop.loadNumber
+        ? `Load #${stop.loadNumber}`
+        : undefined,
+    });
+  }
+  return legs;
 }
 
 /**
@@ -157,60 +477,46 @@ export function buildDriverProgressLegs(
   allLoads: Load[] = [],
   driver?: DriverProfile | null
 ): RouteLeg[] {
-  // Group all loads in the same trip container. If no trip container exists,
-  // the state must be strictly isolated to the active Dispatch ID.
-  let contextLoads: Load[] = [];
-
-  if (activeLoad.tripId && activeLoad.tripId !== 'none') {
-    // Include all loads assigned to this trip container that are not yet fully completed/delivered
-    contextLoads = allLoads.filter(
-      l => l.tripId === activeLoad.tripId && l.status !== 'delivered' && (l.status as any) !== 'completed'
-    );
-  } else {
-    contextLoads = [activeLoad];
-  }
-
-  if (!contextLoads.some(l => l.id === activeLoad.id)) {
-    contextLoads.push(activeLoad);
-  }
+  // Group all active loads sharing the same trip, truck, or driver.
+  // Single standalone loads remain strictly isolated to [activeLoad].
+  const contextLoads = getSameVehicleActiveLoads(activeLoad, allLoads, driver);
 
   const legs: RouteLeg[] = [];
-  const addedLocations = new Set<string>();
 
-  if (activeLoad.tripId && activeLoad.tripId !== 'none' && contextLoads.length > 1) {
-    // Multi-stop trip container: build strict chronological / sequential stops
+  if (contextLoads.length > 1) {
     const tripStops = buildChronologicalTripStops(contextLoads);
     for (const stop of tripStops) {
-      const stopKey = `${stop.type}:${stop.location.toLowerCase()}`;
-      if (!addedLocations.has(stopKey)) {
-        legs.push({
-          type: stop.type,
-          location: stop.location,
-          loadId: stop.loadId || activeLoad.id!,
-        });
-        addedLocations.add(stopKey);
+      const prev = legs[legs.length - 1];
+      if (
+        prev &&
+        prev.location.trim().toLowerCase() === stop.location.trim().toLowerCase()
+      ) {
+        continue;
       }
+      legs.push({
+        type: stop.type,
+        location: stop.location,
+        loadId: stop.loadId || activeLoad.id!,
+        label: stop.deckLabel,
+      });
     }
   } else {
-    const sortedLoads = sequenceLoadsLIFO(contextLoads);
-
-    // 1. Primary Origin (Pickup) & intermediate pickups
-    for (const load of sortedLoads) {
-      const orig = formatAddressForRoute(load.origin);
-      if (orig && !addedLocations.has(`pickup:${orig}`)) {
-        legs.push({ type: 'pickup', location: orig, loadId: load.id! });
-        addedLocations.add(`pickup:${orig}`);
-      }
+    const orig = formatAddressForRoute(activeLoad.origin);
+    if (orig) {
+      legs.push({ type: 'pickup', location: orig, loadId: activeLoad.id! });
     }
-
-    // 2. Scheduled Delivery Waypoints
-    const deliveryOrder = [...sortedLoads].reverse();
-    for (const load of deliveryOrder) {
-      if (load.status !== 'delivered') {
-        const dest = formatAddressForRoute(load.destination);
-        if (dest && !addedLocations.has(`dropoff:${dest}`)) {
-          legs.push({ type: 'dropoff', location: dest, loadId: load.id! });
-          addedLocations.add(`dropoff:${dest}`);
+    if (activeLoad.status !== 'delivered') {
+      const dest = formatAddressForRoute(activeLoad.destination);
+      if (dest && dest.toLowerCase() !== orig.toLowerCase()) {
+        legs.push({ type: 'dropoff', location: dest, loadId: activeLoad.id! });
+      }
+      if (Array.isArray(activeLoad.additionalStops)) {
+        for (const extra of activeLoad.additionalStops) {
+          const extraLoc = formatAddressForRoute(extra.address);
+          const prev = legs[legs.length - 1];
+          if (extraLoc && (!prev || prev.location.toLowerCase() !== extraLoc.toLowerCase())) {
+            legs.push({ type: 'dropoff', location: extraLoc, loadId: activeLoad.id! });
+          }
         }
       }
     }
@@ -249,9 +555,11 @@ export function buildDriverProgressLegs(
   return legs;
 }
 
-// ── 3. GOOGLE MAPS URL BUILDER ────────────────────────────────────────────────
+// ── 3. DECK-SEQUENCED MULTI-STOP BUILDER & GOOGLE MAPS URLS ──────────────────
 
 export interface ChronologicalTripStop {
+  id?: string;
+  stopNumber?: number;
   type: 'pickup' | 'dropoff';
   searchableAddress: string;
   location: string; // backwards compatibility alias for searchableAddress
@@ -262,61 +570,139 @@ export interface ChronologicalTripStop {
   loadId: string;
   loadNumber?: string;
   cargoDescription?: string;
+  cargoWeightNum?: number;
+  cargoLength?: number;
+  cargoQuantity?: number;
+  deckOrder?: number;
+  deckLabel?: string;
+  isTopLoad?: boolean;
+  isBottomLoad?: boolean;
+  sameFacilityAsPrevious?: boolean;
+  multiDropStopNumber?: number;
+  multiDropTotalStops?: number;
+}
+
+export function getTripStopProgressState(
+  stop: Pick<ChronologicalTripStop, 'type' | 'loadId'>,
+  load?: Pick<Load, 'status' | 'driverPhase'> | null
+): { completed: boolean; active: boolean } {
+  if (!load) return { completed: false, active: false };
+  const status = String(load.status || '').toLowerCase().trim();
+  const phase = String(load.driverPhase || '').toLowerCase().trim();
+
+  if (status === 'delivered' || status === 'completed' || phase === 'complete') {
+    return { completed: true, active: false };
+  }
+
+  if (stop.type === 'pickup') {
+    // Pickup is completed once cargo has departed origin (in-transit or at/unloading destination)
+    const pickupCompleted = [
+      'in-transit',
+      'arrived',
+      'arrived-destination',
+      'unloading',
+      'delivered',
+      'completed',
+    ].includes(status);
+    const pickupActive = ['dispatched', 'deadheading', 'arrived-origin', 'loading'].includes(status);
+    return { completed: pickupCompleted, active: pickupActive };
+  }
+
+  // Delivery / dropoff stop
+  const dropoffActive = ['in-transit', 'arrived', 'arrived-destination', 'unloading'].includes(status);
+  return { completed: false, active: dropoffActive };
 }
 
 /**
- * Strict pipeline for consolidated trip containers:
- * 1. Data Extraction & Normalization:
- *    For every load in the container, extract the Pickup and Delivery stops.
- *    Create a strictly formatted searchableAddress string that ONLY includes
- *    Street, City, State, and Zip (stripping company names, contact names, or prefixes).
- * 2. Chronological Sort:
- *    Sort the flattened array of stops strictly by their JavaScript Date objects (pickupDate and deliveryDate).
- * 3. Deduplication:
- *    Loop through the sorted array. If searchableAddress of current stop exactly matches
- *    searchableAddress of previous stop, remove the duplicate.
+ * Builds sequenced pickup & delivery stops for a multi-load vehicle trip:
+ * 1. Computes LIFO / explicit `deckOrder` positions across active loads:
+ *    - Deck #1 • First Off (unloaded first, loaded last)
+ *    - Deck #N • Last Off (unloaded last, loaded first)
+ * 2. Sequences PICKUP stops in loading order (Last Off -> First Off, with already
+ *    picked-up loads placed first so completed stops precede upcoming stops).
+ * 3. Sequences DELIVERY stops strictly in deck unload order (First Off -> Last Off),
+ *    preserving any multi-drop `additionalStops` on individual loads.
+ * 4. Preserves individual load stops so each load's details, BOL/POD, and status
+ *    remain accessible as stops within one trip, while flagging back-to-back
+ *    same-facility stops (`sameFacilityAsPrevious`).
  */
 export function buildChronologicalTripStops(loads: Load[]): ChronologicalTripStop[] {
-  // Step 1: Data Extraction & Normalization
-  const rawStops: ChronologicalTripStop[] = [];
-
-  for (const load of loads) {
-    // Skip already delivered loads if filtering for remaining transit
+  const activeLoads = loads.filter(load => {
     const statusLower = String(load.status || '').toLowerCase().trim();
-    if (statusLower === 'delivered' || statusLower === 'completed') {
-      continue;
-    }
+    return statusLower !== 'delivered' && statusLower !== 'completed';
+  });
 
+  if (activeLoads.length === 0) return [];
+
+  const deckPositions = computeDeckPositions(activeLoads);
+  const deckByLoadId = new Map<string, DeckPosition>();
+  deckPositions.forEach(d => {
+    if (d.loadId) deckByLoadId.set(d.loadId, d);
+  });
+
+  // Delivery order: Deck #1 (First Off) -> ... -> Deck #N (Last Off)
+  const deliveryOrderedLoads = sequenceLoadsFirstOffToLastOff(activeLoads);
+  // Pickup loading order: Deck #N (Last Off, bottom/front) -> ... -> Deck #1 (First Off, top/rear),
+  // with already picked-up loads placed ahead of unpicked loads so completed legs stay first.
+  const isAlreadyPickedUp = (l: Load) => {
+    const s = String(l.status || '').toLowerCase().trim();
+    return ['in-transit', 'arrived', 'arrived-destination', 'unloading', 'delivered', 'completed'].includes(s);
+  };
+  const lifoLoadingOrder = [...deliveryOrderedLoads].reverse();
+  const pickupOrderedLoads = [
+    ...lifoLoadingOrder.filter(l => isAlreadyPickedUp(l)),
+    ...lifoLoadingOrder.filter(l => !isAlreadyPickedUp(l)),
+  ];
+
+  const sequencedStops: ChronologicalTripStop[] = [];
+
+  // 1. All Pickups in loading sequence
+  for (const load of pickupOrderedLoads) {
     const pickupAddressStr = cleanSearchableAddress(load.origin);
-    const dropoffAddressStr = cleanSearchableAddress(load.destination);
+    if (!pickupAddressStr) continue;
 
-    // Support either pickupDateTime / pickupDate or deliveryDateTime / deliveryDate
     const rawPickupDate = (load as any).pickupDate || load.pickupDateTime;
-    const rawDeliveryDate = (load as any).deliveryDate || load.deliveryDateTime;
-
     const pickupDateObj = rawPickupDate ? new Date(rawPickupDate) : new Date(0);
-    const deliveryDateObj = rawDeliveryDate ? new Date(rawDeliveryDate) : new Date(0);
-
     const pickupTime = !isNaN(pickupDateObj.getTime()) ? pickupDateObj.getTime() : 0;
-    const deliveryTime = !isNaN(deliveryDateObj.getTime()) ? deliveryDateObj.getTime() : 0;
+    const deck = load.id ? deckByLoadId.get(load.id) : undefined;
+    const deckLabel = formatDeckPositionBadge(deck, activeLoads.length);
 
-    if (pickupAddressStr) {
-      rawStops.push({
-        type: 'pickup',
-        searchableAddress: pickupAddressStr,
-        location: pickupAddressStr,
-        rawAddress: load.origin,
-        dateObj: pickupDateObj,
-        timestamp: pickupTime,
-        dateTimeStr: String(rawPickupDate || ''),
-        loadId: load.id || '',
-        loadNumber: load.loadNumber,
-        cargoDescription: load.cargoDescription,
-      });
-    }
+    sequencedStops.push({
+      id: `${load.id || load.loadNumber || sequencedStops.length}-pickup`,
+      type: 'pickup',
+      searchableAddress: pickupAddressStr,
+      location: pickupAddressStr,
+      rawAddress: load.origin,
+      dateObj: pickupDateObj,
+      timestamp: pickupTime,
+      dateTimeStr: String(rawPickupDate || ''),
+      loadId: load.id || '',
+      loadNumber: load.loadNumber,
+      cargoDescription: load.cargoDescription,
+      cargoWeightNum: load.cargoWeightNum,
+      cargoLength: load.cargoLength,
+      cargoQuantity: load.cargoQuantity,
+      deckOrder: deck?.deckOrder,
+      deckLabel,
+      isTopLoad: deck?.isTopLoad,
+      isBottomLoad: deck?.isBottomLoad,
+    });
+  }
+
+  // 2. All Deliveries in Deck Order (First Off -> Last Off)
+  for (const load of deliveryOrderedLoads) {
+    const dropoffAddressStr = cleanSearchableAddress(load.destination);
+    const rawDeliveryDate = (load as any).deliveryDate || load.deliveryDateTime;
+    const deliveryDateObj = rawDeliveryDate ? new Date(rawDeliveryDate) : new Date(0);
+    const deliveryTime = !isNaN(deliveryDateObj.getTime()) ? deliveryDateObj.getTime() : 0;
+    const deck = load.id ? deckByLoadId.get(load.id) : undefined;
+    const deckLabel = formatDeckPositionBadge(deck, activeLoads.length);
+    const extraStops = Array.isArray(load.additionalStops) ? load.additionalStops : [];
+    const totalDropsForLoad = 1 + extraStops.length;
 
     if (dropoffAddressStr) {
-      rawStops.push({
+      sequencedStops.push({
+        id: `${load.id || load.loadNumber || sequencedStops.length}-dropoff-primary`,
         type: 'dropoff',
         searchableAddress: dropoffAddressStr,
         location: dropoffAddressStr,
@@ -327,71 +713,57 @@ export function buildChronologicalTripStops(loads: Load[]): ChronologicalTripSto
         loadId: load.id || '',
         loadNumber: load.loadNumber,
         cargoDescription: load.cargoDescription,
+        cargoWeightNum: load.cargoWeightNum,
+        cargoLength: load.cargoLength,
+        cargoQuantity: load.cargoQuantity,
+        deckOrder: deck?.deckOrder,
+        deckLabel,
+        isTopLoad: deck?.isTopLoad,
+        isBottomLoad: deck?.isBottomLoad,
+        ...(totalDropsForLoad > 1
+          ? { multiDropStopNumber: 1, multiDropTotalStops: totalDropsForLoad }
+          : {}),
       });
     }
 
-    if (Array.isArray(load.additionalStops)) {
-      load.additionalStops.forEach((extraStop, idx) => {
-        const extraAddr = cleanSearchableAddress(extraStop.address);
-        if (!extraAddr) return;
-        rawStops.push({
-          type: 'dropoff',
-          searchableAddress: extraAddr,
-          location: extraAddr,
-          rawAddress: extraStop.address,
-          dateObj: deliveryDateObj,
-          timestamp: deliveryTime + idx + 1,
-          dateTimeStr: String(rawDeliveryDate || ''),
-          loadId: load.id || '',
-          loadNumber: load.loadNumber,
-          cargoDescription: extraStop.cargoDescription || load.cargoDescription,
-        });
+    extraStops.forEach((extraStop, idx) => {
+      const extraAddr = cleanSearchableAddress(extraStop.address);
+      if (!extraAddr) return;
+      sequencedStops.push({
+        id: `${load.id || load.loadNumber || sequencedStops.length}-dropoff-${extraStop.id || idx + 2}`,
+        type: 'dropoff',
+        searchableAddress: extraAddr,
+        location: extraAddr,
+        rawAddress: extraStop.address,
+        dateObj: deliveryDateObj,
+        timestamp: deliveryTime + idx + 1,
+        dateTimeStr: String(rawDeliveryDate || ''),
+        loadId: load.id || '',
+        loadNumber: load.loadNumber,
+        cargoDescription: extraStop.cargoDescription || load.cargoDescription,
+        cargoWeightNum: extraStop.cargoWeight ?? load.cargoWeightNum,
+        cargoQuantity: extraStop.cargoQuantity ?? load.cargoQuantity,
+        deckOrder: deck?.deckOrder,
+        deckLabel,
+        isTopLoad: deck?.isTopLoad,
+        isBottomLoad: deck?.isBottomLoad,
+        multiDropStopNumber: idx + 2,
+        multiDropTotalStops: totalDropsForLoad,
       });
-    }
+    });
   }
 
-  // Step 2: Chronological Sort strictly by JavaScript Date objects
-  rawStops.sort((a, b) => {
-    const timeA = a.dateObj.getTime();
-    const timeB = b.dateObj.getTime();
-    if (timeA !== timeB) {
-      // If one timestamp is 0/invalid, place the valid timestamp earlier
-      if (timeA === 0 && timeB > 0) return 1;
-      if (timeB === 0 && timeA > 0) return -1;
-      return timeA - timeB;
-    }
-    // Secondary tie-breaker: Pickups precede dropoffs
-    if (a.type !== b.type) {
-      return a.type === 'pickup' ? -1 : 1;
-    }
-    return 0;
+  // 3. Number stops sequentially and mark back-to-back same-facility stops
+  return sequencedStops.map((stop, idx) => {
+    const prev = idx > 0 ? sequencedStops[idx - 1] : null;
+    const prevNorm = prev ? prev.searchableAddress.trim().toLowerCase().replace(/\s+/g, ' ') : '';
+    const currNorm = stop.searchableAddress.trim().toLowerCase().replace(/\s+/g, ' ');
+    return {
+      ...stop,
+      stopNumber: idx + 1,
+      sameFacilityAsPrevious: Boolean(prev && prevNorm && prevNorm === currNorm),
+    };
   });
-
-  // Step 3: Deduplication
-  // Loop through sorted array. If searchableAddress of current stop exactly matches previous stop, remove duplicate
-  const deduplicatedStops: ChronologicalTripStop[] = [];
-  for (const stop of rawStops) {
-    if (deduplicatedStops.length === 0) {
-      deduplicatedStops.push(stop);
-      continue;
-    }
-
-    const prevStop = deduplicatedStops[deduplicatedStops.length - 1];
-    const prevAddrNorm = prevStop.searchableAddress.trim().toLowerCase().replace(/\s+/g, ' ');
-    const currAddrNorm = stop.searchableAddress.trim().toLowerCase().replace(/\s+/g, ' ');
-
-    if (prevAddrNorm === currAddrNorm) {
-      // Exactly matches previous stop: drop duplicate waypoint
-      if (!prevStop.loadNumber && stop.loadNumber) {
-        prevStop.loadNumber = stop.loadNumber;
-      }
-      continue;
-    }
-
-    deduplicatedStops.push(stop);
-  }
-
-  return deduplicatedStops;
 }
 
 /**
@@ -570,8 +942,50 @@ export function getNextStopAppleMapsUrl(destination: string | Address): string {
   return `https://maps.apple.com/?daddr=${encodeURIComponent(cleanDest)}&dirflg=d`;
 }
 
+export function getCombinedTripGoogleMapsUrl(
+  tripLoads: Load[],
+  userCoordinates?: { lat: number; lng: number } | null,
+  onlyRemaining: boolean = true
+): string {
+  const stops = buildChronologicalTripStops(tripLoads);
+  const candidateStops = onlyRemaining
+    ? stops.filter(stop => {
+        const matched = tripLoads.find(l => l.id === stop.loadId);
+        return !getTripStopProgressState(stop, matched).completed;
+      })
+    : stops;
+
+  const stopsToRoute = candidateStops.length > 0 ? candidateStops : stops;
+  // Deduplicate back-to-back identical addresses so Google Maps has no zero-length self-loops
+  const uniqueAddresses: string[] = [];
+  for (const stop of stopsToRoute) {
+    const clean = cleanSearchableAddress(stop.rawAddress || stop.searchableAddress || stop.location);
+    if (!clean) continue;
+    const prev = uniqueAddresses[uniqueAddresses.length - 1];
+    if (prev && prev.toLowerCase().replace(/\s+/g, ' ') === clean.toLowerCase().replace(/\s+/g, ' ')) {
+      continue;
+    }
+    uniqueAddresses.push(clean);
+  }
+
+  if (uniqueAddresses.length === 0) return 'https://www.google.com/maps';
+  if (uniqueAddresses.length === 1) {
+    return getNextStopGoogleMapsUrl(uniqueAddresses[0], userCoordinates);
+  }
+
+  const finalStop = uniqueAddresses[uniqueAddresses.length - 1];
+  const intermediateWaypoints = uniqueAddresses.slice(0, -1).join('|');
+  const originParam =
+    userCoordinates && typeof userCoordinates.lat === 'number' && typeof userCoordinates.lng === 'number'
+      ? `&origin=${userCoordinates.lat},${userCoordinates.lng}`
+      : '';
+  const waypointsParam = intermediateWaypoints ? `&waypoints=${encodeURIComponent(intermediateWaypoints)}` : '';
+  return `https://www.google.com/maps/dir/?api=1${originParam}&destination=${encodeURIComponent(finalStop)}${waypointsParam}&travelmode=driving`;
+}
+
 /**
  * Generates a Google Maps URL for all remaining stops of an active load or trip.
+ * Automatically combines sibling loads sharing the same vehicle/driver/trip!
  * Skips already completed stops (e.g. if load is in-transit, pickup is omitted).
  * Omits 'origin' so Google Maps starts from the driver's current device GPS.
  */
@@ -581,43 +995,12 @@ export function getFullRemainingRouteGoogleMapsUrl(
   driver?: DriverProfile | null,
   userCoordinates?: { lat: number; lng: number } | null
 ): string {
-  // If part of a multi-stop trip with multiple loads:
-  if (load.tripId && load.tripId !== 'none') {
-    const tripLoads = allLoads.filter(l => l.tripId === load.tripId && l.status !== 'delivered');
-    if (tripLoads.length > 1) {
-      const stops = buildChronologicalTripStops(tripLoads);
-      // Filter out completed stops
-      const remainingStops = stops.filter(stop => {
-        const matched = tripLoads.find(l => l.id === stop.loadId);
-        if (!matched) return true;
-        const s = String(matched.status || '').toLowerCase();
-        if (stop.type === 'pickup') {
-          return !['loading', 'in-transit', 'arrived-destination', 'unloading', 'delivered', 'completed'].includes(s);
-        }
-        return s !== 'delivered' && s !== 'completed';
-      });
-
-      if (remainingStops.length === 0) return 'https://www.google.com/maps';
-      if (remainingStops.length === 1) {
-        return getNextStopGoogleMapsUrl(remainingStops[0].searchableAddress, userCoordinates);
-      }
-
-      const finalStop = remainingStops[remainingStops.length - 1].searchableAddress;
-      const intermediateWaypoints = remainingStops
-        .slice(0, -1)
-        .map(s => s.searchableAddress)
-        .filter(Boolean)
-        .join('|');
-
-      const originParam = userCoordinates 
-        ? `&origin=${userCoordinates.lat},${userCoordinates.lng}` 
-        : '';
-
-      return `https://www.google.com/maps/dir/?api=1${originParam}&destination=${encodeURIComponent(finalStop)}&waypoints=${encodeURIComponent(intermediateWaypoints)}&travelmode=driving`;
-    }
+  const vehicleLoads = getSameVehicleActiveLoads(load, allLoads, driver);
+  if (vehicleLoads.length > 1) {
+    return getCombinedTripGoogleMapsUrl(vehicleLoads, userCoordinates, true);
   }
 
-  // Standalone load:
+  // Standalone single load (with optional multi-drop additionalStops):
   const status = (load.status || '').toLowerCase().trim();
   const isPickupPhase = [
     'dispatched',
@@ -628,24 +1011,34 @@ export function getFullRemainingRouteGoogleMapsUrl(
     'loading',
   ].includes(status);
 
-  const cleanDest = cleanSearchableAddress(load.destination);
   const cleanOrig = cleanSearchableAddress(load.origin);
+  const cleanDest = cleanSearchableAddress(load.destination);
+  const extraDests = Array.isArray(load.additionalStops)
+    ? load.additionalStops.map(s => cleanSearchableAddress(s.address)).filter(Boolean)
+    : [];
 
-  const originParam = userCoordinates 
-    ? `&origin=${userCoordinates.lat},${userCoordinates.lng}` 
-    : '';
-
-  // If in pickup phase, remaining route is: Live GPS -> Pickup -> Delivery
-  if (isPickupPhase && cleanOrig && cleanDest) {
-    return `https://www.google.com/maps/dir/?api=1${originParam}&destination=${encodeURIComponent(cleanDest)}&waypoints=${encodeURIComponent(cleanOrig)}&travelmode=driving`;
+  const remainingAddrs: string[] = [];
+  if (isPickupPhase && cleanOrig) remainingAddrs.push(cleanOrig);
+  if (cleanDest) remainingAddrs.push(cleanDest);
+  for (const ed of extraDests) {
+    if (remainingAddrs[remainingAddrs.length - 1]?.toLowerCase() !== ed.toLowerCase()) {
+      remainingAddrs.push(ed);
+    }
   }
 
-  // If already loaded / in-transit, pickup is done! Remaining route is just Live GPS -> Delivery
-  if (cleanDest) {
-    return `https://www.google.com/maps/dir/?api=1${originParam}&destination=${encodeURIComponent(cleanDest)}&travelmode=driving`;
+  if (remainingAddrs.length === 0) return 'https://www.google.com/maps';
+  if (remainingAddrs.length === 1) {
+    return getNextStopGoogleMapsUrl(remainingAddrs[0], userCoordinates);
   }
 
-  return 'https://www.google.com/maps';
+  const originParam =
+    userCoordinates && typeof userCoordinates.lat === 'number' && typeof userCoordinates.lng === 'number'
+      ? `&origin=${userCoordinates.lat},${userCoordinates.lng}`
+      : '';
+  const finalDest = remainingAddrs[remainingAddrs.length - 1];
+  const waypoints = remainingAddrs.slice(0, -1).join('|');
+
+  return `https://www.google.com/maps/dir/?api=1${originParam}&destination=${encodeURIComponent(finalDest)}&waypoints=${encodeURIComponent(waypoints)}&travelmode=driving`;
 }
 
 /**

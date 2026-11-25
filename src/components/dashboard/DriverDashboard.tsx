@@ -10,6 +10,7 @@ import { registerServiceWorker, subscribeUserToPush } from '@/lib/webPushClient'
 import { ShareLiveLocationToggle } from './ShareLiveLocationToggle';
 import {
   computeDeckPositions,
+  groupLoadsIntoVehicleTrips,
   getNextStopForLoad,
   getNextStopGoogleMapsUrl,
   getNextStopAppleMapsUrl,
@@ -538,65 +539,54 @@ export function DriverDashboard() {
   const deckPositions  = activeLoads.length > 0 ? computeDeckPositions(activeLoads) : [];
   const getDeckPos     = (loadId: string) => deckPositions.find((d) => d.loadId === loadId);
 
-  // ── Group Active Dispatches into Combined Trip Manifests vs Standalone Loads ──
-  type DispatchGroupItem = 
+  // ── Group Active Dispatches into Combined Vehicle Trip vs Standalone Single Load ──
+  // Whenever multiple active loads are assigned to this driver/vehicle (whether via tripId,
+  // truck pairing, or direct driver assignment), group them into a single sequenced trip.
+  // Existing single loads remain standalone and work unchanged.
+  type DispatchGroupItem =
     | { type: 'trip'; trip: import('@/types').Trip; loads: Load[] }
     | { type: 'load'; load: Load };
 
   const dispatchGroupItems: DispatchGroupItem[] = React.useMemo(() => {
-    // If there are multiple activeLoads assigned to this driver, group by tripId
-    // If none match specific tripId but the driver has multiple active dispatches, or loads share tripId:
-    const tripMap: Record<string, Load[]> = {};
-    const standalone: Load[] = [];
+    if (activeLoads.length === 0) return [];
 
-    // Also look at all loads associated with the driver's active trips if tripId is set
-    for (const load of activeLoads) {
-      const tripId = load.tripId && load.tripId !== 'none' ? load.tripId.trim() : null;
-      if (tripId) {
-        if (!tripMap[tripId]) {
-          tripMap[tripId] = [];
-        }
-        tripMap[tripId].push(load);
-      } else {
-        standalone.push(load);
+    // All activeLoads here already belong to the viewed driver/vehicle; if >= 2 loads are active,
+    // combine them into one sequenced vehicle trip (preferring any matched explicit Trip metadata).
+    if (activeLoads.length > 1) {
+      const { tripGroups, standaloneLoads } = groupLoadsIntoVehicleTrips(
+        activeLoads,
+        trips,
+        vehicles,
+        driverProfile ? [driverProfile, ...driverProfiles.filter(d => d.uid !== driverProfile.uid)] : driverProfiles
+      );
+
+      // Even if one load only had driverId and another only had truckId before profile sync,
+      // merge all active dispatches for this single driver/truck view into one combined trip.
+      if (tripGroups.length === 1 && standaloneLoads.length === 0) {
+        return [{ type: 'trip', trip: tripGroups[0].trip, loads: tripGroups[0].loads }];
       }
-    }
 
-    const items: DispatchGroupItem[] = [];
+      const explicitTrip = activeLoads
+        .map(l => (l.tripId && l.tripId !== 'none' ? trips?.find(t => t.id === l.tripId) : undefined))
+        .find((t): t is import('@/types').Trip => Boolean(t));
 
-    // For any trip containing multiple active loads (or an explicit trip container), group into TripManifestCard
-    for (const [tripId, tripLoads] of Object.entries(tripMap)) {
-      const matchedTrip = trips?.find(t => t.id === tripId) || {
-        id: tripId,
-        name: `Combined Trip #${tripId.substring(0, 8)}`,
-        loadIds: tripLoads.map(l => l.id!),
+      const combinedTrip: import('@/types').Trip = explicitTrip || tripGroups[0]?.trip || {
+        id: `driver-trip-${driverProfile?.assignedTruckId || driverProfile?.uid || 'active'}`,
+        name: `Combined Trip — ${driverProfile?.name || 'Active Run'}`,
+        assignedDriverId: driverProfile?.uid,
+        assignedTruckId: driverProfile?.assignedTruckId,
+        assignedTrailerId: driverProfile?.assignedTrailerId,
+        loadIds: activeLoads.map(l => l.id!).filter(Boolean),
         startOdometer: 0,
-        status: 'active' as const,
+        status: 'active',
       };
 
-      if (tripLoads.length > 1) {
-        items.push({ type: 'trip', trip: matchedTrip, loads: tripLoads });
-      } else {
-        // Check if other loads assigned to this driver belong to this tripId
-        const siblingLoadsInTrip = loads.filter(
-          l => l.tripId === tripId && !isLoadHistoricalOrDelivered(l) && isLoadAssignedToDriver(l, driverProfile, trips, vehicles)
-        );
-        if (siblingLoadsInTrip.length > 1) {
-          items.push({ type: 'trip', trip: matchedTrip, loads: siblingLoadsInTrip });
-        } else {
-          // Single load with tripId rendered as standalone
-          items.push({ type: 'load', load: tripLoads[0] });
-        }
-      }
+      return [{ type: 'trip', trip: combinedTrip, loads: activeLoads }];
     }
 
-    // Add standalone loads
-    for (const load of standalone) {
-      items.push({ type: 'load', load });
-    }
-
-    return items;
-  }, [activeLoads, trips]);
+    // Single active load continues to work unchanged
+    return [{ type: 'load', load: activeLoads[0] }];
+  }, [activeLoads, trips, vehicles, driverProfile, driverProfiles]);
 
 
   // ── Phase change ─────────────────────────────────────────────────────────
@@ -1140,12 +1130,16 @@ export function DriverDashboard() {
         <div className="space-y-4">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-slate-900 tracking-tight">Active Dispatches</h2>
-              <span className="text-xs text-slate-500 font-medium">({activeLoads.length})</span>
+              <h2 className="text-base font-bold text-slate-900 tracking-tight">
+                {activeLoads.length > 1 ? 'Active Trip' : 'Active Dispatches'}
+              </h2>
+              <span className="text-xs text-slate-500 font-medium">
+                ({activeLoads.length > 1 ? `1 Trip • ${activeLoads.length} Loads` : activeLoads.length})
+              </span>
             </div>
             {activeLoads.length > 0 && (
               <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[11px] font-bold">
-                {activeLoads.length} In Progress
+                {activeLoads.length > 1 ? `${activeLoads.length} Loads Sequenced` : `${activeLoads.length} In Progress`}
               </Badge>
             )}
           </div>
@@ -1190,7 +1184,14 @@ export function DriverDashboard() {
                     trip={item.trip}
                     loads={item.loads}
                     driverProfile={driverProfile}
+                    assignedTruck={assignedTruck}
+                    assignedTrailer={assignedTrailer}
                     onUpdateLoad={updateLoad}
+                    onAcceptLoad={handleAcceptLoad}
+                    onDeclineLoad={(targetLoad) => {
+                      setDeclineModalLoad(targetLoad);
+                      setDeclineReason('');
+                    }}
                     onLogExpense={(targetLoad) => {
                       setExpenseModalLoad(targetLoad);
                       setIsExpenseModalOpen(true);

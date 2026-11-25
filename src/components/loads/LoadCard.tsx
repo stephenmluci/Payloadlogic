@@ -27,6 +27,7 @@ import { useApp } from '@/context/AppContext';
 import { ShareLoadPacketModal } from './ShareLoadPacketModal';
 import { SignedBolUpload } from './SignedBolUpload';
 import { getDriverProfileId } from '@/lib/driverAssignment';
+import { getSameVehicleActiveLoads, computeDeckPositions, formatDeckPositionBadge } from '@/lib/routeUtils';
 import { normalizeLoadStatus, isLoadCompleted, hasLoadPod } from '@/lib/loadStatus';
 import { getLoadDeliveryStops, isMultiDropLoad } from '@/lib/loadStops';
 import {
@@ -297,8 +298,22 @@ export function LoadCard({
   const totalTransportHeight = deckHeight + totalCargoHeight;
   const isOverHeight = deckHeight > 0 && totalCargoHeight > 0 && totalTransportHeight > 162;
 
-  // ── Capacity & Proration Share ───────────────────────────────────────────
-  const isTripConsolidated = Boolean(load.tripId && load.tripId !== 'none');
+  // ── Same-Vehicle Trip Grouping & Capacity Proration Share ────────────────
+  const sameVehicleActiveLoads = React.useMemo(
+    () =>
+      !loadIsCompleted
+        ? getSameVehicleActiveLoads(load, loads || [], driver, trips || [], vehicles || [], driverProfiles || [])
+        : [load],
+    [load, loadIsCompleted, loads, driver, trips, vehicles, driverProfiles]
+  );
+  const sameVehicleDeck = React.useMemo(
+    () =>
+      sameVehicleActiveLoads.length > 1
+        ? computeDeckPositions(sameVehicleActiveLoads).find(d => d.loadId === load.id)
+        : undefined,
+    [sameVehicleActiveLoads, load.id]
+  );
+  const isTripConsolidated = Boolean((load.tripId && load.tripId !== 'none') || sameVehicleActiveLoads.length > 1);
   const effectiveDeckLength = trailer?.trailerLength ?? 40;
   const effectivePayloadCapacity = trailer?.payloadCapacity
     || Math.max(0, (trailer?.gvwr ?? 0) - (trailer?.emptyWeight ?? 0))
@@ -619,10 +634,27 @@ export function LoadCard({
                 {load.loadNumber}
               </Badge>
             )}
-            {load.tripId && (
+            {load.tripId ? (
               <Badge variant="outline" className="text-xs flex items-center bg-blue-50 border-blue-200 text-blue-700">
                 <Map className="h-3 w-3 mr-1" />
                 {trips?.find(t => t.id === load.tripId)?.tripNumber ?? `TRIP #${load.tripId.substring(0, 7)}`}
+              </Badge>
+            ) : sameVehicleActiveLoads.length > 1 ? (
+              <Badge variant="outline" className="text-xs flex items-center bg-purple-50 border-purple-200 text-purple-800 font-bold">
+                <Map className="h-3 w-3 mr-1" />
+                Vehicle Trip ({sameVehicleActiveLoads.length} Loads)
+              </Badge>
+            ) : null}
+            {sameVehicleActiveLoads.length > 1 && sameVehicleDeck && (
+              <Badge
+                variant="outline"
+                className={`text-xs font-bold ${
+                  sameVehicleDeck.isTopLoad
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                    : 'bg-amber-50 border-amber-300 text-amber-900'
+                }`}
+              >
+                {formatDeckPositionBadge(sameVehicleDeck, sameVehicleActiveLoads.length)}
               </Badge>
             )}
             {isLtlLoad && (

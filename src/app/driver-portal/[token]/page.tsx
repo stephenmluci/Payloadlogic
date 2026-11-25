@@ -38,7 +38,8 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { DriverPwaInstallBanner } from '@/components/common/DriverPwaInstallBanner';
 import { SignedBolUpload } from '@/components/loads/SignedBolUpload';
-import type { Load, DriverProfile } from '@/types';
+import { TripManifestCard } from '@/components/dashboard/TripManifestCard';
+import type { Load, DriverProfile, Vehicle } from '@/types';
 
 const DRIVER_PHASE_OPTIONS: { value: Load['status']; label: string }[] = [
   { value: 'dispatched', label: 'Dispatched / En Route to Pickup' },
@@ -539,7 +540,9 @@ export default function DriverPortalMagicLinkPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between px-1">
               <h2 className="text-base font-bold text-slate-900">
-                My Assigned Loads ({activeLoads.length})
+                {activeLoads.length > 1
+                  ? `Active Combined Trip (${activeLoads.length} Loads)`
+                  : `My Assigned Loads (${activeLoads.length})`}
               </h2>
               <span className="text-[11px] text-slate-500">Scoped strictly to {driverProfile.name}</span>
             </div>
@@ -554,6 +557,52 @@ export default function DriverPortalMagicLinkPage() {
                   </p>
                 </CardContent>
               </Card>
+            ) : activeLoads.length > 1 ? (
+              <TripManifestCard
+                trip={{
+                  id: `portal-trip-${driverProfile.assignedTruckId || driverProfile.uid || 'active'}`,
+                  name: `Combined Trip — ${driverProfile.name}`,
+                  assignedDriverId: driverProfile.uid,
+                  assignedTruckId: driverProfile.assignedTruckId,
+                  assignedTrailerId: driverProfile.assignedTrailerId,
+                  loadIds: activeLoads.map((l) => l.id!).filter(Boolean),
+                  startOdometer: 0,
+                  status: 'active',
+                }}
+                loads={activeLoads}
+                driverProfile={driverProfile}
+                assignedTruck={assignedTruck as Vehicle | null}
+                assignedTrailer={assignedTrailer as Vehicle | null}
+                onUpdateLoad={async (id, updates) => {
+                  await handleUpdateLoad(id, updates as Record<string, any>, 'Trip stop updated.');
+                }}
+                onAcceptLoad={handleAcceptLoad}
+                onDeclineLoad={(targetLoad) => {
+                  setDeclineModalLoad(targetLoad);
+                  setDeclineReason('');
+                }}
+                reportDriverException={async (loadId, exception, note) => {
+                  const nowIso = new Date().toISOString();
+                  await handleUpdateLoad(
+                    loadId,
+                    {
+                      driverExceptionFlag: exception,
+                      ...(note ? { driverNote: note, driverNoteUpdatedAt: nowIso } : {}),
+                    },
+                    exception ? `Reported: ${exception}` : 'Exception cleared.'
+                  );
+                }}
+                updateDriverNote={async (loadId, note) => {
+                  await handleUpdateLoad(
+                    loadId,
+                    {
+                      driverNote: note,
+                      driverNoteUpdatedAt: new Date().toISOString(),
+                    },
+                    'Driver note sent to dispatch.'
+                  );
+                }}
+              />
             ) : (
               activeLoads.map((load) => {
                 const isBusy = busyLoadId === load.id;

@@ -47,6 +47,7 @@ import { buildUnifiedExpenses } from '@/lib/expenseLedger';
 import { deduplicateLoads, isLoadCompleted } from '@/lib/loadStatus';
 import { cn, formatAddress } from '@/lib/utils';
 import { getLoadDisplayId } from '@/lib/displayId';
+import { getSameVehicleActiveLoads } from '@/lib/routeUtils';
 
 import { 
   LineChart, 
@@ -619,7 +620,11 @@ export function DashboardPage() {
                             {trip?.tripNumber ?? `#${load.tripId.substring(0, 7)}`}
                           </Badge>
                         );
-                      })() : (
+                      })() : !isLoadCompleted(load) && getSameVehicleActiveLoads(load, activeLoadsList, undefined, trips, vehicles, driverProfiles).length > 1 ? (
+                        <Badge variant="outline" className="text-[10px] bg-purple-50 border-purple-200 text-purple-800 font-semibold">
+                          Vehicle Trip ({getSameVehicleActiveLoads(load, activeLoadsList, undefined, trips, vehicles, driverProfiles).length} loads)
+                        </Badge>
+                      ) : (
                         <span className="text-slate-300">—</span>
                       )}
                     </td>

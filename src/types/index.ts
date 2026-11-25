@@ -120,6 +120,12 @@ export type Load = {
   isPartialLoad?: boolean; // Alias for LTL / partial load
   isPartialLTL?: boolean; // Explicit LTL / partial freight distribution toggle flag
   deckPercentageUsed?: number; // Estimated or overridden percentage of deck space used (1-100)
+  /**
+   * Optional explicit 1-based deck unload order when multiple loads share a vehicle/trip:
+   * 1 = Deck #1 • First Off (unloaded first), N = Deck #N • Last Off (unloaded last).
+   * When omitted, LIFO distance/delivery order determines deck position automatically.
+   */
+  deckOrder?: number;
   specialTerms?: string;
   requiresTarping?: boolean;
   tarpingFee?: number;

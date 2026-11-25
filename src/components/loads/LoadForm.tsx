@@ -129,6 +129,7 @@ export function LoadForm({
     isFinancialProfileComplete,
     setIsFleetFinancialModalOpen,
     handleDeleteTrip,
+    handleCancelEditLoad,
   } = useApp();
 
   const effectiveSettings = settings || appSettings;
@@ -1002,15 +1003,7 @@ export function LoadForm({
     }
   }, [appClients, clients, setLoadForm]);
 
-  const LS_LOAD_DRAFT = 'agy_load_draft';
-
-  // ── Draft Persistence: Keep loadForm synchronized to persistence layer ───────
-  const loadFormRef = React.useRef(loadForm);
-  React.useEffect(() => {
-    loadFormRef.current = loadForm;
-  }, [loadForm]);
-
-  // Persist draft on every meaningful field change
+  // Normalize stale delivered/completed fields if present while creating a new load
   React.useEffect(() => {
     if (Boolean(editingLoadId)) return;
     const rawStatus = String(loadForm.status || '').toLowerCase().trim();
@@ -1037,66 +1030,6 @@ export function LoadForm({
       });
     }
   }, [editingLoadId, loadForm.status, loadForm.driverPhase, loadForm.deliveredAt, loadForm.paperworkStatus, setLoadForm]);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-    // Never pollute the Create Load draft while editing an existing load
-    if (Boolean(editingLoadId)) return;
-    const current = loadForm;
-    const hasData = Boolean(
-      current.clientId ||
-      current.clientName ||
-      (current as any).companyName ||
-      current.cargoDescription ||
-      (current.origin as Address)?.city ||
-      (current.destination as Address)?.city ||
-      current.pickupDateTime ||
-      current.deliveryDateTime ||
-      (current.distance && current.distance > 0) ||
-      (current.ratePerMile && current.ratePerMile > 0) ||
-      current.originalClientRequestId
-    );
-    try {
-      if (hasData) {
-        localStorage.setItem(LS_LOAD_DRAFT, JSON.stringify(current));
-      } else {
-        localStorage.removeItem(LS_LOAD_DRAFT);
-      }
-    } catch (e) {
-      console.warn('Failed to update load draft', e);
-    }
-  }, [loadForm, editingLoadId]);
-
-  // Ensure clientId and all fields are serialized to persistence layer right before unmount
-  // Only persist if a draft currently exists (do not resurrect a draft cleared on submit/reset).
-  React.useEffect(() => {
-    return () => {
-      if (typeof window !== 'undefined' && loadFormRef.current) {
-        try {
-          if (localStorage.getItem(LS_LOAD_DRAFT) === null) return;
-        } catch {
-          return;
-        }
-        const current = loadFormRef.current;
-        const hasData = Boolean(
-          current.clientId ||
-          current.clientName ||
-          (current as any).companyName ||
-          current.cargoDescription ||
-          (current.origin as Address)?.city ||
-          (current.destination as Address)?.city ||
-          current.originalClientRequestId
-        );
-        if (hasData) {
-          try {
-            localStorage.setItem(LS_LOAD_DRAFT, JSON.stringify(current));
-          } catch (e) {
-            console.warn('Failed to serialize draft before unmount', e);
-          }
-        }
-      }
-    };
-  }, []);
 
   // ── Client Dropdown Binding: read clientId directly from pending request object ──────
   // Reads clientId directly from the pending request object, matches against global clients array,
@@ -1131,22 +1064,6 @@ export function LoadForm({
     ).trim();
     if (directClientName.includes('@')) {
       directClientName = '';
-    }
-
-    // Check localStorage draft if not present in request object or loadForm (never while editing an existing load)
-    if (!editingLoadId && (!directClientId || !directClientName) && typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem(LS_LOAD_DRAFT);
-        if (raw) {
-          const draft = JSON.parse(raw);
-          if (!draft.originalClientRequestId || draft.originalClientRequestId === pendingReqId || draft.originalClientRequestId === cleanId) {
-            if (!directClientId) directClientId = String(draft.clientId || '').trim();
-            if (!directClientName && draft.clientName && !String(draft.clientName).includes('@')) {
-              directClientName = String(draft.clientName).trim();
-            }
-          }
-        }
-      } catch {}
     }
 
     if (!directClientId && !directClientName) {
@@ -1232,22 +1149,6 @@ export function LoadForm({
     ) {
       lastAutoFilledOriginClientRef.current = targetClientId;
       populateOriginWithClientData(targetClientId);
-    }
-
-    // Update persistence layer (only for Create Load drafts, never while editing an existing load)
-    if (!editingLoadId && typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem(LS_LOAD_DRAFT);
-        const parsed = raw ? JSON.parse(raw) : {};
-        localStorage.setItem(LS_LOAD_DRAFT, JSON.stringify({
-          ...parsed,
-          ...loadForm,
-          clientId: targetClientId,
-          clientName: targetClientName || loadForm.clientName,
-          companyName: targetClientName || (loadForm as any).companyName,
-          originalClientRequestId: pendingReqId || parsed.originalClientRequestId,
-        }));
-      } catch {}
     }
   }, [
     appClients,
@@ -4134,6 +4035,10 @@ export function LoadForm({
                     destination: { ...emptyAddress },
                   });
                   resetLocalFormUiState();
+                  handleCancelEditLoad();
+                  if (typeof window !== 'undefined') {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
                 }}
               >
                 <RotateCcw className="mr-2 h-4 w-4" />

@@ -726,27 +726,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     hasActiveTruck && hasActiveDriver && hasTargetDailyProfit
   );
 
-  // Rehydrate draft from persistence layer if present
+  // Always start Create Load with a clean form (never rehydrate stale localStorage drafts)
   const [loadForm, setLoadForm] = useState<Partial<Load>>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const raw = localStorage.getItem('agy_load_draft');
-        if (raw) {
-          const draft = JSON.parse(raw);
-          if (draft && typeof draft === 'object') {
-            const draftStatus = String(draft.status || '').toLowerCase().trim();
-            const safeStatus = (!draftStatus || draftStatus === 'delivered' || draftStatus === 'completed')
-              ? initialLoadFormData.status
-              : draft.status;
-            const { deliveredAt: _dAt, paperworkStatus: _pStat, ...restDraft } = draft;
-            return {
-              ...initialLoadFormData,
-              ...restDraft,
-              status: safeStatus,
-              ...(String(draft.driverPhase || '').toLowerCase().trim() === 'complete' ? { driverPhase: undefined } : {}),
-            };
-          }
-        }
+        localStorage.removeItem('agy_load_draft');
       } catch {}
     }
     return initialLoadFormData;
@@ -1778,6 +1762,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setEditingLoadId(null);
     setLoadFormResetNonce(n => n + 1);
   };
+
+  // Clear Create Load form when navigating away from Loads unless explicitly editing an existing load
+  const prevActiveTabForLoadResetRef = React.useRef(activeTab);
+  React.useEffect(() => {
+    const prevTab = prevActiveTabForLoadResetRef.current;
+    prevActiveTabForLoadResetRef.current = activeTab;
+    if (prevTab === 'loads' && activeTab !== 'loads' && !editingLoadId) {
+      handleCancelEditLoad();
+    }
+  }, [activeTab, editingLoadId]);
 
   const isSavingLoadRef = React.useRef(false);
 
@@ -2995,40 +2989,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const adminRoles = ['admin', 'owner', 'company_admin'];
     if (!user || !adminRoles.includes(user.role ?? '')) return;
 
-    // Check localStorage draft first for this request
-    let cachedDraft: Partial<Load> | null = null;
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem('agy_load_draft');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          const rawId = String(request.id || '').replace(/^#/, '');
-          const parsedReqId = String(parsed?.originalClientRequestId || '').replace(/^#/, '');
-          if (parsed && (!parsed.originalClientRequestId || parsedReqId === rawId || parsed.originalClientRequestId === request.id)) {
-            cachedDraft = parsed;
-          }
-        }
-      } catch {}
-    }
-
-    // Also check active loadForm in context
-    const currentContextReqId = String(loadForm?.originalClientRequestId || '').replace(/^#/, '');
-    const cleanRequestId = String(request.id || '').replace(/^#/, '');
-    if (loadForm && (currentContextReqId === cleanRequestId || (!loadForm.originalClientRequestId && loadForm.clientId))) {
-      cachedDraft = { 
-        ...(cachedDraft || {}), 
-        ...loadForm,
-        clientId: loadForm.clientId || cachedDraft?.clientId || '',
-      };
-    }
-
     // Read clientId directly from the pending request object, ignoring email entirely
-    const reqClientId = String(
-      request.clientId ||
-      cachedDraft?.clientId ||
-      loadForm?.clientId ||
-      ''
-    ).trim();
+    const reqClientId = String(request.clientId || '').trim();
     const cleanReqClientId = reqClientId.replace(/^#/, '');
 
     // Match clientId directly against clients array
@@ -3043,37 +3005,33 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const resolvedClientName = matchingClient?.companyName || (request.companyName && !request.companyName.includes('@') ? request.companyName : '');
 
     const loadDataFromRequest: any = {
-      ...cachedDraft,
+      ...createFreshLoadForm(),
       clientId: resolvedClientId,
       clientName: resolvedClientName,
       companyName: resolvedClientName,
-      origin: cachedDraft?.origin || request.origin,
-      destination: cachedDraft?.destination || request.destination,
-      pickupDateTime: cachedDraft?.pickupDateTime || toDateTimeLocalInput(request.requestedPickupDateTime), 
-      deliveryDateTime: cachedDraft?.deliveryDateTime || toDateTimeLocalInput(request.requestedDeliveryDateTime), 
-      ratePerMile: cachedDraft?.ratePerMile ?? 0,
-      distance: cachedDraft?.distance ?? 0,
+      origin: request.origin,
+      destination: request.destination,
+      pickupDateTime: toDateTimeLocalInput(request.requestedPickupDateTime), 
+      deliveryDateTime: toDateTimeLocalInput(request.requestedDeliveryDateTime), 
+      ratePerMile: 0,
+      distance: 0,
       status: 'pending_approval',
-      cargoDescription: cachedDraft?.cargoDescription || request.cargoDescription,
-      cargoQuantity: cachedDraft?.cargoQuantity ?? request.cargoQuantity ?? 1,
-      cargoWeightNum: cachedDraft?.cargoWeightNum ?? request.cargoWeightNum,
-      cargoLength: cachedDraft?.cargoLength ?? request.cargoLength,
-      cargoWidth: cachedDraft?.cargoWidth ?? request.cargoWidth,
-      cargoHeight: cachedDraft?.cargoHeight ?? request.cargoHeight,
-      placementMode: cachedDraft?.placementMode || request.placementMode || 'standard',
-      requiresTarping: cachedDraft?.requiresTarping ?? false,
-      tarpingFee: cachedDraft?.tarpingFee ?? 0,
+      cargoDescription: request.cargoDescription,
+      cargoQuantity: request.cargoQuantity ?? 1,
+      cargoWeightNum: request.cargoWeightNum,
+      cargoLength: request.cargoLength,
+      cargoWidth: request.cargoWidth,
+      cargoHeight: request.cargoHeight,
+      placementMode: request.placementMode || 'standard',
+      requiresTarping: false,
+      tarpingFee: 0,
       originalClientRequestId: request.id,
       requestedByClientName: request.requestedByClientName,
       requestedByAuthUid: request.requestedByClientUid || reqClientId,
     };
     setLoadForm(loadDataFromRequest);
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('agy_load_draft', JSON.stringify(loadDataFromRequest));
-      } catch {}
-    }
-    setEditingLoadId(null); 
+    setEditingLoadId(null);
+    setLoadFormResetNonce(n => n + 1);
     setActiveTab('loads'); 
   
     if (!isTrialSession && !(IS_ADMIN_REVIEW_MODE && user?.uid === mockReviewUser.uid)) {

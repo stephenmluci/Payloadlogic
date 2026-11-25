@@ -60,6 +60,13 @@ export function LoadsPage() {
 
   const [innerActiveTab, setInnerActiveTab] = React.useState(editingLoadId ? "createLoad" : "createLoad");
 
+  const handleInnerTabChange = React.useCallback((nextTab: string) => {
+    if (innerActiveTab === 'createLoad' && nextTab !== 'createLoad' && !editingLoadId) {
+      handleCancelEditLoad();
+    }
+    setInnerActiveTab(nextTab);
+  }, [innerActiveTab, editingLoadId, handleCancelEditLoad]);
+
   // Handle cross-component request viewing
   React.useEffect(() => {
     if (viewClientRequestId) {
@@ -375,7 +382,7 @@ export function LoadsPage() {
 
       <DriverAvailability onSelectDriverLoad={handleSelectDriverLoad} />
       
-      <Tabs value={innerActiveTab} onValueChange={setInnerActiveTab} className="w-full">
+      <Tabs value={innerActiveTab} onValueChange={handleInnerTabChange} className="w-full">
         <TabsList className="grid w-full grid-cols-3 h-auto">
           <TabsTrigger value="createLoad" className="text-xs sm:text-sm py-2 px-1 sm:px-3">{editingLoadId ? 'Edit Load' : 'Create Load'}</TabsTrigger>
           <TabsTrigger value="clientRequests" className="text-xs sm:text-sm py-2 px-1 sm:px-3 flex items-center justify-center gap-1.5">

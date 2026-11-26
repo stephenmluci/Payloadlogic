@@ -11,26 +11,41 @@
  */
 
 export const ALLOWED_OWNER_EMAIL = 'steph@payloadlogic.app';
-export const DEFAULT_OWNER_EMAILS = [ALLOWED_OWNER_EMAIL];
+export const DEFAULT_OWNER_EMAILS = [
+  'owner@payloadlogic.app',
+  'admin@payloadlogic.app',
+  'steph@payloadlogic.app',
+  'steph@example.com',
+];
 
 export const PRIVATE_TESTING_RESTRICTION_MESSAGE =
-  'This app is currently in private testing and is only available to the owner.';
+  'Private beta – access restricted';
 
 /**
- * Retrieves the list of configured owner/admin emails.
- * In private testing mode, this is strictly the single allowed owner email.
+ * Retrieves the list of configured owner/admin emails from NEXT_PUBLIC_OWNER_EMAILS
+ * (falling back to DEFAULT_OWNER_EMAILS when unset).
  */
 export function getOwnerEmails(): string[] {
-  return [ALLOWED_OWNER_EMAIL.toLowerCase()];
+  const raw = process.env.NEXT_PUBLIC_OWNER_EMAILS;
+  if (raw && raw.trim().length > 0) {
+    const parsed = raw
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    if (parsed.length > 0) {
+      return Array.from(new Set(parsed));
+    }
+  }
+  return DEFAULT_OWNER_EMAILS.map((e) => e.toLowerCase());
 }
 
 /**
- * Checks if a given email is the designated allowed owner email.
+ * Checks if a given email is in the approved private-beta/owner email list.
  */
 export function isOwnerEmail(email?: string | null): boolean {
   if (!email) return false;
   const normalized = email.trim().toLowerCase();
-  return normalized === ALLOWED_OWNER_EMAIL.toLowerCase();
+  return getOwnerEmails().includes(normalized);
 }
 
 /**

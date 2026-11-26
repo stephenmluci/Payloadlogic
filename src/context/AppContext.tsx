@@ -887,6 +887,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
+      if (!isTrialSession && !isOwnerEmail(currentUser.email)) {
+        await signOut(auth).catch(() => {});
+        setUser(null);
+        toast({
+          variant: 'destructive',
+          title: 'Access Restricted',
+          description: PRIVATE_TESTING_RESTRICTION_MESSAGE,
+        });
+        targetDisplayState = 'auth';
+        return;
+      }
+
       let fetchedRole: 'admin' | 'client' | 'driver' | 'owner' | 'company_admin' = 'admin';
       let userProfile: UserProfile | null = null;
       let rootUserData: any = null;
@@ -1383,6 +1395,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       return null;
     }
 
+    if (!isOwnerEmail(email)) {
+      return {
+        code: 'auth/private-testing-restricted',
+        message: PRIVATE_TESTING_RESTRICTION_MESSAGE,
+      };
+    }
+
     let usdot = fmcsaCredentials?.usdotNumber?.trim() || '';
     const mc = fmcsaCredentials?.mcNumber?.trim() || '';
 
@@ -1563,6 +1582,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       toast({ title: "Admin Review Mode", description: "Review session refreshed." });
       return null;
     }
+
+    if (!isOwnerEmail(targetEmail)) {
+      return {
+        code: 'auth/private-testing-restricted',
+        message: PRIVATE_TESTING_RESTRICTION_MESSAGE,
+      };
+    }
     setIsSubmitting(true);
     try {
       let resolvedEmail = targetEmail;
@@ -1586,6 +1612,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }
       } catch {
         // Fallback to raw input if lookup fails
+      }
+
+      if (!isOwnerEmail(resolvedEmail)) {
+        return {
+          code: 'auth/private-testing-restricted',
+          message: PRIVATE_TESTING_RESTRICTION_MESSAGE,
+        };
       }
 
       await signInWithEmailAndPassword(auth, resolvedEmail, targetPassword);

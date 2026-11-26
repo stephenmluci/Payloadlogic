@@ -14,7 +14,7 @@ import { generatePassword as genPasswordAI } from '@/ai/flows/generate-password'
 import { useToast } from '@/hooks/use-toast';
 import { validateDotFormat, TRIAL_MESSAGES } from '@/lib/trial';
 import { checkDot } from '@/lib/trialClient';
-import { isOwnerEmail, ALLOWED_OWNER_EMAIL, PRIVATE_TESTING_RESTRICTION_MESSAGE } from '@/lib/authConfig';
+import { isOwnerEmail, PRIVATE_TESTING_RESTRICTION_MESSAGE } from '@/lib/authConfig';
 import { SUPPORT_EMAIL } from '@/lib/support';
 import { PayloadLogicLogo } from '@/components/brand/PayloadLogicLogo';
 
@@ -202,11 +202,20 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
       return;
     }
 
+    // Private beta access gate: only approved emails may sign in or sign up
+    const isOwner = isOwnerEmail(emailVal);
+    if (!isOwner) {
+      setAuthError({
+        code: 'auth/private-testing-restricted',
+        message: PRIVATE_TESTING_RESTRICTION_MESSAGE,
+      });
+      return;
+    }
+
     // Step 1: The FMCSA Gate (Signup Flow)
     // Carriers must provide a valid USDOT number (it anchors the 14-day free trial).
     // Client (shipper) registrations keep the original "USDOT or MC" requirement.
     // Owner / Admin accounts are exempt from the USDOT requirement.
-    const isOwner = isOwnerEmail(emailVal);
     const trimmedDot = usdotNumber.trim();
     const trimmedMc = mcNumber.trim();
     if (isSigningUp && registerAsClient && !trimmedDot && !trimmedMc) {
@@ -382,7 +391,7 @@ export function AuthPage({ email, setEmail, password, setPassword, handleSignIn,
                 {isSigningUp && email && !isOwnerEmail(email) && (
                   <p className="text-[11px] text-amber-300 font-medium flex items-center gap-1 mt-1.5">
                     <AlertCircle className="h-3 w-3 shrink-0 text-amber-400" />
-                    Private testing: only {ALLOWED_OWNER_EMAIL} is authorized.
+                    {PRIVATE_TESTING_RESTRICTION_MESSAGE}
                   </p>
                 )}
               </div>

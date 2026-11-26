@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ShieldAlert, KeyRound, ArrowRight } from 'lucide-react';
-import { ALLOWED_OWNER_EMAIL, PRIVATE_TESTING_RESTRICTION_MESSAGE } from '@/lib/authConfig';
+import { PRIVATE_TESTING_RESTRICTION_MESSAGE } from '@/lib/authConfig';
 
 interface PrivateTestingModalProps {
   open: boolean;
@@ -50,7 +50,7 @@ export function PrivateTestingModal({
             Public sign-ups, free trials, and self-registration are currently paused while PayloadLogic is in private owner-testing mode.
           </p>
           <p className="text-slate-400">
-            If you are the platform owner (<span className="text-[#ffbe24] font-medium">{ALLOWED_OWNER_EMAIL}</span>), please sign in below with your owner credentials.
+            If you have an approved private beta account, please sign in below with your credentials.
           </p>
         </div>
 

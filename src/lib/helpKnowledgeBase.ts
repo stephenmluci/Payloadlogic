@@ -186,6 +186,65 @@ export const HELP_KNOWLEDGE_BASE: HelpTopic[] = [
       'Starter plan includes 1 power unit and 1 driver login; Fleet Pro unlocks unlimited power units and team dispatching.',
     ],
   },
+  {
+    id: 'address-autofill',
+    category: 'Loads & Dispatch',
+    title: 'Address Auto-Fill (Origin & Destination)',
+    summary: 'Paste a full single-line or multi-line address block to fill Street, City, State, ZIP, and Phone automatically.',
+    details: [
+      'Works on both Origin (Pickup) and Destination (Delivery) sections on the Create Load form.',
+      'Supports single-line addresses (e.g. "1858 E. Pike Street Clarksburg, WV 26301, (304) 624-6304") and multi-line address blocks.',
+      'All auto-filled fields stay completely editable after filling.',
+    ],
+    steps: [
+      'Paste a full address directly into the Street Address field, or click "Paste Address", paste the block, and click "Fill Fields".',
+      'Review the auto-filled Street, City, State, ZIP, and Contact Phone fields and edit if needed.',
+    ],
+  },
+  {
+    id: 'same-vehicle-trips-driver-view',
+    category: 'Operations & Tracking',
+    title: 'Same-Vehicle Multi-Stop Trips & Driver View',
+    summary: 'Grouping multiple loads on the same truck in deck order (First Off / Last Off) with combined navigation and POD capture.',
+    details: [
+      'Multiple loads assigned to the same truck or driver are grouped into one sequenced trip in both Dispatcher and Driver Views.',
+      'Deck order (First Off / Last Off) sequences pickups and deliveries while each load keeps its own independent status.',
+      'Drivers see one combined navigation route across all stops and are only prompted to upload a signed BOL/POD at destination/delivery (with Take Photo as the primary option).',
+    ],
+    steps: [
+      'Assign multiple loads to the same truck/driver or multi-stop trip and set First Off / Last Off order.',
+      'In Driver View, tap status updates per stop, use the combined route navigation, and tap "Take Photo" (or upload a file) to submit the signed POD at delivery.',
+    ],
+  },
+  {
+    id: 'completed-archive-paperwork',
+    category: 'Loads & Documents',
+    title: 'Completed Loads Archive, Export & Pending Paperwork',
+    summary: 'Finding older completed loads, exporting CSV/PDF tax records, and clearing "Awaiting POD" alerts.',
+    details: [
+      'The main Loads page shows only the most recent 12 completed loads from the last 7 days so the screen stays uncluttered.',
+      'All older completed loads are preserved in the Archive tab ("View All Completed") with filters for Month, Date Range, Client, and Load ID, plus CSV and PDF export.',
+      'If any delivered load is awaiting a signed POD (or missing a Broker BOL), Overview displays it under Needs Attention instead of "You’re all caught up" until the document is uploaded.',
+    ],
+    steps: [
+      'Click "View All Completed" or the "Archive" tab on the Loads page to filter historical loads and export CSV or PDF records.',
+      'To clear an "Awaiting POD" alert on Overview, click "Upload POD" on the alert (or load card) and attach the signed POD.',
+    ],
+  },
+  {
+    id: 'ai-assistant-beta-access',
+    category: 'Support & Access',
+    title: 'AI Help Assistant & Private Beta Access',
+    summary: 'Getting instant help with the AI Assistant and understanding private beta login restrictions.',
+    details: [
+      'Drivers and dispatchers can use the AI Help Assistant on the Help & Guides page (/help) or open Help & Quick Guides from the navigation menu anytime.',
+      'During private beta testing, public signup and login are restricted to authorized accounts. Unapproved emails see a "Private beta – access restricted" notice.',
+    ],
+    steps: [
+      'Visit /help to ask the AI Help Assistant questions or browse platform guides.',
+      'Sign in with an approved beta email address to access the dashboard.',
+    ],
+  },
 ];
 
 export const STARTER_HELP_QUESTIONS = [

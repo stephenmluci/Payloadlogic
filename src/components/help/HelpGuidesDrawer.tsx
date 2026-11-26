@@ -27,6 +27,10 @@ import {
   BookOpen,
   Info,
   Mail,
+  Archive,
+  FileCheck,
+  Smartphone,
+  ShieldCheck,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { cn } from '@/lib/utils';
@@ -125,8 +129,9 @@ export function HelpGuidesDrawer({ isOpen, onClose, initialTopic = 'setup' }: He
         },
         {
           num: 2,
-          title: 'Enter Route & Shipper Details',
-          description: 'Pick an existing client (or type in a new company name) and enter pickup and delivery addresses.',
+          title: 'Enter or Auto-Fill Addresses',
+          description: 'Pick an existing client, or paste a full single-line or multi-line address block directly into the Origin or Destination Street field (or click Paste Address → Fill Fields) to auto-fill Street, City, State, ZIP, and Phone.',
+          tip: 'All auto-filled fields remain fully editable if you need to adjust a suite number or contact phone.',
         },
         {
           num: 3,
@@ -179,13 +184,13 @@ export function HelpGuidesDrawer({ isOpen, onClose, initialTopic = 'setup' }: He
         },
         {
           num: 4,
-          title: 'Monitor Deck Space & Weight Limits',
-          description: 'Watch the real-time Deck Utilization and Weight Gauges. PayloadLogic ensures your cargo fits within legal axle and trailer footage limits.',
+          title: 'Set Deck Order (First Off / Last Off)',
+          description: 'Multiple loads on the same truck/driver are grouped into one sequenced trip. Use the First Off / Last Off controls so stops appear in the exact unload order, and monitor the Deck Utilization & Weight Gauges.',
         },
         {
           num: 5,
-          title: 'Generate Consolidated Manifests',
-          description: 'Track all pickup and drop stops on one interactive map with unified route mileage and maximized revenue per mile.',
+          title: 'Combined Driver Trip & Navigation',
+          description: 'In Driver View, all loads on the same vehicle appear together as stops inside one trip with a single combined Google Maps navigation route, while each load keeps its own independent status.',
         },
       ],
     },
@@ -269,6 +274,104 @@ export function HelpGuidesDrawer({ isOpen, onClose, initialTopic = 'setup' }: He
           num: 5,
           title: 'Save to Update Net Profit',
           description: 'Saved expenses immediately update your monthly net profit and expense breakdown charts on the Dashboard.',
+        },
+      ],
+    },
+    {
+      id: 'driver-view',
+      title: 'Driver View & POD',
+      icon: Smartphone,
+      tagline: 'Mobile status updates, trip navigation, and signed BOL/POD capture.',
+      steps: [
+        {
+          num: 1,
+          title: 'Update Status One Tap at a Time',
+          description: 'Drivers update each stop’s phase (En Route, Arrived, Loading, In Transit, Delivered) from their mobile Driver View. Each load keeps its own independent status.',
+        },
+        {
+          num: 2,
+          title: 'Follow Combined Trip Navigation',
+          description: 'When multiple loads share a truck, Driver View groups them in deck order (First Off → Last Off) with a single combined navigation route across all pickups and deliveries.',
+        },
+        {
+          num: 3,
+          title: 'Upload Signed BOL / POD at Delivery',
+          description: 'The "Upload Signed BOL / POD" prompt appears once the driver reaches Arrived at Destination, Unloading, or Delivered — never while still awaiting pickup.',
+          tip: 'Use "Take Photo" as the primary camera capture option, or choose a file from your device.',
+        },
+      ],
+    },
+    {
+      id: 'archive',
+      title: 'Completed Loads & Export',
+      icon: Archive,
+      tagline: 'Keep the main Loads view clean and export tax-ready records.',
+      quickAction: {
+        label: 'Open Loads & Archive',
+        action: () => {
+          onClose();
+          setActiveTab('loads');
+        },
+      },
+      steps: [
+        {
+          num: 1,
+          title: 'Recent Completed Loads on Main View',
+          description: 'To keep your main Loads page uncluttered, it shows only the most recent 12 completed loads from the last 7 days. Older loads are never deleted.',
+        },
+        {
+          num: 2,
+          title: 'Open the Archive',
+          description: 'Click "View All Completed" or the "Archive" tab on the Loads page to see every historical completed load.',
+        },
+        {
+          num: 3,
+          title: 'Filter & Export for Bookkeeping',
+          description: 'Filter by Month, Date Range, Client, or Load ID, then click "Export CSV" or "Export PDF" to download records for taxes and accounting.',
+        },
+      ],
+    },
+    {
+      id: 'paperwork',
+      title: 'Pending Paperwork',
+      icon: FileCheck,
+      tagline: 'What "Awaiting POD" means and how to clear it.',
+      quickAction: {
+        label: 'Check Overview Alerts',
+        action: () => {
+          onClose();
+          setActiveTab('dashboard');
+        },
+      },
+      steps: [
+        {
+          num: 1,
+          title: 'What "Awaiting POD" Means',
+          description: 'A delivered load without a signed Proof of Delivery (POD) or closed paperwork shows "Awaiting Paperwork / POD" and appears under Needs Attention on your Overview.',
+        },
+        {
+          num: 2,
+          title: 'Clear the Alert by Uploading POD',
+          description: 'Click "Upload POD" from the Overview alert (or on the load card) to attach the signed POD photo or PDF. Once uploaded, the alert clears automatically.',
+        },
+      ],
+    },
+    {
+      id: 'ai-beta',
+      title: 'AI Help & Beta Access',
+      icon: ShieldCheck,
+      tagline: 'Ask the AI Assistant for help and review private beta access rules.',
+      steps: [
+        {
+          num: 1,
+          title: 'AI Help Assistant',
+          description: 'Drivers and dispatchers can open the Help & Guides page (/help) anytime to ask the AI Help Assistant questions about loads, deck planning, HOS, or paperwork.',
+        },
+        {
+          num: 2,
+          title: 'Private Beta Access Note',
+          description: 'During private beta testing, public signups and logins are restricted to authorized accounts. Unauthorized emails see a "Private beta – access restricted" notice.',
+          tip: `Need beta access or support? Email ${SUPPORT_EMAIL}.`,
         },
       ],
     },

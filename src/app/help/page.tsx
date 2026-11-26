@@ -78,7 +78,7 @@ export default function HelpAndGuidesPage() {
                 <LifeBuoy className="h-5 w-5 text-[#ffbe24]" />
                 <h2 className="text-lg font-bold text-white tracking-tight">Platform Documentation</h2>
               </div>
-              <span className="text-xs text-slate-400">7 Core Guides</span>
+              <span className="text-xs text-slate-400">Core Guides</span>
             </div>
 
             <HelpKnowledgeAccordion />

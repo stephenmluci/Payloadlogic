@@ -57,15 +57,15 @@ export function AddressFields({
 
   const applyParsedAddress = (parsed: Partial<Address>, closePastePanel = true) => {
     const updates: Partial<Address> = {
-      companyName: parsed.companyName || '',
+      ...(parsed.companyName ? { companyName: parsed.companyName } : {}),
       street: parsed.street || '',
       city: parsed.city || '',
       state: parsed.state || '',
       zip: parsed.zip || '',
       ...(!hideContact
         ? {
-            contactName: parsed.contactName || '',
-            contactPhone: parsed.contactPhone || '',
+            ...(parsed.contactName ? { contactName: parsed.contactName } : {}),
+            ...(parsed.contactPhone ? { contactPhone: parsed.contactPhone } : {}),
           }
         : {}),
     };
@@ -130,7 +130,9 @@ export function AddressFields({
     const text = e.clipboardData?.getData('text/plain') || e.clipboardData?.getData('text') || '';
     if (!text) return;
     const parsed = parseAddressBlock(text, hideCompany);
-    if (!parsed) return; // single-line street-only paste — let browser handle it normally
+    if (!parsed || !parsed.street || (!parsed.city && !parsed.state && !parsed.zip)) {
+      return; // single-line street-only paste — let browser handle it normally
+    }
     e.preventDefault();
     applyParsedAddress(parsed, true);
   };
@@ -139,7 +141,7 @@ export function AddressFields({
     const text = e.dataTransfer?.getData('text/plain') || e.dataTransfer?.getData('text') || '';
     if (!text) return;
     const parsed = parseAddressBlock(text, hideCompany);
-    if (!parsed) return;
+    if (!parsed || !parsed.street || (!parsed.city && !parsed.state && !parsed.zip)) return;
     e.preventDefault();
     applyParsedAddress(parsed, true);
   };
@@ -147,10 +149,11 @@ export function AddressFields({
   const handleSmartInput = (field: 'companyName' | 'street', value: string) => {
     const prevValue = field === 'street' ? (safeAddress.street || '') : (safeAddress.companyName || '');
     const isBulkInsert = value.length - prevValue.length >= 10;
+    const looksLikeFullAddress = /\b[A-Za-z]{2}\s*,?\s*\d{5}(?:-\d{4})?\b/.test(value);
 
-    if (isBulkInsert || (value.includes(',') && /\b\d{5}(?:-\d{4})?\b/.test(value))) {
+    if (isBulkInsert || looksLikeFullAddress) {
       const parsed = parseAddressBlock(value, hideCompany);
-      if (parsed && parsed.street && (parsed.city || parsed.zip)) {
+      if (parsed && parsed.street && (parsed.city || parsed.state || parsed.zip)) {
         applyParsedAddress(parsed, true);
         return;
       }

@@ -142,10 +142,10 @@ export function extractPhoneFromAddressText(line: string): { phone?: string; rem
     }
   }
 
-  // Unlabeled formatted phone inside/at the end of a single-line address
-  // e.g. "1858 E. Pike Street Clarksburg, WV 26301, (304) 624-6304"
+  // Unlabeled formatted or 10-digit phone inside/at the end of a single-line address
+  // e.g. "1858 E. Pike Street Clarksburg, WV 26301, (304) 624-6304" or "..., 3046246304"
   const inlineFormattedPhoneRegex =
-    /(?:[,;|/]|(?:\s+-\s+)|\s|^)(?:\+?1[\s.\-]?)?(\(\d{3}\)\s*\d{3}[\s.\-]?\d{4}|\d{3}[\-.\s]\d{3}[\-.]\d{4})(?:\s*(?:ext\.?|x)\s*\d+)?(?=\s*(?:[,;|/.]|$))/i;
+    /(?:[,;|/]|(?:\s+-\s+)|\s|^)(?:\+?1[\s.\-]?)?(\(\d{3}\)\s*\d{3}[\s.\-]?\d{4}|\d{3}[\-.\s]\d{3}[\-.]\d{4}|\d{10})(?:\s*(?:ext\.?|x)\s*\d+)?(?=\s*(?:[,;|/.]|$))/i;
   const inlineMatch = normalizedLine.match(inlineFormattedPhoneRegex);
   if (inlineMatch) {
     const digits = sanitizePhoneDigits(inlineMatch[1]);
@@ -269,6 +269,13 @@ export function parseAddressBlock(raw: string, hideCompany?: boolean): Partial<A
     if (parts.length >= 2) {
       for (let tailLen = Math.min(3, parts.length); tailLen >= 1; tailLen--) {
         if (tailLen > 1 && /^\d+\s+/.test(parts[parts.length - tailLen])) continue;
+        // Only use 3 comma-parts for the tail when the format is "City, ST, ZIP"
+        if (
+          tailLen === 3 &&
+          !(/^\d{5}(?:-\d{4})?$/.test(parts[parts.length - 1]) && /^[A-Za-z]{2}$/.test(parts[parts.length - 2]))
+        ) {
+          continue;
+        }
         const tail = parts.slice(parts.length - tailLen).join(', ');
         const parsedTail = parseCityStateZip(tail);
         if (parsedTail && (parsedTail.city || parsedTail.zip)) {

@@ -11,7 +11,9 @@ import { ClientLoadRequestCard } from './ClientLoadRequestCard';
 import { TripManagement } from './TripManagement';
 import { TripGroupCard } from './TripGroupCard';
 import { DriverAvailability } from './DriverAvailability';
-import { PackageOpen, FileInput, Printer, FileText } from 'lucide-react';
+import { PackageOpen, FileInput, Printer, FileText, Archive } from 'lucide-react';
+import { getRecentCompletedLoads, RECENT_COMPLETED_MAX_COUNT, RECENT_COMPLETED_MAX_DAYS } from '@/lib/loadArchive';
+import { CompletedLoadsArchive } from './CompletedLoadsArchive';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useApp } from '@/context/AppContext';
@@ -265,7 +267,21 @@ export function LoadsPage() {
 
   const uniqueLoads = React.useMemo(() => deduplicateLoads(loads).unique, [loads]);
   const activeLoads = uniqueLoads.filter(load => !isLoadCompleted(load));
-  const completedLoads = uniqueLoads.filter(load => isLoadCompleted(load));
+  const completedLoads = React.useMemo(
+    () => uniqueLoads.filter(load => isLoadCompleted(load)),
+    [uniqueLoads],
+  );
+  const recentCompletedLoads = React.useMemo(
+    () => getRecentCompletedLoads(completedLoads),
+    [completedLoads],
+  );
+
+  const openArchiveView = React.useCallback(() => {
+    handleInnerTabChange('archive');
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [handleInnerTabChange]);
 
   // Split active loads into multi-stop vehicle trips vs. independent single loads.
   // Automatically groups multiple active loads sharing the same truck, driver, or explicit Trip,
@@ -383,7 +399,7 @@ export function LoadsPage() {
       <DriverAvailability onSelectDriverLoad={handleSelectDriverLoad} />
       
       <Tabs value={innerActiveTab} onValueChange={handleInnerTabChange} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 h-auto">
+        <TabsList className="grid w-full grid-cols-4 h-auto">
           <TabsTrigger value="createLoad" className="text-xs sm:text-sm py-2 px-1 sm:px-3">{editingLoadId ? 'Edit Load' : 'Create Load'}</TabsTrigger>
           <TabsTrigger value="clientRequests" className="text-xs sm:text-sm py-2 px-1 sm:px-3 flex items-center justify-center gap-1.5">
             Requests ({newClientRequests.length})
@@ -394,6 +410,7 @@ export function LoadsPage() {
             )}
           </TabsTrigger>
           <TabsTrigger value="tripManagement" className="text-xs sm:text-sm py-2 px-1 sm:px-3">Trips ({trips.length})</TabsTrigger>
+          <TabsTrigger value="archive" className="text-xs sm:text-sm py-2 px-1 sm:px-3">Archive ({completedLoads.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="createLoad">
@@ -554,9 +571,31 @@ export function LoadsPage() {
             <TripManagement />
           </div>
         </TabsContent>
+        <TabsContent value="archive">
+          <CompletedLoadsArchive
+            completedLoads={completedLoads}
+            allLoads={loads}
+            clients={clients}
+            settings={settings}
+            vehicles={vehicles}
+            driverProfiles={driverProfiles}
+            expenses={expenses}
+            trips={trips}
+            onStatusChange={(id, status) => updateLoad(id, { status })}
+            onUpdateDelivery={(id, dt) => updateLoad(id, { deliveryDateTime: dt })}
+            onGenerateAgreement={generateAgreement}
+            onGenerateInvoice={generateInvoice}
+            onGenerateSettlement={handleGenerateSettlement}
+            onEdit={handleEditLoadCard}
+            onDelete={handleDeleteLoad}
+            calculateVehicleCPM={calculateVehicleCPM}
+            onBack={() => handleInnerTabChange('createLoad')}
+          />
+        </TabsContent>
       </Tabs>
 
-      
+      {innerActiveTab !== 'archive' && (
+      <>
       <div className="mt-10">
           <h2 className="text-xl sm:text-2xl font-semibold font-headline mb-1">Active Loads ({activeLoads.length})</h2>
           <p className="text-sm text-muted-foreground mb-4">
@@ -627,10 +666,30 @@ export function LoadsPage() {
       </div>
 
       <div className="mt-10">
-        <h2 className="text-xl sm:text-2xl font-semibold font-headline mb-4">Completed Loads ({completedLoads.length})</h2>
-        {completedLoads.length > 0 ? (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-semibold font-headline">
+              Completed Loads ({recentCompletedLoads.length})
+            </h2>
+            <p className="text-xs sm:text-sm text-muted-foreground">
+              Showing up to {RECENT_COMPLETED_MAX_COUNT} most recent loads from the last {RECENT_COMPLETED_MAX_DAYS} days
+              {completedLoads.length > 0 ? ` · ${completedLoads.length} total completed` : ''}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={openArchiveView}
+            className="self-start sm:self-auto border-slate-300 text-slate-700 hover:bg-slate-100 font-semibold"
+          >
+            <Archive className="mr-2 h-4 w-4 text-blue-600" />
+            View All Completed ({completedLoads.length})
+          </Button>
+        </div>
+        {recentCompletedLoads.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {completedLoads.map(load => (
+            {recentCompletedLoads.map(load => (
               <LoadCard 
                 key={load.id}
                 load={load}
@@ -651,6 +710,25 @@ export function LoadsPage() {
               />
             ))}
           </div>
+        ) : completedLoads.length > 0 ? (
+          <div className="text-center py-10 px-4 bg-white border border-dashed border-slate-200 rounded-2xl shadow-xs">
+            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-3">
+              <Archive className="h-6 w-6" />
+            </div>
+            <h3 className="font-semibold text-slate-800 text-base">No loads completed in the last {RECENT_COMPLETED_MAX_DAYS} days</h3>
+            <p className="text-sm text-slate-500 max-w-md mx-auto mt-1 mb-4">
+              {completedLoads.length} older completed load{completedLoads.length === 1 ? ' is' : 's are'} stored in the Archive for filtering and tax/bookkeeping export.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={openArchiveView}
+              className="text-xs font-semibold text-blue-600 border-blue-200 hover:bg-blue-50 rounded-lg"
+            >
+              Open Archive ({completedLoads.length})
+            </Button>
+          </div>
         ) : (
            <div className="text-center py-12 px-4 bg-white border border-dashed border-slate-200 rounded-2xl shadow-xs">
             <div className="w-12 h-12 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-3">
@@ -663,6 +741,8 @@ export function LoadsPage() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Interactive Settlement View Modal */}
       <Dialog open={isSettlementModalOpen} onOpenChange={setIsSettlementModalOpen}>

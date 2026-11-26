@@ -51,7 +51,8 @@ env:
       - BUILD
       - RUNTIME
   - variable: NEXT_PUBLIC_OWNER_EMAILS
-    value: "owner@payloadlogic.app,admin@payloadlogic.app,steph@payloadlogic.app,steph@example.com"
+    value: "owner@payloadlogic.app,admin@payloadlogic.app,steph@payloadlogic.app,st\
+      eph@example.com"
     availability:
       - BUILD
       - RUNTIME

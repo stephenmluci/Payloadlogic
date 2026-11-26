@@ -102,7 +102,7 @@ export function TransitMapModal({
     let isCancelled = false;
     async function initModalMap() {
       if (typeof window === 'undefined' || !mapContainerRef.current) return;
-      const apiKey = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '').trim();
+      const apiKey = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '').trim();
 
       // Catch Google Maps authentication or activation errors (e.g. ApiNotActivatedMapError)
       (window as any).gm_authFailure = () => {

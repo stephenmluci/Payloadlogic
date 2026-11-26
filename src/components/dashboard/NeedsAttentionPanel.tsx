@@ -7,13 +7,14 @@ import { getLoadDisplayId } from '@/lib/displayId';
 import {
   deduplicateLoads,
   doesDriverLocationMatchDestination,
+  hasLoadPod,
   isLoadCompleted,
 } from '@/lib/loadStatus';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
-  AlertTriangle, CheckCircle2, Clock, UserX, Inbox, Timer, ArrowRight, Plus, Users, Settings2, Sparkles, Info,
+  AlertTriangle, CheckCircle2, Clock, UserX, Inbox, Timer, ArrowRight, Plus, Users, Settings2, Sparkles, Info, FileText,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
@@ -60,12 +61,27 @@ export function NeedsAttentionPanel() {
     setActiveTab, handleStartEditLoad, setViewClientRequestId, openFleetFinancialSetup, updateLoad,
   } = useApp();
 
+  const uniqueLoads = React.useMemo(() => deduplicateLoads(loads).unique, [loads]);
   const activeLoads = React.useMemo(
-    () => deduplicateLoads(loads).unique.filter(l => !isLoadCompleted(l)),
-    [loads]
+    () => uniqueLoads.filter(l => !isLoadCompleted(l)),
+    [uniqueLoads]
+  );
+  const completedLoads = React.useMemo(
+    () => uniqueLoads.filter(l => isLoadCompleted(l)),
+    [uniqueLoads]
   );
 
   const editLoad = (load: Load) => { handleStartEditLoad(load); setActiveTab('loads'); };
+  const openLoadDocuments = (load: Load) => {
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('payloadlogic_load_jump_section', 'section-bol');
+      } catch {
+        // Non-fatal
+      }
+    }
+    editLoad(load);
+  };
   const assignDriverToLoad = (load: Load) => {
     if (typeof window !== 'undefined') {
       try {
@@ -157,9 +173,32 @@ export function NeedsAttentionPanel() {
       onClick: () => setActiveTab('operations'),
     }));
 
+  // 5. Pending paperwork: completed loads awaiting signed POD, or active loads missing required Broker BOL
+  const pendingPaperwork: Row[] = [
+    ...completedLoads
+      .filter(l => !hasLoadPod(l))
+      .map<Row>(l => ({
+        key: `pod-${l.id}`,
+        title: `${loadName(l)} — awaiting signed POD`,
+        detail: `Delivered load is awaiting signed Proof of Delivery (POD). ${route(l)}`,
+        actionLabel: 'Upload POD',
+        onClick: () => openLoadDocuments(l),
+      })),
+    ...activeLoads
+      .filter(l => l.bolSource === 'broker' && !l.outboundBolUrl)
+      .map<Row>(l => ({
+        key: `bol-${l.id}`,
+        title: `${loadName(l)} — missing Broker BOL`,
+        detail: `Broker-provided BOL has not been attached yet. ${route(l)}`,
+        actionLabel: 'Attach BOL',
+        onClick: () => openLoadDocuments(l),
+      })),
+  ];
+
   const groups: Group[] = [
     { id: 'status', label: 'Needs a status update', icon: <Clock className="h-4 w-4" />, tone: 'bg-amber-100 text-amber-700', rows: needsStatus, moreLabel: 'See all loads', onMore: () => setActiveTab('loads') },
     { id: 'unassigned', label: 'Unassigned loads', icon: <UserX className="h-4 w-4" />, tone: 'bg-red-100 text-red-700', rows: unassigned, moreLabel: 'See all loads', onMore: () => setActiveTab('loads') },
+    { id: 'paperwork', label: 'Pending paperwork', icon: <FileText className="h-4 w-4" />, tone: 'bg-orange-100 text-orange-700', rows: pendingPaperwork, moreLabel: 'See all loads', onMore: () => setActiveTab('loads') },
     { id: 'requests', label: 'Client requests', icon: <Inbox className="h-4 w-4" />, tone: 'bg-blue-100 text-blue-700', rows: requestRows, moreLabel: 'Open requests', onMore: openRequests },
     { id: 'hos', label: 'Low hours of service', icon: <Timer className="h-4 w-4" />, tone: 'bg-purple-100 text-purple-700', rows: lowHos, moreLabel: 'Open Command Center', onMore: () => setActiveTab('operations') },
   ].filter(g => g.rows.length > 0);
@@ -207,7 +246,7 @@ export function NeedsAttentionPanel() {
         <div className="rounded-xl bg-emerald-100 p-2.5 text-emerald-600"><CheckCircle2 className="h-6 w-6" /></div>
         <div>
           <h2 className="text-lg font-bold text-slate-800">You’re all caught up</h2>
-          <p className="text-sm text-slate-500">No overdue statuses, unassigned loads, pending requests or low-HOS drivers right now.</p>
+          <p className="text-sm text-slate-500">No overdue statuses, unassigned loads, pending paperwork, pending requests or low-HOS drivers right now.</p>
         </div>
       </Card>
     );
@@ -238,7 +277,7 @@ export function NeedsAttentionPanel() {
                     What tracks here?
                   </p>
                   <p className="text-slate-600 leading-snug">
-                    Real-time operational watchdog. Automatically surfaces unassigned loads, client load requests waiting for approval, overdue pickup/delivery windows, and low driver HOS hours.
+                    Real-time operational watchdog. Automatically surfaces unassigned loads, client load requests waiting for approval, overdue pickup/delivery windows, pending paperwork (missing POD or Broker BOL), and low driver HOS hours.
                   </p>
                   <p className="text-[11px] text-slate-500 pt-1 border-t border-slate-100">
                     When all loads and drivers are on schedule, this panel automatically clears.

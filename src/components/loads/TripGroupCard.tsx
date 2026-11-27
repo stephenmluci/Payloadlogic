@@ -15,9 +15,10 @@ import {
   Navigation2,
   Layers,
   MapPin,
+  CheckCircle2,
 } from 'lucide-react';
 import { getDispatcherStatusLabel } from './LoadCard';
-import { getUnifiedLoadStatusDisplay } from '@/lib/loadStatus';
+import { getUnifiedLoadStatusDisplay, normalizeLoadStatus } from '@/lib/loadStatus';
 import {
   buildChronologicalTripStops,
   computeDeckPositions,
@@ -63,6 +64,8 @@ export function TripGroupCard({
 }: TripGroupCardProps) {
   const [expanded, setExpanded] = React.useState(defaultExpanded);
   const [isReordering, setIsReordering] = React.useState(false);
+  const [approvingLoadIds, setApprovingLoadIds] = React.useState<Record<string, boolean>>({});
+  const [isApprovingAll, setIsApprovingAll] = React.useState(false);
 
   // Order loads by Deck Unload Order: Deck #1 • First Off -> ... -> Deck #N • Last Off
   const ordered = React.useMemo(
@@ -113,6 +116,36 @@ export function TripGroupCard({
   const totalWeight = ordered.reduce((sum, l) => sum + ((l.cargoWeightNum || 0) * (l.cargoQuantity || 1)), 0);
   const totalDeckFt = ordered.reduce((sum, l) => sum + ((l.cargoLength || 0) * (l.cargoQuantity || 1)), 0);
   const totalRevenue = ordered.reduce((sum, l) => sum + (Number(l.totalAgreedRate) || 0), 0);
+
+  const pendingApprovalLoads = React.useMemo(
+    () => ordered.filter(l => Boolean(l.id) && normalizeLoadStatus(l.status) === 'pending_approval'),
+    [ordered]
+  );
+  const allPendingApproval = ordered.length > 0 && pendingApprovalLoads.length === ordered.length;
+
+  const handleApproveLoad = async (loadId: string) => {
+    if (!onUpdateLoad || approvingLoadIds[loadId]) return;
+    setApprovingLoadIds(prev => ({ ...prev, [loadId]: true }));
+    try {
+      await Promise.resolve(onUpdateLoad(loadId, { status: 'approved' }));
+    } finally {
+      setApprovingLoadIds(prev => ({ ...prev, [loadId]: false }));
+    }
+  };
+
+  const handleApproveAll = async () => {
+    if (!onUpdateLoad || isApprovingAll || pendingApprovalLoads.length === 0) return;
+    setIsApprovingAll(true);
+    try {
+      await Promise.all(
+        pendingApprovalLoads.map(l =>
+          l.id ? Promise.resolve(onUpdateLoad(l.id, { status: 'approved' })) : Promise.resolve()
+        )
+      );
+    } finally {
+      setIsApprovingAll(false);
+    }
+  };
 
   const handleMoveDeckPosition = async (index: number, direction: -1 | 1) => {
     if (!onUpdateLoad || isReordering) return;
@@ -187,6 +220,19 @@ export function TripGroupCard({
         </button>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
+          {allPendingApproval && onUpdateLoad && (
+            <Button
+              type="button"
+              size="sm"
+              disabled={isApprovingAll}
+              onClick={handleApproveAll}
+              className="h-8 px-3 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-2xs"
+              title="Approve all pending loads in this multi-stop trip"
+            >
+              <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+              {isApprovingAll ? 'Approving…' : 'Approve All'}
+            </Button>
+          )}
           {tripItineraryStops.length > 0 && (
             <a
               href={combinedMapsUrl}
@@ -324,6 +370,20 @@ export function TripGroupCard({
                       <ArrowDown className="h-3 w-3" />
                     </Button>
                   </div>
+                )}
+
+                {l.id && normalizeLoadStatus(l.status) === 'pending_approval' && onUpdateLoad && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={Boolean(approvingLoadIds[l.id]) || isApprovingAll}
+                    onClick={() => handleApproveLoad(l.id!)}
+                    className="h-7 px-2.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shrink-0"
+                    title="Approve this load and mark ready for dispatch"
+                  >
+                    <CheckCircle2 className="mr-1 h-3 w-3" />
+                    {approvingLoadIds[l.id] ? 'Approving…' : 'Approve'}
+                  </Button>
                 )}
 
                 <Badge variant="outline" className={`${s.color} shrink-0 border-none font-semibold shadow-xs`}>

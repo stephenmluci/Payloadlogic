@@ -65,7 +65,25 @@ export function DispatcherDateTimePicker({
   const handleDateSelect = (selectedDate: Date | undefined) => {
     setDate(selectedDate);
     if (selectedDate) {
-      notifyChange(selectedDate, time24 || '08:00');
+      let effectiveTime = time24 || '08:00';
+      if (!value) {
+        const now = new Date();
+        const candidate = new Date(selectedDate);
+        const [h, m] = effectiveTime.split(':').map(Number);
+        candidate.setHours(isNaN(h) ? 8 : h, isNaN(m) ? 0 : m, 0, 0);
+        if (candidate.getTime() < now.getTime()) {
+          const nextSlot = new Date(Math.ceil((now.getTime() + 5 * 60_000) / (30 * 60_000)) * (30 * 60_000));
+          if (
+            nextSlot.getFullYear() === selectedDate.getFullYear() &&
+            nextSlot.getMonth() === selectedDate.getMonth() &&
+            nextSlot.getDate() === selectedDate.getDate()
+          ) {
+            effectiveTime = format(nextSlot, 'HH:mm');
+            setTime24(effectiveTime);
+          }
+        }
+      }
+      notifyChange(selectedDate, effectiveTime);
     }
   };
 

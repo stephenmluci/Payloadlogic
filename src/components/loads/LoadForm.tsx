@@ -3,7 +3,7 @@ import { type Load, type Client, type Trip, type Vehicle, type DriverProfile, is
 import { calculateTripMetrics, computeCargoLinearFootprint, calculateTimeProratedOverheadDays } from '@/lib/logisticsEngine';
 import { getDriverProfileId } from '@/lib/driverAssignment';
 import { vehicleToEngineTruck, vehicleToEngineTrailer, loadToCargoItem } from '@/lib/logisticsAdapters';
-import { calculateHOSTransit, calculateHOSTransitEstimate, toDateTimeLocal } from '@/lib/hosEngine';
+import { calculateHOSTransit, calculateHOSTransitEstimate, calculateEarliestPickupDateTime, toDateTimeLocal } from '@/lib/hosEngine';
 import { calculateCustomerRateBreakdown, getDriverGpsCoords, estimateRoadMilesBetweenCoords } from '@/lib/loadPricing';
 import { isVehicleCargo, calculateVehicleMarketReference } from '@/lib/vehicleMarketRates';
 import { computeCompliance } from '@/lib/complianceEngine';
@@ -149,10 +149,14 @@ export function LoadForm({
     setShowValidationAlert(false);
   }, [editingLoadId]);
   const outboundFileInputRef = React.useRef<HTMLInputElement>(null);
+  const isPickupManualRef = React.useRef(false);
   const isDeliveryManualRef = React.useRef(false);
+  const [pickupAutoNote, setPickupAutoNote] = React.useState<string | null>(null);
 
   React.useEffect(() => {
+    isPickupManualRef.current = Boolean(editingLoadId && loadForm.pickupDateTime);
     isDeliveryManualRef.current = Boolean(editingLoadId && loadForm.deliveryDateTime);
+    setPickupAutoNote(null);
     // Only reset manual-override tracking when switching between create and edit targets.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingLoadId]);
@@ -162,7 +166,9 @@ export function LoadForm({
   const [showValidationAlert, setShowValidationAlert] = React.useState(false);
   const wasSubmittingRef = React.useRef(false);
   const resetLocalFormUiState = React.useCallback(() => {
+    isPickupManualRef.current = false;
     isDeliveryManualRef.current = false;
+    setPickupAutoNote(null);
     setDestinationClientId('');
     setLastCalculatedRoute('');
     setLastCalculatedDriver('');
@@ -356,11 +362,61 @@ export function LoadForm({
     [hosEstimate],
   );
 
-  // Auto-apply suggested delivery when deliveryDateTime is still empty (e.g. pickup set before miles).
+  // Auto-fill earliest realistic Pickup Date & Time (never in the past, and after any prior stop on the same trip/vehicle)
   React.useEffect(() => {
-    if (suggestedDeliveryLocal && !loadForm.deliveryDateTime && !isDeliveryManualRef.current) {
+    if (editingLoadId || isPickupManualRef.current) return;
+    const hasSchedulingTrigger = Boolean(
+      (loadForm.distance && loadForm.distance > 0) ||
+      (loadForm.ratePerMile && loadForm.ratePerMile > 0) ||
+      (loadForm.cargoDescription && loadForm.cargoDescription.trim().length > 0) ||
+      (loadForm.tripId && loadForm.tripId !== 'none' && loadForm.tripId !== 'auto-create')
+    );
+    if (!hasSchedulingTrigger) return;
+
+    const earliest = calculateEarliestPickupDateTime({
+      loads: (appLoads && appLoads.length > 0) ? appLoads : loads,
+      trips,
+      tripId: loadForm.tripId,
+      assignedTruckId: loadForm.assignedTruckId,
+      assignedDriverId: loadForm.assignedDriverId,
+      editingLoadId,
+      deadheadMiles: effectiveDeadheadMiles,
+      averageSpeedMph: settings?.truckAverageSpeed || 55,
+    });
+
+    const currentPickupMs = loadForm.pickupDateTime ? Date.parse(loadForm.pickupDateTime) : NaN;
+    const shouldInit = !loadForm.pickupDateTime;
+    const shouldBumpForPastOrPriorStop =
+      !isNaN(currentPickupMs) &&
+      (currentPickupMs < Date.now() - 60_000 ||
+        (earliest.basedOnPriorStop && currentPickupMs < earliest.earliestPickup.getTime()));
+
+    if (shouldInit || shouldBumpForPastOrPriorStop) {
+      setLoadForm(prev => ({ ...prev, pickupDateTime: earliest.earliestPickupLocal }));
+      setPickupAutoNote(earliest.reason);
+    }
+  }, [
+    editingLoadId,
+    loadForm.distance,
+    loadForm.ratePerMile,
+    loadForm.cargoDescription,
+    loadForm.tripId,
+    loadForm.assignedTruckId,
+    loadForm.assignedDriverId,
+    loadForm.pickupDateTime,
+    effectiveDeadheadMiles,
+    settings?.truckAverageSpeed,
+    appLoads,
+    loads,
+    trips,
+    setLoadForm,
+  ]);
+
+  // Auto-apply suggested delivery when deliveryDateTime is still empty or not manually overridden
+  React.useEffect(() => {
+    if (suggestedDeliveryLocal && (!loadForm.deliveryDateTime || !isDeliveryManualRef.current)) {
       setLoadForm(prev =>
-        prev.deliveryDateTime ? prev : { ...prev, deliveryDateTime: suggestedDeliveryLocal },
+        prev.deliveryDateTime === suggestedDeliveryLocal ? prev : { ...prev, deliveryDateTime: suggestedDeliveryLocal },
       );
     }
   }, [suggestedDeliveryLocal, loadForm.deliveryDateTime, setLoadForm]);
@@ -2272,6 +2328,8 @@ export function LoadForm({
                         value={loadForm.pickupDateTime || ''}
                         hasError={showValidationAlert && loadValidation.missingFieldKeys.has('pickupDateTime')}
                         onChange={(val) => {
+                          isPickupManualRef.current = Boolean(val);
+                          setPickupAutoNote(null);
                           setLoadForm(prev => {
                             const prevDeadhead =
                               (prev.assignedDriverId && prev.assignedDriverId !== 'none') ||
@@ -2298,6 +2356,12 @@ export function LoadForm({
                           });
                         }}
                       />
+                      {pickupAutoNote && (
+                        <p className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-blue-700 font-medium">
+                          <Clock className="h-3 w-3 text-blue-600 shrink-0" />
+                          <span>{pickupAutoNote}</span>
+                        </p>
+                      )}
                     </div>
                     <div>
                       <Label htmlFor="deliveryDateTime">

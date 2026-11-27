@@ -74,6 +74,110 @@ export function toDateTimeLocal(date: Date): string {
   return local.toISOString().slice(0, 16);
 }
 
+export interface EarliestPickupResult {
+  earliestPickup: Date;
+  earliestPickupLocal: string;
+  reason: string;
+  basedOnPriorStop: boolean;
+}
+
+/**
+ * Calculates the earliest realistic Pickup Date & Time.
+ * - Never returns a time in the past (rounds up to the next 30-minute slot from `now`).
+ * - When adding to an existing trip or assigning a truck/driver with active loads,
+ *   accounts for the latest prior stop's estimated completion plus turnaround/deadhead time.
+ */
+export function calculateEarliestPickupDateTime(params: {
+  loads?: Array<{
+    id?: string;
+    tripId?: string;
+    assignedTruckId?: string;
+    assignedDriverId?: string;
+    status?: string | null;
+    driverPhase?: string | null;
+    deliveredAt?: string | null;
+    paperworkStatus?: string | null;
+    pickupDateTime?: string | null;
+    deliveryDateTime?: string | null;
+    distance?: number;
+  }>;
+  trips?: Array<{ id: string; assignedTruckId?: string; assignedDriverId?: string }>;
+  tripId?: string;
+  assignedTruckId?: string;
+  assignedDriverId?: string;
+  editingLoadId?: string | null;
+  deadheadMiles?: number;
+  averageSpeedMph?: number;
+  now?: Date;
+}): EarliestPickupResult {
+  const nowMs = (params.now ?? new Date()).getTime();
+  const speed = params.averageSpeedMph && params.averageSpeedMph > 0 ? params.averageSpeedMph : HOS_AVG_SPEED_MPH;
+  const deadheadMs =
+    params.deadheadMiles && params.deadheadMiles > 0
+      ? (params.deadheadMiles / speed) * 3_600_000
+      : 0;
+
+  // Baseline: at least 5 minutes from now + deadhead, rounded up to the next 30-minute slot
+  const roundUp30Min = (ms: number) => Math.ceil(ms / (30 * 60_000)) * (30 * 60_000);
+  let earliestMs = roundUp30Min(nowMs + 5 * 60_000 + deadheadMs);
+  let basedOnPriorStop = false;
+
+  const targetTripId = params.tripId && params.tripId !== 'none' && params.tripId !== 'auto-create' ? params.tripId : '';
+  const targetTruckId = params.assignedTruckId && params.assignedTruckId !== 'none' ? params.assignedTruckId : '';
+  const targetDriverId = params.assignedDriverId && params.assignedDriverId !== 'none' ? params.assignedDriverId : '';
+
+  if ((targetTripId || targetTruckId || targetDriverId) && Array.isArray(params.loads)) {
+    const isFinished = (l: NonNullable<typeof params.loads>[number]) => {
+      const s = (l.status || '').toLowerCase().trim();
+      const p = (l.driverPhase || '').toLowerCase().trim();
+      return s === 'delivered' || s === 'completed' || p === 'complete' || Boolean(l.deliveredAt);
+    };
+
+    const matchingActiveLoads = params.loads.filter((l) => {
+      if (params.editingLoadId && l.id === params.editingLoadId) return false;
+      if (isFinished(l)) return false;
+      if (targetTripId && l.tripId === targetTripId) return true;
+      if (targetTruckId && l.assignedTruckId === targetTruckId) return true;
+      if (targetDriverId && l.assignedDriverId === targetDriverId) return true;
+      return false;
+    });
+
+    let latestCompletionMs = 0;
+    for (const l of matchingActiveLoads) {
+      let endMs = l.deliveryDateTime ? Date.parse(l.deliveryDateTime) : NaN;
+      if (isNaN(endMs) && l.pickupDateTime) {
+        const startMs = Date.parse(l.pickupDateTime);
+        if (!isNaN(startMs)) {
+          const estHours = (l.distance && l.distance > 0 ? l.distance : 100) / speed;
+          endMs = startMs + estHours * 3_600_000;
+        }
+      }
+      if (!isNaN(endMs) && endMs > latestCompletionMs) {
+        latestCompletionMs = endMs;
+      }
+    }
+
+    if (latestCompletionMs > 0) {
+      // 30-minute unload/turnaround buffer + deadhead transit after prior stop completes
+      const afterPriorMs = roundUp30Min(latestCompletionMs + 30 * 60_000 + deadheadMs);
+      if (afterPriorMs > earliestMs) {
+        earliestMs = afterPriorMs;
+        basedOnPriorStop = true;
+      }
+    }
+  }
+
+  const earliestPickup = new Date(earliestMs);
+  return {
+    earliestPickup,
+    earliestPickupLocal: toDateTimeLocal(earliestPickup),
+    reason: basedOnPriorStop
+      ? 'Adjusted to earliest available time after prior stop'
+      : 'Adjusted to earliest available time',
+    basedOnPriorStop,
+  };
+}
+
 /**
  * Computes the earliest feasible delivery date/time and HOS transit breakdown
  * from miles, pickup date/time, and driver HOS options.

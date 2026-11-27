@@ -124,11 +124,12 @@ export default function HelpAndGuidesPage() {
           <Link href="/" className="hover:opacity-90 transition-opacity">
             <PayloadLogicLogo variant="compact" iconSize={26} />
           </Link>
-          <div className="flex items-center gap-6 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center gap-6 text-xs text-slate-500">
             <Link href="/" className="hover:text-slate-400 transition-colors">Home</Link>
             <Link href="/pricing" className="hover:text-slate-400 transition-colors">Pricing</Link>
             <Link href="/privacy-policy" className="hover:text-slate-400 transition-colors">Privacy</Link>
             <Link href="/terms-of-service" className="hover:text-slate-400 transition-colors">Terms</Link>
+            <Link href="/refund-policy" className="hover:text-slate-400 transition-colors">Refund Policy</Link>
             <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-slate-400 transition-colors">Support</a>
             <span>© {new Date().getFullYear()} PayloadLogic</span>
           </div>

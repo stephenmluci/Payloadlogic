@@ -14,12 +14,15 @@ export function AppFooter() {
             By using this site, you automatically agree to our Terms of Service and Privacy Policy.
           </p>
         </div>
-        <div className="flex items-center gap-6 text-xs sm:text-sm">
+        <div className="flex flex-wrap items-center gap-6 text-xs sm:text-sm">
           <Link href="/terms-of-service" className="hover:text-slate-800 transition-colors underline-offset-4 hover:underline">
             Terms of Service
           </Link>
           <Link href="/privacy-policy" className="hover:text-slate-800 transition-colors underline-offset-4 hover:underline">
             Privacy Policy
+          </Link>
+          <Link href="/refund-policy" className="hover:text-slate-800 transition-colors underline-offset-4 hover:underline">
+            Refund Policy
           </Link>
           <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-blue-600 transition-colors underline-offset-4 hover:underline">
             Support

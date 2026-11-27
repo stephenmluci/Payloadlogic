@@ -315,7 +315,11 @@ export default function PricingPage() {
           <p className="leading-relaxed">
             <strong>14-Day Free Trial Policy:</strong> Your trial only starts after your USDOT number is verified as{' '}
             <strong>real and active</strong> in the public FMCSA SAFER Company Snapshot database. One free trial is
-            allowed per verified DOT number. After 14 days, choose a paid plan to continue.
+            allowed per verified DOT number. After 14 days, choose a paid plan to continue.{' '}
+            <strong className="text-white">All sales are final</strong> — see our{' '}
+            <Link href="/refund-policy" className="text-blue-300 underline hover:text-white">
+              Refund Policy
+            </Link>.
           </p>
         </div>
       </section>
@@ -398,6 +402,7 @@ export default function PricingPage() {
             <Link href="/help" className="hover:text-white transition-colors">Help</Link>
             <Link href="/privacy-policy" className="hover:text-white transition-colors">Privacy</Link>
             <Link href="/terms-of-service" className="hover:text-white transition-colors">Terms</Link>
+            <Link href="/refund-policy" className="hover:text-white transition-colors">Refund Policy</Link>
             <span>© {new Date().getFullYear()} PayloadLogic</span>
           </div>
         </div>

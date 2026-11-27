@@ -31,6 +31,8 @@ import { TRIAL_DAYS, TRIAL_MESSAGES } from '@/lib/trial';
 import { auth } from '@/lib/firebase';
 import { startCheckout, openBillingPortal } from '@/lib/billingClient';
 import { BillingIntervalToggle, PlanPriceBlock } from '@/components/billing/BillingIntervalToggle';
+import { OwnerSubscriptionOverview } from '@/components/billing/OwnerSubscriptionOverview';
+import { isOwnerEmail } from '@/lib/authConfig';
 import { getPlanPrice, formatUsd, intervalLabel, describePlanChoice, INTERVAL_CONFIG, savingsBadgeText, type BillingInterval } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
 import { SUPPORT_EMAIL } from '@/lib/support';
@@ -237,6 +239,8 @@ export function BillingPage() {
           </Button>
         </div>
       </div>
+
+      {isOwnerOrAdmin && isOwnerEmail(user?.email) && <OwnerSubscriptionOverview />}
 
       {/* ── Current Plan Status Card ─────────────────────────────────── */}
       <Card className="border border-slate-200 shadow-sm bg-white rounded-2xl overflow-hidden">

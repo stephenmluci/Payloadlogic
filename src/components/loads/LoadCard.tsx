@@ -22,10 +22,12 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Map, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, Pencil, Trash2, Ruler, Weight, Box, ShieldCheck, ShieldX, ShieldAlert, Timer, Phone, TrendingUp, TrendingDown, Info, AlertTriangle, Scale, MessageSquare, Lock, FileCheck, ExternalLink, Share2, Receipt, ChevronDown, ChevronUp, Send, Loader2 } from 'lucide-react';
+import { MapPin, Map, Milestone, DollarSign, FileText, CheckCircle, Clock, Truck as TruckIcon, Hash, CalendarClock, UserCircle, UserCog, Pencil, Trash2, Ruler, Weight, Box, ShieldCheck, ShieldX, ShieldAlert, Timer, Phone, TrendingUp, TrendingDown, Info, AlertTriangle, Scale, MessageSquare, Lock, FileCheck, ExternalLink, Share2, Receipt, ChevronDown, ChevronUp, Send, Loader2 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
+import { useToast } from '@/hooks/use-toast';
 import { ShareLoadPacketModal } from './ShareLoadPacketModal';
 import { SignedBolUpload } from './SignedBolUpload';
+import { ReassignDriverDialog } from './ReassignDriverDialog';
 import { getDriverProfileId } from '@/lib/driverAssignment';
 import { getSameVehicleActiveLoads, computeDeckPositions, formatDeckPositionBadge } from '@/lib/routeUtils';
 import { normalizeLoadStatus, isLoadCompleted, hasLoadPod, getUnifiedLoadStatusDisplay } from '@/lib/loadStatus';
@@ -125,9 +127,11 @@ const formatDateTimeDisplay = (isoString: string | undefined) => {
 export function LoadCard({ 
   load, client, settings, onStatusChange, onGenerateAgreement, onGenerateInvoice, onGenerateSettlement, onShareLoadPacket, onEdit, onDelete, onUpdateDelivery, calculateVehicleCPM, isUpdatingStatus, vehicles, loads, trips, driverProfiles, expenses
 }: LoadCardProps) {
-  const { financialProfile, isFinancialProfileComplete, setIsFleetFinancialModalOpen, user, previewRole } = useApp();
+  const { financialProfile, isFinancialProfileComplete, setIsFleetFinancialModalOpen, user, previewRole, updateLoad } = useApp();
+  const { toast } = useToast();
   const isAdminOrOwner = ['owner', 'admin', 'company_admin'].includes(user?.role || '') && previewRole !== 'driver';
   const [isSharePacketOpen, setIsSharePacketOpen] = React.useState(false);
+  const [isReassignOpen, setIsReassignOpen] = React.useState(false);
   const [isExpenseLedgerOpen, setIsExpenseLedgerOpen] = React.useState(false);
   const [isCompleteConfirmOpen, setIsCompleteConfirmOpen] = React.useState(false);
   const [isDeletingCard, setIsDeletingCard] = React.useState(false);
@@ -1464,6 +1468,18 @@ export function LoadCard({
               </Button>
             )}
 
+            {isAdminOrOwner && !loadIsCompleted && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsReassignOpen(true)}
+                className="px-2 h-8 text-xs sm:px-3 sm:h-9 sm:text-sm border-blue-200 text-blue-700 hover:bg-blue-50"
+                title="Reassign this load to a different driver"
+              >
+                <UserCog className="h-3.5 w-3.5 mr-1 sm:mr-1.5" /> Reassign Driver
+              </Button>
+            )}
             <Button
                 type="button"
                 variant="outline"
@@ -1672,6 +1688,43 @@ export function LoadCard({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ReassignDriverDialog
+        open={isReassignOpen}
+        onOpenChange={setIsReassignOpen}
+        title={`Reassign Load #${load.loadNumber || load.id?.slice(0, 8)}`}
+        subtitle="Select a new driver and vehicle. Status, stop order, documents, and rate details will be preserved."
+        currentDriverId={assignedHosDriver ? getDriverProfileId(assignedHosDriver) : load.assignedDriverId}
+        currentDriverName={assignedHosDriver?.name || load.assignedDriverName}
+        currentTruckId={load.assignedTruckId}
+        driverProfiles={driverProfiles || []}
+        vehicles={vehicles || []}
+        reassignmentHistory={load.reassignmentHistory}
+        onConfirm={async ({ driverId, driverName, truckId }) => {
+          if (!load.id) return;
+          const prevDriverName = assignedHosDriver?.name || load.assignedDriverName || 'Unassigned';
+          const logEntry = {
+            reassignedAt: new Date().toISOString(),
+            reassignedBy: user?.email || user?.displayName || 'Dispatcher',
+            reassignedByUid: user?.uid,
+            fromDriverId: assignedHosDriver ? getDriverProfileId(assignedHosDriver) : load.assignedDriverId,
+            fromDriverName: prevDriverName,
+            toDriverId: driverId,
+            toDriverName: driverName,
+            scope: 'load' as const,
+          };
+          await updateLoad(load.id, {
+            assignedDriverId: driverId,
+            assignedDriverName: driverName,
+            ...(truckId ? { assignedTruckId: truckId } : {}),
+            ...(load.tripId && driverId !== load.assignedDriverId ? { tripId: '' } : {}),
+            reassignmentHistory: [...(load.reassignmentHistory || []), logEntry],
+          });
+          toast({
+            title: 'Driver Reassigned',
+            description: `Load #${load.loadNumber || load.id.slice(0, 8)} moved from ${prevDriverName} to ${driverName}.`,
+          });
+        }}
+      />
     </Card>
   );
 }

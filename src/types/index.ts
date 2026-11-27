@@ -25,6 +25,17 @@ export type RouteLeg = {
   label?: string;
 };
 
+export type ReassignmentLogEntry = {
+  reassignedAt: string;
+  reassignedBy: string;
+  reassignedByUid?: string;
+  fromDriverId?: string;
+  fromDriverName: string;
+  toDriverId?: string;
+  toDriverName: string;
+  scope: 'load' | 'trip';
+};
+
 export type Trip = {
   id: string;
   name: string;
@@ -49,6 +60,7 @@ export type Trip = {
   usedWeight?: number;
   /** Trailer max payload minus usedWeight in lbs */
   remainingPayload?: number;
+  reassignmentHistory?: ReassignmentLogEntry[];
 };
 
 
@@ -186,6 +198,7 @@ export type Load = {
   additionalStops?: LoadStop[];
   /** Loaded miles for origin → primary destination only (set when additionalStops exist). `distance` is the total across all legs. */
   firstLegMiles?: number;
+  reassignmentHistory?: ReassignmentLogEntry[];
 };
 
 /** One extra delivery stop on a multi-drop load (Stop 2, Stop 3, ...). */

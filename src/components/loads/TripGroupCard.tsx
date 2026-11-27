@@ -16,9 +16,13 @@ import {
   Layers,
   MapPin,
   CheckCircle2,
+  UserCog,
 } from 'lucide-react';
 import { getDispatcherStatusLabel } from './LoadCard';
 import { getUnifiedLoadStatusDisplay, normalizeLoadStatus } from '@/lib/loadStatus';
+import { ReassignDriverDialog } from './ReassignDriverDialog';
+import { useApp } from '@/context/AppContext';
+import { useToast } from '@/hooks/use-toast';
 import {
   buildChronologicalTripStops,
   computeDeckPositions,
@@ -62,10 +66,15 @@ export function TripGroupCard({
   renderLoadCard,
   defaultExpanded = false,
 }: TripGroupCardProps) {
+  const { user, updateTrip } = useApp();
+  const { toast } = useToast();
   const [expanded, setExpanded] = React.useState(defaultExpanded);
   const [isReordering, setIsReordering] = React.useState(false);
   const [approvingLoadIds, setApprovingLoadIds] = React.useState<Record<string, boolean>>({});
   const [isApprovingAll, setIsApprovingAll] = React.useState(false);
+  const [reassignTarget, setReassignTarget] = React.useState<
+    { mode: 'trip' } | { mode: 'load'; load: Load } | null
+  >(null);
 
   // Order loads by Deck Unload Order: Deck #1 • First Off -> ... -> Deck #N • Last Off
   const ordered = React.useMemo(
@@ -233,6 +242,19 @@ export function TripGroupCard({
               {isApprovingAll ? 'Approving…' : 'Approve All'}
             </Button>
           )}
+          {onUpdateLoad && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setReassignTarget({ mode: 'trip' })}
+              className="h-8 px-2.5 text-xs font-semibold border-purple-300 bg-white text-purple-800 hover:bg-purple-50"
+              title="Reassign this entire multi-stop trip to another driver"
+            >
+              <UserCog className="mr-1.5 h-3.5 w-3.5" />
+              Reassign Trip
+            </Button>
+          )}
           {tripItineraryStops.length > 0 && (
             <a
               href={combinedMapsUrl}
@@ -386,6 +408,20 @@ export function TripGroupCard({
                   </Button>
                 )}
 
+                {l.id && onUpdateLoad && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setReassignTarget({ mode: 'load', load: l })}
+                    className="h-7 px-2 text-xs font-semibold border-blue-200 text-blue-700 hover:bg-blue-50 shrink-0"
+                    title="Reassign this stop/load to a different driver"
+                  >
+                    <UserCog className="mr-1 h-3 w-3" />
+                    Reassign
+                  </Button>
+                )}
+
                 <Badge variant="outline" className={`${s.color} shrink-0 border-none font-semibold shadow-xs`}>
                   {s.label}
                 </Badge>
@@ -452,6 +488,121 @@ export function TripGroupCard({
           })}
         </div>
       )}
+      <ReassignDriverDialog
+        open={Boolean(reassignTarget)}
+        onOpenChange={(open) => {
+          if (!open) setReassignTarget(null);
+        }}
+        title={
+          reassignTarget?.mode === 'load'
+            ? `Reassign Stop #${reassignTarget.load.loadNumber || reassignTarget.load.id?.slice(0, 8)}`
+            : `Reassign Entire Trip (${ordered.length} ${ordered.length === 1 ? 'load' : 'loads'})`
+        }
+        subtitle={
+          reassignTarget?.mode === 'load'
+            ? 'Move this stop to another driver. Status, stop order, documents, and rate details stay intact.'
+            : 'Move all loads in this multi-stop trip to another driver. Stop order, statuses, documents, and rates stay intact.'
+        }
+        currentDriverId={
+          reassignTarget?.mode === 'load'
+            ? reassignTarget.load.assignedDriverId || (driver ? getDriverProfileId(driver) : undefined)
+            : driver
+            ? getDriverProfileId(driver)
+            : driverId
+        }
+        currentDriverName={
+          reassignTarget?.mode === 'load'
+            ? reassignTarget.load.assignedDriverName || driver?.name
+            : driver?.name
+        }
+        currentTruckId={
+          reassignTarget?.mode === 'load'
+            ? reassignTarget.load.assignedTruckId || truckId
+            : truckId
+        }
+        driverProfiles={driverProfiles}
+        vehicles={vehicles}
+        reassignmentHistory={
+          reassignTarget?.mode === 'load'
+            ? reassignTarget.load.reassignmentHistory
+            : trip.reassignmentHistory || ordered[0]?.reassignmentHistory
+        }
+        onConfirm={async ({ driverId: newDriverId, driverName: newDriverName, truckId: newTruckId }) => {
+          if (!onUpdateLoad || !reassignTarget) return;
+          const who = user?.email || user?.displayName || 'Dispatcher';
+          const nowIso = new Date().toISOString();
+
+          if (reassignTarget.mode === 'load') {
+            const targetLoad = reassignTarget.load;
+            if (!targetLoad.id) return;
+            const prevName = targetLoad.assignedDriverName || driver?.name || 'Unassigned';
+            const logEntry = {
+              reassignedAt: nowIso,
+              reassignedBy: who,
+              reassignedByUid: user?.uid,
+              fromDriverId: targetLoad.assignedDriverId || (driver ? getDriverProfileId(driver) : undefined),
+              fromDriverName: prevName,
+              toDriverId: newDriverId,
+              toDriverName: newDriverName,
+              scope: 'load' as const,
+            };
+            await Promise.resolve(
+              onUpdateLoad(targetLoad.id, {
+                assignedDriverId: newDriverId,
+                assignedDriverName: newDriverName,
+                ...(newTruckId ? { assignedTruckId: newTruckId } : {}),
+                ...(targetLoad.tripId && newDriverId !== targetLoad.assignedDriverId ? { tripId: '' } : {}),
+                reassignmentHistory: [...(targetLoad.reassignmentHistory || []), logEntry],
+              }),
+            );
+            toast({
+              title: 'Stop Reassigned',
+              description: `Load #${targetLoad.loadNumber || targetLoad.id.slice(0, 8)} reassigned from ${prevName} to ${newDriverName}.`,
+            });
+            return;
+          }
+
+          const prevTripDriver = driver?.name || 'Unassigned';
+          const tripLogEntry = {
+            reassignedAt: nowIso,
+            reassignedBy: who,
+            reassignedByUid: user?.uid,
+            fromDriverId: driver ? getDriverProfileId(driver) : driverId,
+            fromDriverName: prevTripDriver,
+            toDriverId: newDriverId,
+            toDriverName: newDriverName,
+            scope: 'trip' as const,
+          };
+
+          if (isExplicitTrip && trip.id && !trip.id.startsWith('auto-trip-')) {
+            await updateTrip(trip.id, {
+              assignedDriverId: newDriverId,
+              ...(newTruckId ? { assignedTruckId: newTruckId } : {}),
+              reassignmentHistory: [...(trip.reassignmentHistory || []), tripLogEntry],
+            });
+          }
+
+          await Promise.all(
+            ordered.map((l) =>
+              l.id
+                ? Promise.resolve(
+                    onUpdateLoad(l.id, {
+                      assignedDriverId: newDriverId,
+                      assignedDriverName: newDriverName,
+                      ...(newTruckId ? { assignedTruckId: newTruckId } : {}),
+                      reassignmentHistory: [...(l.reassignmentHistory || []), tripLogEntry],
+                    }),
+                  )
+                : Promise.resolve(),
+            ),
+          );
+
+          toast({
+            title: 'Trip Reassigned',
+            description: `${ordered.length} load${ordered.length === 1 ? '' : 's'} moved from ${prevTripDriver} to ${newDriverName}.`,
+          });
+        }}
+      />
     </div>
   );
 }

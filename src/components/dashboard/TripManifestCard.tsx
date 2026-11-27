@@ -7,6 +7,7 @@ import {
   computeDeckPositions,
   formatDeckPositionBadge,
   getCombinedTripGoogleMapsUrl,
+  getDriverLocationHint,
   getTripStopProgressState,
   cleanSearchableAddress,
   getNextStopGoogleMapsUrl,
@@ -202,10 +203,15 @@ export function TripManifestCard({
   const deckPositions = React.useMemo(() => computeDeckPositions(loads), [loads]);
   const getDeckForLoad = (loadId?: string) => deckPositions.find(d => d.loadId === loadId);
 
-  // Ordered trip stops respecting Deck Order (Pickups: Last Off -> First Off; Deliveries: First Off -> Last Off)
+  const driverLocationHint = React.useMemo(
+    () => getDriverLocationHint(driverProfile, driverCoords),
+    [driverProfile, driverCoords],
+  );
+
+  // Ordered trip stops respecting driver's current/last location for pickups and Deck Order for deliveries
   const chronologicalStops: ChronologicalTripStop[] = React.useMemo(() => {
-    return buildChronologicalTripStops(loads);
-  }, [loads]);
+    return buildChronologicalTripStops(loads, driverLocationHint);
+  }, [loads, driverLocationHint]);
 
   // Totals across trip loads
   const totalWeight = loads.reduce((sum, l) => sum + ((l.cargoWeightNum || 0) * (l.cargoQuantity || 1)), 0);
@@ -244,13 +250,13 @@ export function TripManifestCard({
 
   // Combined multi-stop route for all remaining stops in exact trip sequence
   const combinedRemainingMapsUrl = React.useMemo(() => {
-    return getCombinedTripGoogleMapsUrl(loads, driverCoords, true);
-  }, [loads, driverCoords]);
+    return getCombinedTripGoogleMapsUrl(loads, driverCoords, true, driverLocationHint);
+  }, [loads, driverCoords, driverLocationHint]);
 
   // Full start-to-finish route across all stops in exact sequence
   const fullAllStopsMapsUrl = React.useMemo(() => {
-    return getCombinedTripGoogleMapsUrl(loads, driverCoords, false);
-  }, [loads, driverCoords]);
+    return getCombinedTripGoogleMapsUrl(loads, driverCoords, false, driverLocationHint);
+  }, [loads, driverCoords, driverLocationHint]);
 
   // Unique city-state chain for the Combined Route visual banner
   const routeCorridorChain = React.useMemo(() => {

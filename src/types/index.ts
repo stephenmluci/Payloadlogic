@@ -138,6 +138,8 @@ export type Load = {
    * When omitted, LIFO distance/delivery order determines deck position automatically.
    */
   deckOrder?: number;
+  /** Optional explicit 1-based pickup sequence override within a multi-load vehicle trip. */
+  pickupOrder?: number;
   specialTerms?: string;
   requiresTarping?: boolean;
   tarpingFee?: number;

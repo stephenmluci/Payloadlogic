@@ -28,6 +28,7 @@ import {
   computeDeckPositions,
   formatDeckPositionBadge,
   getCombinedTripGoogleMapsUrl,
+  getDriverLocationHint,
   getTripStopProgressState,
   sequenceLoadsFirstOffToLastOff,
 } from '@/lib/routeUtils';
@@ -88,17 +89,6 @@ export function TripGroupCard({
   );
   const getDeck = (loadId?: string) => deckPositions.find(d => d.loadId === loadId);
 
-  // Full sequenced pickup + delivery stop itinerary
-  const tripItineraryStops = React.useMemo(
-    () => buildChronologicalTripStops(ordered),
-    [ordered]
-  );
-
-  const combinedMapsUrl = React.useMemo(
-    () => getCombinedTripGoogleMapsUrl(ordered, null, false),
-    [ordered]
-  );
-
   const truckId = trip.assignedTruckId || ordered.find(l => l.assignedTruckId)?.assignedTruckId;
   const trailerId = trip.assignedTrailerId || ordered.find(l => l.assignedTrailerId)?.assignedTrailerId;
   const driverId = trip.assignedDriverId || ordered.find(l => l.assignedDriverId)?.assignedDriverId;
@@ -108,6 +98,22 @@ export function TripGroupCard({
   const driver =
     driverProfiles.find(d => getDriverProfileId(d) === driverId || d.uid === driverId) ||
     (truckId ? driverProfiles.find(d => d.assignedTruckId === truckId) : undefined);
+
+  const driverLocationHint = React.useMemo(
+    () => getDriverLocationHint(driver),
+    [driver]
+  );
+
+  // Full sequenced pickup + delivery stop itinerary (nearest pickup from driver location -> deliveries in deck order)
+  const tripItineraryStops = React.useMemo(
+    () => buildChronologicalTripStops(ordered, driverLocationHint),
+    [ordered, driverLocationHint]
+  );
+
+  const combinedMapsUrl = React.useMemo(
+    () => getCombinedTripGoogleMapsUrl(ordered, null, false, driverLocationHint),
+    [ordered, driverLocationHint]
+  );
 
   const statusCounts = ordered.reduce<Record<string, { count: number; label: string; color: string }>>((acc, l) => {
     const s = getDispatcherStatusLabel(l.status as string, l);
@@ -325,6 +331,34 @@ export function TripGroupCard({
                 </React.Fragment>
               );
             })}
+            {onUpdateLoad &&
+              tripItineraryStops.filter(s => s.type === 'pickup').length >= 2 && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const pickupLoadIds = tripItineraryStops
+                      .filter(s => s.type === 'pickup' && s.loadId)
+                      .map(s => s.loadId);
+                    if (pickupLoadIds.length < 2 || isReordering) return;
+                    const rotated = [...pickupLoadIds.slice(1), pickupLoadIds[0]];
+                    setIsReordering(true);
+                    try {
+                      await Promise.all(
+                        rotated.map((id, idx) =>
+                          Promise.resolve(onUpdateLoad(id, { pickupOrder: idx + 1 })),
+                        ),
+                      );
+                    } finally {
+                      setIsReordering(false);
+                    }
+                  }}
+                  disabled={isReordering}
+                  className="ml-auto inline-flex items-center gap-1 rounded border border-purple-400/40 bg-purple-950/60 px-2 py-0.5 text-[10px] font-semibold text-purple-200 hover:bg-purple-900/70 transition-colors"
+                  title="Manually rotate pickup stop order"
+                >
+                  Reorder Pickups
+                </button>
+              )}
           </div>
         </div>
       )}

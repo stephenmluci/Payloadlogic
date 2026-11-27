@@ -629,7 +629,68 @@ export function getTripStopProgressState(
  *    remain accessible as stops within one trip, while flagging back-to-back
  *    same-facility stops (`sameFacilityAsPrevious`).
  */
-export function buildChronologicalTripStops(loads: Load[]): ChronologicalTripStop[] {
+export type DriverLocationHint = {
+  lat?: number | null;
+  lng?: number | null;
+  city?: string | null;
+  state?: string | null;
+};
+
+/**
+ * Extracts the driver's current or last known location (GPS coords + city/state)
+ * for nearest-pickup trip sequencing.
+ */
+export function getDriverLocationHint(
+  driver?: Partial<DriverProfile> | null,
+  coords?: { lat: number; lng: number } | null,
+): DriverLocationHint | null {
+  const lat = coords?.lat ?? driver?.telemetry?.lat ?? driver?.currentLat ?? null;
+  const lng = coords?.lng ?? driver?.telemetry?.lng ?? driver?.currentLng ?? null;
+  let city = driver?.lastLocationCity?.trim() || null;
+  let state = driver?.lastLocationState?.trim() || null;
+
+  if ((!city || !state) && driver?.currentStaging) {
+    const parts = driver.currentStaging.split(',').map((s) => s.trim()).filter(Boolean);
+    if (!city && parts[0]) city = parts[0];
+    if (!state && parts[1]) state = parts[1];
+  }
+
+  if (lat === null && lng === null && !city && !state) return null;
+  return { lat, lng, city, state };
+}
+
+function getDistanceFromLocationHint(point: DriverLocationHint, load: Load): number {
+  const oCity = (load.origin?.city || '').trim().toLowerCase();
+  const oState = (load.origin?.state || '').trim().toLowerCase();
+  const pCity = (point.city || '').trim().toLowerCase();
+  const pState = (point.state || '').trim().toLowerCase();
+
+  if (pCity && oCity && pCity === oCity && (!pState || !oState || pState === oState)) {
+    return 0;
+  }
+
+  const oLat = load.origin?.lat ?? load.originLat;
+  const oLng = load.origin?.lng ?? load.originLng;
+  if (
+    typeof point.lat === 'number' &&
+    typeof point.lng === 'number' &&
+    typeof oLat === 'number' &&
+    typeof oLng === 'number'
+  ) {
+    return haversineDistanceMiles(point.lat, point.lng, oLat, oLng);
+  }
+
+  if (pState && oState && pState === oState) {
+    return 100;
+  }
+
+  return Number.POSITIVE_INFINITY;
+}
+
+export function buildChronologicalTripStops(
+  loads: Load[],
+  driverLocation?: DriverLocationHint | null,
+): ChronologicalTripStop[] {
   const activeLoads = loads.filter(load => {
     const statusLower = String(load.status || '').toLowerCase().trim();
     return statusLower !== 'delivered' && statusLower !== 'completed';
@@ -645,17 +706,57 @@ export function buildChronologicalTripStops(loads: Load[]): ChronologicalTripSto
 
   // Delivery order: Deck #1 (First Off) -> ... -> Deck #N (Last Off)
   const deliveryOrderedLoads = sequenceLoadsFirstOffToLastOff(activeLoads);
-  // Pickup loading order: Deck #N (Last Off, bottom/front) -> ... -> Deck #1 (First Off, top/rear),
-  // with already picked-up loads placed ahead of unpicked loads so completed legs stay first.
+  // Pickup loading order: already picked-up loads first, then upcoming pickups.
+  // Upcoming pickups respect explicit `pickupOrder` if set; otherwise sequence from
+  // the driver's current/last known location (nearest pickup first, then nearest-neighbor).
   const isAlreadyPickedUp = (l: Load) => {
     const s = String(l.status || '').toLowerCase().trim();
     return ['in-transit', 'arrived', 'arrived-destination', 'unloading', 'delivered', 'completed'].includes(s);
   };
   const lifoLoadingOrder = [...deliveryOrderedLoads].reverse();
-  const pickupOrderedLoads = [
-    ...lifoLoadingOrder.filter(l => isAlreadyPickedUp(l)),
-    ...lifoLoadingOrder.filter(l => !isAlreadyPickedUp(l)),
-  ];
+  const pickedUpLoads = lifoLoadingOrder.filter(l => isAlreadyPickedUp(l));
+  const unpickedLoads = lifoLoadingOrder.filter(l => !isAlreadyPickedUp(l));
+
+  let orderedUnpicked = unpickedLoads;
+  if (unpickedLoads.length > 1) {
+    const hasExplicitPickupOrder = unpickedLoads.some(
+      l => typeof l.pickupOrder === 'number' && Number.isFinite(l.pickupOrder),
+    );
+    if (hasExplicitPickupOrder) {
+      orderedUnpicked = [...unpickedLoads].sort((a, b) => {
+        const oa = typeof a.pickupOrder === 'number' ? a.pickupOrder : Number.MAX_SAFE_INTEGER;
+        const ob = typeof b.pickupOrder === 'number' ? b.pickupOrder : Number.MAX_SAFE_INTEGER;
+        if (oa !== ob) return oa - ob;
+        return lifoLoadingOrder.indexOf(a) - lifoLoadingOrder.indexOf(b);
+      });
+    } else if (driverLocation) {
+      const remaining = [...unpickedLoads];
+      const chained: Load[] = [];
+      let cursor: DriverLocationHint = driverLocation;
+      while (remaining.length > 0) {
+        let bestIdx = 0;
+        let bestDist = getDistanceFromLocationHint(cursor, remaining[0]);
+        for (let i = 1; i < remaining.length; i++) {
+          const d = getDistanceFromLocationHint(cursor, remaining[i]);
+          if (d < bestDist) {
+            bestDist = d;
+            bestIdx = i;
+          }
+        }
+        const [chosen] = remaining.splice(bestIdx, 1);
+        chained.push(chosen);
+        cursor = {
+          lat: chosen.origin?.lat ?? chosen.originLat ?? cursor.lat,
+          lng: chosen.origin?.lng ?? chosen.originLng ?? cursor.lng,
+          city: chosen.origin?.city ?? cursor.city,
+          state: chosen.origin?.state ?? cursor.state,
+        };
+      }
+      orderedUnpicked = chained;
+    }
+  }
+
+  const pickupOrderedLoads = [...pickedUpLoads, ...orderedUnpicked];
 
   const sequencedStops: ChronologicalTripStop[] = [];
 
@@ -948,9 +1049,13 @@ export function getNextStopAppleMapsUrl(destination: string | Address): string {
 export function getCombinedTripGoogleMapsUrl(
   tripLoads: Load[],
   userCoordinates?: { lat: number; lng: number } | null,
-  onlyRemaining: boolean = true
+  onlyRemaining: boolean = true,
+  driverLocation?: DriverLocationHint | null,
 ): string {
-  const stops = buildChronologicalTripStops(tripLoads);
+  const effectiveLocation =
+    driverLocation ??
+    (userCoordinates ? { lat: userCoordinates.lat, lng: userCoordinates.lng } : undefined);
+  const stops = buildChronologicalTripStops(tripLoads, effectiveLocation);
   const candidateStops = onlyRemaining
     ? stops.filter(stop => {
         const matched = tripLoads.find(l => l.id === stop.loadId);
